@@ -190,3 +190,7 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
 .live.off::before{background:var(--warn)}
+
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;background:var(--surface);user-select:none}
+.chip input{margin:0;accent-color:var(--brand-orange)}
+.chip.on{border-color:var(--brand-orange);background:var(--accent-soft, var(--surface-2))}

@@ -50,7 +50,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jf, setJf] = useState<JobFilter>(NO_FILTER);
   const [cq, setCq] = useState("");
   const [cservice, setCservice] = useState("");
-  const [centity, setCentity] = useState("");
+  const [centity, setCentity] = useState<string[]>([]);
   const [clientId, setClientId] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
@@ -335,7 +335,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
   function ClientsView() {
     const q = cq.trim().toLowerCase();
-    const list = clients.filter((c) => (!cservice || c.services.includes(cservice)) && (!centity || c.entity === centity) && (!q || [c.name, c.abn, c.contact, c.email].join(" ").toLowerCase().includes(q)));
+    const list = clients.filter((c) => (!cservice || c.services.includes(cservice)) && (!centity.length || centity.includes(c.entity)) && (!q || [c.name, c.abn, c.contact, c.email].join(" ").toLowerCase().includes(q)));
     const openBy = new Map<string, Job[]>();
     openJobs.forEach((j) => openBy.set(j.client_id, [...(openBy.get(j.client_id) ?? []), j]));
     return (
@@ -344,7 +344,12 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="toolbar">
           <input type="search" id="cq" placeholder="Search name, ABN or contact" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
           <select id="cservice" aria-label="Service" value={cservice} onChange={(e) => setCservice(e.target.value)}><option value="">Any service</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
-          <select id="centity" aria-label="Entity type" value={centity} onChange={(e) => setCentity(e.target.value)}><option value="">Any entity type</option>{ENTITIES.map((x) => <option key={x} value={x}>{x}</option>)}</select>
+        </div>
+        <div className="toolbar entity-filter" role="group" aria-label="Show entity types" style={{ borderRadius: 0, borderTop: "1px solid var(--line)", gap: 6 }}>
+          <span className="note" style={{ marginRight: 4 }}>Show:</span>
+          {ENTITIES.map((x) => { const on = centity.includes(x); return (
+            <label key={x} className={`chip${on ? " on" : ""}`}><input type="checkbox" checked={on} onChange={() => setCentity(on ? centity.filter((y) => y !== x) : [...centity, x])} /> {x === "SMSF" ? "Super fund (SMSF)" : x}</label>); })}
+          {centity.length ? <button type="button" className="link" onClick={() => setCentity([])}>Show all</button> : <span className="note">All types shown. Tick to narrow down.</span>}
         </div>
         <div className="tablebox">
           {!list.length ? <div className="empty"><strong>{clients.length ? "No clients match." : "No clients yet."}</strong>{clients.length ? "Try another search." : "Add your first client, then tick the services you do for them."}</div> : (
