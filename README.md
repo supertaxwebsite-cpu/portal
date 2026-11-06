@@ -32,7 +32,7 @@ Someone whose access is switched off can't sign in, and the database refuses the
 
 ## Go-live guide (about 30 minutes, no coding)
 
-You need three free accounts: **GitHub** (you already have one), **Supabase** and **Vercel**.
+You need three accounts: **GitHub** (you already have one), **Supabase** and **Vercel**. See Costs below.
 
 ### 1. Create the database (Supabase)
 
@@ -81,7 +81,8 @@ If someone forgets their password, go to **Team** → **Manage** → **Reset pas
 
 ### Costs
 
-Supabase and Vercel both have free plans, which are enough for a small practice. Paid plans begin at about US$25/month (Supabase Pro) and US$20/month (Vercel Pro). The Supabase free plan pauses a project after a week with no activity; daily use keeps it awake. Upgrade to Pro if you want daily backups.
+- **Supabase:** the free plan is enough for a small practice. It pauses a project after a week with no activity (daily use keeps it awake) and has no daily backups. Pro is about US$25/month and adds backups.
+- **Vercel:** the free Hobby plan is for personal, non-commercial use. For a business, use **Pro (about US$20/month)**, which has a free trial.
 
 ---
 
