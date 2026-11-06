@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AuthCard from "@/components/AuthCard";
 import { createClient } from "@/lib/supabase/client";
+import { markActive } from "@/components/IdleSignOut";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("idle")) setError("You were signed out after 20 minutes with no activity. Sign in again to carry on.");
     fetch("/api/setup").then((r) => r.json()).then((d) => { if (d.needsSetup) router.replace("/setup"); }).catch(() => {});
   }, [router]);
 
@@ -25,6 +27,7 @@ export default function LoginPage() {
       setBusy(false);
       return;
     }
+    markActive();
     router.replace("/");
     router.refresh();
   }

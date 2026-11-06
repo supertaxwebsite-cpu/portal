@@ -7,6 +7,7 @@ import {
   periodLabel, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
+import IdleSignOut from "./IdleSignOut";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "clients" | "team";
@@ -474,6 +475,7 @@ function Shell({ me, view, go, live, showTeam, children }: { me: Profile; view: 
           <a key={v} href={`#${v}`} aria-current={view === v ? "page" : undefined} onClick={(e) => { e.preventDefault(); go(v); }}>{l}</a>))}</nav>
         <div className="userbox"><span><strong>{me.full_name}</strong></span><SignOutButton /></div>
       </div></header>
+      <IdleSignOut />
       <main className="wrap">
         {children}
         <p className="note" style={{ marginTop: 28 }}><span className={`live${live ? "" : " off"}`}>{live ? "Live: changes by your team appear automatically" : "Connecting to live updates…"}</span></p>

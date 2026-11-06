@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AuthCard from "@/components/AuthCard";
 import { createClient } from "@/lib/supabase/client";
+import { markActive } from "@/components/IdleSignOut";
 
 export default function SetupPage() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function SetupPage() {
     if (!r.ok) { setMsg(d.error ?? "Setup failed."); setBusy(false); return; }
     const supabase = createClient();
     await supabase.auth.signInWithPassword({ email: f.email.trim(), password: f.password });
+    markActive();
     router.replace("/");
     router.refresh();
   }
