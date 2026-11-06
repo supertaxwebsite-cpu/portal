@@ -7,6 +7,7 @@ import {
   periodLabel, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
+import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "clients" | "team";
 const VIEWS: View[] = ["overview", "jobs", "clients", "team"];
@@ -18,6 +19,7 @@ type Modal =
   | { kind: "bulk" }
   | { kind: "client"; client?: Client }
   | { kind: "member"; member?: Profile }
+  | { kind: "import" }
   | { kind: "temp"; name: string; email: string; password: string }
   | { kind: "confirm"; title: string; text: string; yes: string; run: () => Promise<boolean | void> }
   | null;
@@ -334,7 +336,7 @@ export default function Workspace({ me }: { me: Profile }) {
     openJobs.forEach((j) => openBy.set(j.client_id, [...(openBy.get(j.client_id) ?? []), j]));
     return (
       <>
-        <div className="pagehead"><div><h1>Clients</h1><p>Who you act for and which services you provide each of them.</p></div><div className="row"><button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button></div></div>
+        <div className="pagehead"><div><h1>Clients</h1><p>Who you act for and which services you provide each of them.</p></div><div className="row">{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}<button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button></div></div>
         <div className="toolbar">
           <input type="search" id="cq" placeholder="Search name, ABN or contact" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
           <select id="cservice" aria-label="Service" value={cservice} onChange={(e) => setCservice(e.target.value)}><option value="">Any service</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
@@ -440,6 +442,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canDelete} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
+      {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
       {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
         <Overlay onClose={close}><div className="modal"><header><h2>Give {modal.name} their sign-in</h2><button type="button" onClick={close}>Close</button></header>
@@ -714,3 +717,71 @@ function MemberModal({ member, managers, adminCall, onClose, onTemp, confirm, sa
   );
 }
 
+
+function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
+  clients: Client[]; people: Person[]; supabase: SB; onDone: (n: number) => void; onClose: () => void; say: (m: string, e?: boolean) => void;
+}) {
+  const [file, setFile] = useState("");
+  const [check, setCheck] = useState<ImportCheck | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    setCheck(null); setError(""); setFile(f?.name ?? "");
+    if (!f) return;
+    try {
+      let table: unknown[][];
+      if (/\.csv$/i.test(f.name)) table = parseCsv(await f.text());
+      else if (/\.xlsx$/i.test(f.name)) {
+        const { readSheet } = await import("read-excel-file/browser");
+        table = await readSheet(f) as unknown[][];
+      } else { setError("Choose a .csv or .xlsx file. If you have an older .xls file, open it in Excel and save it as .xlsx."); return; }
+      const r = checkImport(table, clients, people);
+      if ("error" in r) setError(r.error); else setCheck(r);
+    } catch (err) {
+      setError(`Couldn't read that file: ${(err as Error).message}`);
+    }
+  }
+
+  async function run() {
+    if (!check?.ready.length) return;
+    setBusy(true);
+    const rows = check.ready.map(({ line: _line, ...r }) => r);
+    const { data, error } = await supabase.rpc("import_clients", { rows });
+    setBusy(false);
+    if (error) { say(/permission|42501|only the master/i.test(error.message) ? "Only the master admin or a manager can import clients." : `Nothing was imported: ${error.message}`, true); return; }
+    onDone(typeof data === "number" ? data : rows.length);
+  }
+
+  const List = ({ items, cls }: { items: { line: number; name: string; reason: string }[]; cls: string }) => (
+    <ul className="note" style={{ margin: "4px 0 0", paddingLeft: 18, maxHeight: 140, overflowY: "auto" }}>{items.map((x, i) => <li key={i}><span className={`pill ${cls}`}>Row {x.line}</span> {x.name}: {x.reason}</li>)}</ul>
+  );
+
+  return (
+    <Overlay onClose={onClose}><div className="modal" style={{ maxWidth: 760 }}>
+      <header><h2>Import clients</h2><button type="button" onClick={onClose}>Close</button></header>
+      <div className="body"><div className="full stack">
+        <p style={{ margin: 0 }}>1. Download the template, fill in one client per row, and save it.</p>
+        <div className="row"><a className="btn" href="/client-import-template.xlsx" download>Excel template</a><a className="btn" href="/client-import-template.csv" download>CSV template</a></div>
+        <p style={{ margin: "8px 0 0" }}>2. Upload it. You&apos;ll see what will be added before anything is saved.</p>
+        <input type="file" id="import-file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={pick} aria-label="Choose a CSV or Excel file" />
+        {error ? <p className="pill danger" style={{ whiteSpace: "normal" }}>{error}</p> : null}
+        {check ? (
+          <div className="stack">
+            <p style={{ margin: 0 }}><strong>{file}</strong>: <span className="pill ok">{check.ready.length} ready to add</span> {check.skipped.length ? <span className="pill">{check.skipped.length} already in the portal</span> : null} {check.problems.length ? <span className="pill danger">{check.problems.length} need fixing</span> : null}</p>
+            {check.problems.length ? <div><strong>Not imported until fixed</strong><List items={check.problems} cls="danger" /></div> : null}
+            {check.warnings.length ? <div><strong>Will import, but check</strong><List items={check.warnings} cls="warn" /></div> : null}
+            {check.skipped.length ? <div><strong>Skipped</strong><List items={check.skipped} cls="" /></div> : null}
+            {check.ready.length ? (
+              <div className="tablebox solo" style={{ maxHeight: 260, overflowY: "auto" }}><table><thead><tr><th>Client</th><th>Entity</th><th>ABN</th><th>Services</th></tr></thead>
+                <tbody>{check.ready.slice(0, 200).map((r) => <tr key={r.line}><td className="client">{r.name}</td><td>{r.entity}</td><td className="mono">{r.abn}</td><td>{r.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>)}</td></tr>)}</tbody></table></div>
+            ) : null}
+          </div>
+        ) : null}
+      </div></div>
+      <footer><span className="note">Only the master admin and managers can import.</span><div className="row"><button type="button" onClick={onClose}>Cancel</button>
+        <button type="button" className="primary" disabled={busy || !check?.ready.length} onClick={run}>{busy ? "Importing…" : `Import ${check?.ready.length ?? 0} client${check?.ready.length === 1 ? "" : "s"}`}</button></div></footer>
+    </div></Overlay>
+  );
+}
