@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, Person, Profile, TimeEntry } from "@/lib/types";
 import { fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
@@ -59,6 +59,13 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const myDayAtt = att.filter((a) => a.user_id === me.id && a.work_date === day);
   const myDay = entries.filter((e) => e.user_id === me.id && e.work_date === day);
   const myHours = myDay.reduce((s, e) => s + e.hours, 0);
+  // Clock out is allowed only once the shift's day has at least one timesheet line.
+  const shiftFilled = !!openShift && entries.some((e) => e.user_id === me.id && e.work_date === openShift.work_date);
+  // While clocked in, show the shift's own day (a shift that started before midnight stays on that day).
+  const jumped = useRef("");
+  useEffect(() => {
+    if (openShift && jumped.current !== openShift.id) { jumped.current = openShift.id; setDay(openShift.work_date); }
+  }, [openShift]);
 
   async function clock(kind: "clock_in" | "clock_out") {
     setBusy(true);
@@ -121,9 +128,10 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
                 <p className="note" style={{ margin: "4px 0 0" }}>{openShift
                   ? <>Since {time(openShift.clock_in)}{openShift.work_date !== todayISO() ? ` on ${fmtDate(openShift.work_date)}` : ""} · {hm(mins(openShift, now))}</>
                   : "Clock in when you start work."}</p>
+                {openShift && !shiftFilled ? <p className="pill warn" style={{ margin: "8px 0 0", whiteSpace: "normal" }}>Fill in your timesheet for {fmtDate(openShift.work_date)} below before you clock out.</p> : null}
               </div>
               {openShift
-                ? <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy} onClick={() => clock("clock_out")}>Clock out</button>
+                ? <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy || !shiftFilled} title={shiftFilled ? undefined : "Fill in your timesheet first"} onClick={() => clock("clock_out")}>Clock out</button>
                 : <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy} onClick={() => clock("clock_in")}>Clock in</button>}
             </div>
           </div>

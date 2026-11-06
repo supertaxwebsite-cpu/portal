@@ -287,10 +287,12 @@ language plpgsql security definer set search_path = public as $$
 declare r public.attendance;
 begin
   if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
-  update public.attendance set clock_out = now()
-  where id = (select id from public.attendance where user_id = auth.uid() and clock_out is null order by clock_in desc limit 1)
-  returning * into r;
+  select * into r from public.attendance where user_id = auth.uid() and clock_out is null order by clock_in desc limit 1;
   if not found then raise exception 'You are not clocked in'; end if;
+  if not exists (select 1 from public.timesheet_entries where user_id = auth.uid() and work_date = r.work_date) then
+    raise exception 'Fill in your timesheet for % before you clock out', to_char(r.work_date, 'FMDD Mon YYYY');
+  end if;
+  update public.attendance set clock_out = now() where id = r.id returning * into r;
   return r;
 end $$;
 revoke all on function public.clock_in(), public.clock_out(), public.can_view_person(uuid) from public, anon;
