@@ -5,8 +5,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 async function needsSetup() {
   const admin = createAdminClient();
   const { count, error } = await admin.from("profiles").select("id", { count: "exact", head: true });
-  if (error) throw new Error(error.message);
-  return (count ?? 0) === 0;
+  if (error) throw new Error(error.message || "Can't reach the Supabase database. Check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.");
+  if (count === null) throw new Error("Can't read the database. Check that schema.sql was run and the Vercel keys are right.");
+  return count === 0;
 }
 
 export async function GET() {
