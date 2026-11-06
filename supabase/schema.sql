@@ -22,6 +22,8 @@ create table if not exists public.profiles (
 
 -- Who each staff member reports to (their manager). Set by the master admin.
 alter table public.profiles add column if not exists reports_to uuid references public.profiles (id) on delete set null;
+-- Staff can be given permission to delete clients and jobs by the master admin or their manager.
+alter table public.profiles add column if not exists can_delete boolean not null default false;
 
 create table if not exists public.clients (
   id uuid primary key default gen_random_uuid(),
@@ -91,6 +93,13 @@ language sql stable security definer set search_path = public as $$
   select role from public.profiles where id = auth.uid() and active;
 $$;
 
+-- Master admin and managers can always delete; staff only if given delete access.
+create or replace function public.can_delete_data() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and active
+                 and (role in ('master', 'manager') or can_delete));
+$$;
+
 -- Row level security: nobody reads or writes anything unless they are an
 -- active team member. Creating people and changing roles happens only on the
 -- server with the service role key, after checking the caller is the master admin.
@@ -142,7 +151,7 @@ create policy "members edit clients" on public.clients
   for update to authenticated using (public.is_active_member()) with check (public.is_active_member());
 drop policy if exists "managers delete clients" on public.clients;
 create policy "managers delete clients" on public.clients
-  for delete to authenticated using (public.my_role() in ('master', 'manager'));
+  for delete to authenticated using (public.can_delete_data());
 
 drop policy if exists "members read jobs" on public.jobs;
 create policy "members read jobs" on public.jobs
@@ -155,7 +164,7 @@ create policy "members edit jobs" on public.jobs
   for update to authenticated using (public.is_active_member()) with check (public.is_active_member());
 drop policy if exists "managers delete jobs" on public.jobs;
 create policy "managers delete jobs" on public.jobs
-  for delete to authenticated using (public.my_role() in ('master', 'manager'));
+  for delete to authenticated using (public.can_delete_data());
 
 revoke all on public.clients, public.jobs from anon;
 revoke all on public.profiles from anon;

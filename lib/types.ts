@@ -9,6 +9,7 @@ export interface Profile {
   active: boolean;
   must_change_password: boolean;
   reports_to?: string | null;
+  can_delete?: boolean;
   created_at: string;
 }
 

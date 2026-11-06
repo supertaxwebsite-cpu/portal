@@ -54,6 +54,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const isMaster = me.role === "master";
   const canManage = me.role === "master" || me.role === "manager";
   const canSeeTeam = canManage;
+  const canDelete = canManage || !!me.can_delete;
 
   const say = useCallback((msg: string, err = false) => {
     setToast({ msg, err });
@@ -395,18 +396,23 @@ export default function Workspace({ me }: { me: Profile }) {
       <>
         <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and manager, and switch access off." : "You and the team members allocated to you."}</p></div>
           <div className="row">{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
-        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
+        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th>Can delete</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
           <tbody>{sorted.map((p) => { const oj = openJobs.filter((j) => j.assignee_id === p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
             <tr key={p.id}><td className="client">{p.full_name}{p.id === me.id ? " (you)" : ""}{p.title ? <div className="note">{p.title}</div> : null}</td>
               <td>{p.email}</td>
               <td><span className="role">{roleLabel(p.role)}</span>{!p.active ? <> <span className="pill danger">Access off</span></> : p.must_change_password ? <> <span className="pill warn">Hasn&apos;t signed in yet</span></> : null}</td>
               {isMaster ? <td>{p.role === "staff" ? personName(p.reports_to ?? null) || <span className="note">Not allocated</span> : null}</td> : null}
+              <td>{p.role !== "staff" ? <span className="note">Always</span>
+                : (isMaster || p.reports_to === me.id) && p.active
+                  ? <button type="button" aria-pressed={!!p.can_delete} className={p.can_delete ? "primary" : undefined} title={p.can_delete ? "Click to take delete access away" : "Click to let them delete clients and jobs"}
+                      onClick={async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete` : `${p.full_name} can now delete clients and jobs`); }}>{p.can_delete ? "Yes" : "No"}</button>
+                  : p.can_delete ? "Yes" : "No"}</td>
               <td className="mono" style={{ textAlign: "right" }}>{oj.length}</td><td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : undefined }}>{od}</td>
               <td style={{ textAlign: "right" }}>{isMaster && p.role !== "master" ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Your master admin sets this under Team → Manage.</p> : null}
         <div className="panel" style={{ padding: 16, marginTop: 16 }}>
           <h2>What each role can do</h2>
-          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> add and update clients and jobs. <strong>Managers</strong> can also delete clients and jobs, and see their own team here. The <strong>Master admin</strong> sees everyone, adds people, changes roles, resets passwords and switches access off.</p>
+          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> add and update clients and jobs. <strong>Managers</strong> can also delete clients and jobs, see their own team here, and give their staff delete access with the Can delete button. The <strong>Master admin</strong> sees everyone, can give any staff member delete access, adds people, changes roles, resets passwords and switches access off.</p>
         </div>
       </>
     );
@@ -431,9 +437,9 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "clients" ? (clientForDetail ? <ClientDetail c={clientForDetail} /> : ClientsView()) : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canManage} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
-      {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canManage} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
+      {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canDelete} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
         <Overlay onClose={close}><div className="modal"><header><h2>Give {modal.name} their sign-in</h2><button type="button" onClick={close}>Close</button></header>
