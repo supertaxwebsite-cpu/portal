@@ -84,7 +84,8 @@ export default function Workspace({ me }: { me: Profile }) {
 
   // Initial load + live refresh when anyone changes something.
   useEffect(() => {
-    load();
+    // Make sure this week's automatic payroll jobs exist (does nothing if they already do).
+    supabase.rpc("generate_payroll_jobs").then(() => load(), () => load());
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => { clearTimeout(timer); timer = setTimeout(load, 300); };
     const channel = supabase
@@ -350,7 +351,7 @@ export default function Workspace({ me }: { me: Profile }) {
                 <tbody>{list.map((c) => { const oj = openBy.get(c.id) ?? []; const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
                   <tr key={c.id}><td className="client"><button className="link" onClick={() => openClient(c.id)}>{c.name}</button>{c.contact ? <div className="note">{c.contact}</div> : null}</td>
                     <td>{c.entity}</td><td className="mono">{c.abn}</td>
-                    <td>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}</span>)}</td>
+                    <td>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</td>
                     <td>{personName(c.manager_id)}</td>
                     <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td></tr>); })}</tbody></table>
               <div className="count">{list.length} client{list.length === 1 ? "" : "s"}</div>
@@ -381,6 +382,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Email</dt><dd>{c.email || "—"}</dd><dt>Phone</dt><dd className="mono">{c.phone || "—"}</dd>
             <dt>Manager</dt><dd>{personName(c.manager_id) || "—"}</dd>
             <dt>Services</dt><dd>{c.services.length ? c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>) : "—"}</dd>
+            {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, jobs created automatically` : "No automatic jobs"}</dd></> : null}
             {c.services.some((s) => SVC[s]?.kind === "bas") ? <><dt>BAS cycle</dt><dd>{c.bas_freq === "monthly" ? "Monthly" : "Quarterly"}</dd></> : null}
             <dt>Notes</dt><dd style={{ whiteSpace: "pre-wrap" }}>{c.notes || "—"}</dd>
             <dt>Last change</dt><dd className="note">{fmtDate(c.updated_at)}{c.updated_by ? ` by ${personName(c.updated_by)}` : ""}</dd>
@@ -637,13 +639,19 @@ function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, c
   const [v, setV] = useState({
     name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
     email: client?.email ?? "", phone: client?.phone ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
+    payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
   });
+  const hasPayroll = v.services.includes("payroll");
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    const row = { ...v, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
+    if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
+    const { payroll_freq, payroll_anchor, ...base } = v;
+    // Payroll fields are sent only when relevant, so saving works even before the payroll database update.
+    const payroll = hasPayroll || client?.payroll_freq ? { payroll_freq: hasPayroll ? payroll_freq : "", payroll_anchor: hasPayroll && payroll_freq ? payroll_anchor || null : null } : {};
+    const row: Record<string, unknown> = { ...base, ...payroll, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
     const ok = client ? await save(() => supabase.from("clients").update(row).eq("id", client.id), "Client saved") : await save(() => supabase.from("clients").insert(row), "Client added");
     setBusy(false);
     if (ok) onClose();
@@ -663,6 +671,11 @@ function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, c
         <div className="f full">Services you provide<div className="checks">{SERVICES.map((s) => (
           <label key={s.id}><input type="checkbox" checked={v.services.includes(s.id)} onChange={(e) => setV({ ...v, services: e.target.checked ? [...v.services, s.id] : v.services.filter((x) => x !== s.id) })} /> {s.label}</label>))}</div></div>
         <label className="f">BAS / IAS cycle<select id="c-basfreq" value={v.bas_freq} onChange={set("bas_freq")}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option></select></label>
+        {hasPayroll ? <>
+          <label className="f">Pay frequency<select id="c-payfreq" value={v.payroll_freq} onChange={set("payroll_freq")}><option value="">Not set (no automatic jobs)</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option></select></label>
+          {v.payroll_freq ? <label className="f">{v.payroll_freq === "monthly" ? "A pay date (sets the day of the month)" : "Next pay date"}<input id="c-payanchor" type="date" value={v.payroll_anchor} onChange={set("payroll_anchor")} required /></label> : null}
+          {v.payroll_freq ? <p className="full hint" style={{ margin: 0 }}>A payroll job is created automatically for every pay date, a week ahead, assigned to the client&apos;s manager.</p> : null}
+        </> : null}
         <label className="f full">Notes<textarea id="c-notes" value={v.notes} onChange={set("notes")} placeholder="Software they use, year-end, quirks…" /></label>
         <p className="full hint" style={{ margin: 0 }}>Don&apos;t store TFNs, passwords or bank details here.</p>
       </div>

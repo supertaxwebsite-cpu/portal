@@ -302,3 +302,59 @@ do $$ begin
     begin alter publication supabase_realtime add table public.timesheet_entries; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ===== Automatic payroll jobs =====
+-- For clients with the Payroll service and a pay frequency, a payroll job is
+-- created for each pay date up to 7 days ahead. Runs every morning (pg_cron),
+-- whenever a client is saved, and when anyone opens the portal. Never duplicates.
+alter table public.clients add column if not exists payroll_freq text not null default '';
+alter table public.clients add column if not exists payroll_anchor date;
+do $$ begin
+  alter table public.clients add constraint clients_payroll_freq_check check (payroll_freq in ('', 'weekly', 'fortnightly', 'monthly'));
+exception when duplicate_object then null; end $$;
+
+create or replace function public.generate_payroll_jobs(lead_days integer default 7) returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  today date := (now() at time zone 'Australia/Sydney')::date;
+  n integer;
+begin
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'payroll',
+         case when c.payroll_freq = 'monthly' then to_char(x.d, 'Mon YYYY') else 'Pay ' || to_char(x.d, 'FMDD Mon YYYY') end,
+         x.d, c.manager_id
+  from public.clients c
+  cross join lateral (select g::date as d from generate_series(today, today + least(greatest(lead_days, 0), 31), interval '1 day') g) x
+  where 'payroll' = any (c.services)
+    and c.payroll_anchor is not null
+    and x.d >= c.payroll_anchor
+    and case c.payroll_freq
+      when 'weekly' then (x.d - c.payroll_anchor) % 7 = 0
+      when 'fortnightly' then (x.d - c.payroll_anchor) % 14 = 0
+      when 'monthly' then extract(day from x.d) = least(extract(day from c.payroll_anchor),
+                          extract(day from (date_trunc('month', x.d) + interval '1 month - 1 day')))
+      else false
+    end
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.generate_payroll_jobs(integer) from public, anon;
+grant execute on function public.generate_payroll_jobs(integer) to authenticated;
+
+create or replace function public.payroll_jobs_after_client_change() returns trigger
+language plpgsql as $$ begin perform public.generate_payroll_jobs(); return null; end $$;
+drop trigger if exists clients_payroll_jobs on public.clients;
+create trigger clients_payroll_jobs after insert or update of services, payroll_freq, payroll_anchor on public.clients
+  for each statement execute function public.payroll_jobs_after_client_change();
+
+-- Daily at about 6–7am Sydney time. Skipped quietly if pg_cron isn't available;
+-- the portal still creates the jobs whenever someone opens it.
+do $$ begin
+  create extension if not exists pg_cron;
+exception when others then raise notice 'pg_cron not available: %', sqlerrm; end $$;
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('supertax-payroll-jobs', '0 20 * * *', 'select public.generate_payroll_jobs()');
+  end if;
+end $$;
