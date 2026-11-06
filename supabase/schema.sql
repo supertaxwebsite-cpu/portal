@@ -205,3 +205,100 @@ do $$ begin
     begin alter publication supabase_realtime add table public.profiles; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ===== Clock in / clock out and daily timesheets =====
+-- Everyone records their own. The master admin sees everyone's; a manager sees
+-- their own and their team's; staff see only their own.
+create or replace function public.can_view_person(target uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    target = auth.uid()
+    or public.my_role() = 'master'
+    or (public.my_role() = 'manager' and exists (select 1 from public.profiles where id = target and reports_to = auth.uid()))
+  );
+$$;
+
+create table if not exists public.attendance (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  work_date date not null,
+  clock_in timestamptz not null default now(),
+  clock_out timestamptz,
+  check (clock_out is null or clock_out >= clock_in)
+);
+create index if not exists attendance_user_date_idx on public.attendance (user_id, work_date);
+
+create table if not exists public.timesheet_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  work_date date not null,
+  client_id uuid references public.clients (id) on delete set null,
+  job_id uuid references public.jobs (id) on delete set null,
+  hours numeric(4, 2) not null check (hours > 0 and hours <= 24),
+  description text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists timesheet_user_date_idx on public.timesheet_entries (user_id, work_date);
+
+alter table public.attendance enable row level security;
+alter table public.timesheet_entries enable row level security;
+
+drop policy if exists "see own or team attendance" on public.attendance;
+create policy "see own or team attendance" on public.attendance
+  for select to authenticated using (public.can_view_person(user_id));
+-- Clock times come from the server clock only, through clock_in() and clock_out().
+revoke insert, update, delete on public.attendance from authenticated, anon;
+
+drop policy if exists "see own or team timesheets" on public.timesheet_entries;
+create policy "see own or team timesheets" on public.timesheet_entries
+  for select to authenticated using (public.can_view_person(user_id));
+drop policy if exists "add own timesheet" on public.timesheet_entries;
+create policy "add own timesheet" on public.timesheet_entries
+  for insert to authenticated with check (user_id = auth.uid() and public.is_active_member());
+drop policy if exists "edit own timesheet" on public.timesheet_entries;
+create policy "edit own timesheet" on public.timesheet_entries
+  for update to authenticated using (user_id = auth.uid() and public.is_active_member()) with check (user_id = auth.uid());
+drop policy if exists "delete own timesheet" on public.timesheet_entries;
+create policy "delete own timesheet" on public.timesheet_entries
+  for delete to authenticated using (user_id = auth.uid() and public.is_active_member());
+revoke all on public.attendance, public.timesheet_entries from anon;
+
+drop trigger if exists timesheet_stamp on public.timesheet_entries;
+create or replace function public.stamp_timesheet() returns trigger
+language plpgsql as $$ begin new.updated_at := now(); return new; end $$;
+create trigger timesheet_stamp before update on public.timesheet_entries
+  for each row execute function public.stamp_timesheet();
+
+create or replace function public.clock_in() returns public.attendance
+language plpgsql security definer set search_path = public as $$
+declare r public.attendance;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into r from public.attendance where user_id = auth.uid() and clock_out is null order by clock_in desc limit 1;
+  if found then return r; end if;
+  insert into public.attendance (user_id, work_date)
+  values (auth.uid(), (now() at time zone 'Australia/Sydney')::date) returning * into r;
+  return r;
+end $$;
+
+create or replace function public.clock_out() returns public.attendance
+language plpgsql security definer set search_path = public as $$
+declare r public.attendance;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  update public.attendance set clock_out = now()
+  where id = (select id from public.attendance where user_id = auth.uid() and clock_out is null order by clock_in desc limit 1)
+  returning * into r;
+  if not found then raise exception 'You are not clocked in'; end if;
+  return r;
+end $$;
+revoke all on function public.clock_in(), public.clock_out(), public.can_view_person(uuid) from public, anon;
+grant execute on function public.clock_in(), public.clock_out(), public.can_view_person(uuid) to authenticated;
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.attendance; exception when duplicate_object then null; end;
+    begin alter publication supabase_realtime add table public.timesheet_entries; exception when duplicate_object then null; end;
+  end if;
+end $$;

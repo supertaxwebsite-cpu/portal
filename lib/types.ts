@@ -54,3 +54,21 @@ export interface Job {
 }
 
 export type StatusId = "not_started" | "waiting" | "in_progress" | "review" | "to_lodge" | "lodged" | "done";
+
+export interface Attendance {
+  id: string;
+  user_id: string;
+  work_date: string;
+  clock_in: string;
+  clock_out: string | null;
+}
+
+export interface TimeEntry {
+  id: string;
+  user_id: string;
+  work_date: string;
+  client_id: string | null;
+  job_id: string | null;
+  hours: number;
+  description: string;
+}

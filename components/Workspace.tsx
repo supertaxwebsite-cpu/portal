@@ -8,10 +8,11 @@ import {
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
+import Timesheet from "./Timesheet";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
-type View = "overview" | "jobs" | "clients" | "team";
-const VIEWS: View[] = ["overview", "jobs", "clients", "team"];
+type View = "overview" | "jobs" | "clients" | "timesheet" | "team";
+const VIEWS: View[] = ["overview", "jobs", "clients", "timesheet", "team"];
 interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string }
 const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "" };
 
@@ -438,6 +439,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
       {view === "clients" ? (clientForDetail ? <ClientDetail c={clientForDetail} /> : ClientsView()) : null}
+      {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
 
       {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
@@ -466,7 +468,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
 /* ---------- layout ---------- */
 function Shell({ me, view, go, live, showTeam, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ...(showTeam ? [["team", "Team"] as [View, string]] : [])];
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
