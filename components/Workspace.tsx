@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Client, Job, Profile, StatusId } from "@/lib/types";
+import type { Client, Job, Person, Profile, StatusId } from "@/lib/types";
 import {
   ENTITIES, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   periodLabel, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
@@ -36,6 +36,7 @@ async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ da
 export default function Workspace({ me }: { me: Profile }) {
   const supabase = useMemo(() => createClient(), []);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -52,6 +53,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
   const isMaster = me.role === "master";
   const canManage = me.role === "master" || me.role === "manager";
+  const canSeeTeam = canManage;
 
   const say = useCallback((msg: string, err = false) => {
     setToast({ msg, err });
@@ -61,12 +63,15 @@ export default function Workspace({ me }: { me: Profile }) {
 
   const load = useCallback(async () => {
     try {
-      const [p, c, j] = await Promise.all([
+      const [p, d, c, j] = await Promise.all([
         fetchAll<Profile>((a, b) => supabase.from("profiles").select("*").order("full_name").range(a, b)),
+        // Names of everyone (no emails or roles). Falls back to the visible profiles
+        // if the database update that adds team_directory hasn't been run yet.
+        supabase.rpc("team_directory").then(({ data, error }) => (error ? null : (data as Person[]))),
         fetchAll<Client>((a, b) => supabase.from("clients").select("*").order("name").range(a, b)),
         fetchAll<Job>((a, b) => supabase.from("jobs").select("*").order("due_date", { nullsFirst: false }).range(a, b)),
       ]);
-      setProfiles(p); setClients(c); setJobs(j); setLoaded(true); setLoadError("");
+      setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); setClients(c); setJobs(j); setLoaded(true); setLoadError("");
     } catch (e) {
       setLoadError((e as Error).message);
     }
@@ -92,19 +97,20 @@ export default function Workspace({ me }: { me: Profile }) {
   useEffect(() => {
     const route = () => {
       const h = window.location.hash.replace("#", "") as View;
-      setView(VIEWS.includes(h) ? h : "overview");
+      setView(VIEWS.includes(h) && (h !== "team" || canSeeTeam) ? h : "overview");
     };
     route();
     window.addEventListener("hashchange", route);
     return () => window.removeEventListener("hashchange", route);
-  }, []);
+  }, [canSeeTeam]);
   const go = (v: View) => { if (v !== "clients") setClientId(null); window.location.hash = v; setView(v); window.scrollTo(0, 0); };
   const gotoJobs = (f: Partial<JobFilter>) => { setJf({ ...NO_FILTER, ...f }); go("jobs"); };
   const openClient = (id: string) => { setClientId(id); window.location.hash = "clients"; setView("clients"); window.scrollTo(0, 0); };
 
-  const profileById = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
+  const profileById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
-  const team = useMemo(() => profiles.filter((p) => p.active), [profiles]);
+  const team = useMemo(() => people.filter((p) => p.active), [people]);
+  const managers = useMemo(() => profiles.filter((p) => p.active && p.role === "manager"), [profiles]);
   const personName = (id: string | null) => (id ? profileById.get(id)?.full_name ?? "Former staff" : "");
   const clientName = (id: string) => clientById.get(id)?.name ?? "Deleted client";
   const openJobs = useMemo(() => jobs.filter((j) => isOpen(j.status)), [jobs]);
@@ -384,21 +390,23 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   function TeamView() {
-    const sorted = [...profiles].sort((a, b) => Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name));
+    const sorted = [...profiles].sort((a, b) => Number(b.id === me.id) - Number(a.id === me.id) || Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name));
     return (
       <>
-        <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and switch access off." : "Everyone who can sign in and be assigned work."}</p></div>
+        <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and manager, and switch access off." : "You and the team members allocated to you."}</p></div>
           <div className="row">{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
-        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
+        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
           <tbody>{sorted.map((p) => { const oj = openJobs.filter((j) => j.assignee_id === p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
             <tr key={p.id}><td className="client">{p.full_name}{p.id === me.id ? " (you)" : ""}{p.title ? <div className="note">{p.title}</div> : null}</td>
               <td>{p.email}</td>
               <td><span className="role">{roleLabel(p.role)}</span>{!p.active ? <> <span className="pill danger">Access off</span></> : p.must_change_password ? <> <span className="pill warn">Hasn&apos;t signed in yet</span></> : null}</td>
+              {isMaster ? <td>{p.role === "staff" ? personName(p.reports_to ?? null) || <span className="note">Not allocated</span> : null}</td> : null}
               <td className="mono" style={{ textAlign: "right" }}>{oj.length}</td><td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : undefined }}>{od}</td>
               <td style={{ textAlign: "right" }}>{isMaster && p.role !== "master" ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
+        {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Your master admin sets this under Team → Manage.</p> : null}
         <div className="panel" style={{ padding: 16, marginTop: 16 }}>
           <h2>What each role can do</h2>
-          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> add and update clients and jobs. <strong>Managers</strong> can also delete clients and jobs. The <strong>Master admin</strong> also adds people, changes roles, resets passwords and switches access off.</p>
+          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> add and update clients and jobs. <strong>Managers</strong> can also delete clients and jobs, and see their own team here. The <strong>Master admin</strong> sees everyone, adds people, changes roles, resets passwords and switches access off.</p>
         </div>
       </>
     );
@@ -410,23 +418,23 @@ export default function Workspace({ me }: { me: Profile }) {
 
   if (!loaded) {
     return (
-      <Shell me={me} view={view} go={go} live={live}>
+      <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam}>
         <div className="panel empty"><strong>{loadError ? "The practice database did not answer." : "Loading your practice…"}</strong>{loadError ? `${loadError}. Reload the page to try again.` : "Clients, jobs and due dates appear here in a moment."}</div>
       </Shell>
     );
   }
 
   return (
-    <Shell me={me} view={view} go={go} live={live}>
+    <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
       {view === "clients" ? (clientForDetail ? <ClientDetail c={clientForDetail} /> : ClientsView()) : null}
-      {view === "team" ? <TeamView /> : null}
+      {view === "team" && canSeeTeam ? <TeamView /> : null}
 
       {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canManage} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canManage} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
-      {modal?.kind === "member" ? <MemberModal member={modal.member} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
+      {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
         <Overlay onClose={close}><div className="modal"><header><h2>Give {modal.name} their sign-in</h2><button type="button" onClick={close}>Close</button></header>
           <div className="body"><div className="full stack">
@@ -447,15 +455,15 @@ export default function Workspace({ me }: { me: Profile }) {
 }
 
 /* ---------- layout ---------- */
-function Shell({ me, view, go, live, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ["team", "Team"]];
+function Shell({ me, view, go, live, showTeam, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; children: React.ReactNode }) {
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ...(showTeam ? [["team", "Team"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
         <div className="brand"><img src="/logo.webp" alt="Supertax" width={136} height={34} /><small>Practice Desk</small></div>
         <nav className="tabs" aria-label="Sections">{tabs.map(([v, l]) => (
           <a key={v} href={`#${v}`} aria-current={view === v ? "page" : undefined} onClick={(e) => { e.preventDefault(); go(v); }}>{l}</a>))}</nav>
-        <div className="userbox"><span><strong>{me.full_name}</strong> · {roleLabel(me.role)}</span><SignOutButton /></div>
+        <div className="userbox"><span><strong>{me.full_name}</strong></span><SignOutButton /></div>
       </div></header>
       <main className="wrap">
         {children}
@@ -490,7 +498,7 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
 }
 
 function JobModal({ job, presetClient, clients, team, canDelete, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; clients: Client[]; team: Profile[]; canDelete: boolean; supabase: SB; save: SaveFn; onClose: () => void;
+  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const preset = presetClient ? clients.find((c) => c.id === presetClient) : undefined;
@@ -545,7 +553,7 @@ function JobModal({ job, presetClient, clients, team, canDelete, supabase, save,
 }
 
 function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, say }: {
-  clients: Client[]; team: Profile[]; jobs: Job[]; personName: (id: string | null) => string; supabase: SB; save: SaveFn; onClose: () => void; say: (m: string, e?: boolean) => void;
+  clients: Client[]; team: Person[]; jobs: Job[]; personName: (id: string | null) => string; supabase: SB; save: SaveFn; onClose: () => void; say: (m: string, e?: boolean) => void;
 }) {
   const now = new Date();
   const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -611,7 +619,7 @@ function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, s
 }
 
 function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, confirm, onDeleted }: {
-  client?: Client; team: Profile[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
+  client?: Client; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
 }) {
   const [v, setV] = useState({
     name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
@@ -654,18 +662,18 @@ function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, c
   );
 }
 
-function MemberModal({ member, adminCall, onClose, onTemp, confirm, say }: {
-  member?: Profile; adminCall: (url: string, method: string, body?: unknown) => Promise<{ tempPassword?: string } | null>; onClose: () => void;
+function MemberModal({ member, managers, adminCall, onClose, onTemp, confirm, say }: {
+  member?: Profile; managers: Profile[]; adminCall: (url: string, method: string, body?: unknown) => Promise<{ tempPassword?: string } | null>; onClose: () => void;
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
-  const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff" });
+  const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     if (member) {
-      const r = await adminCall(`/api/admin/users/${member.id}`, "PATCH", { fullName: v.fullName, title: v.title, role: v.role });
+      const r = await adminCall(`/api/admin/users/${member.id}`, "PATCH", { fullName: v.fullName, title: v.title, role: v.role, reportsTo: v.role === "staff" ? v.reportsTo || null : null });
       setBusy(false);
       if (r) { say("Saved"); onClose(); }
     } else {
@@ -682,6 +690,9 @@ function MemberModal({ member, adminCall, onClose, onTemp, confirm, say }: {
         <label className="f">Email{member ? <input id="u-email" value={v.email} disabled /> : <input id="u-email" type="email" required value={v.email} onChange={set("email")} />}</label>
         <label className="f">Job title<input id="u-title" value={v.title} onChange={set("title")} placeholder="e.g. Senior accountant" /></label>
         <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Manager</option></select></label>
+        {v.role === "staff" ? (
+          <label className="f">Reports to (manager)<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No manager</option>{managers.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></label>
+        ) : null}
         {!member ? <p className="full hint" style={{ margin: 0 }}>You&apos;ll get a temporary password to give them. They choose their own the first time they sign in.</p> : null}
         {member ? (
           <div className="full row" style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>

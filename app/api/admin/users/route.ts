@@ -15,13 +15,19 @@ export async function POST(req: Request) {
   if (!email || !fullName) return NextResponse.json({ error: "Enter their name and email." }, { status: 400 });
 
   const admin = createAdminClient();
+  let reportsTo: string | null = null;
+  if (role === "staff" && typeof body.reportsTo === "string" && body.reportsTo) {
+    const { data: mgr } = await admin.from("profiles").select("role").eq("id", body.reportsTo).maybeSingle();
+    if (!mgr || mgr.role !== "manager") return NextResponse.json({ error: "Choose a manager from the list." }, { status: 400 });
+    reportsTo = body.reportsTo;
+  }
   const password = tempPassword();
   const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: fullName } });
   if (error || !data.user) {
     const msg = /already/i.test(error?.message ?? "") ? "Someone with that email already has an account." : error?.message ?? "Could not add them.";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
-  const { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true });
+  const { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...(reportsTo ? { reports_to: reportsTo } : {}) });
   if (pErr) {
     await admin.auth.admin.deleteUser(data.user.id);
     return NextResponse.json({ error: pErr.message }, { status: 500 });

@@ -20,6 +20,9 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+-- Who each staff member reports to (their manager). Set by the master admin.
+alter table public.profiles add column if not exists reports_to uuid references public.profiles (id) on delete set null;
+
 create table if not exists public.clients (
   id uuid primary key default gen_random_uuid(),
   name text not null check (length(trim(name)) > 0),
@@ -95,9 +98,29 @@ alter table public.profiles enable row level security;
 alter table public.clients enable row level security;
 alter table public.jobs enable row level security;
 
+-- Full team details (email, role, access): the master admin sees everyone,
+-- a manager sees themselves and the people who report to them, staff see only themselves.
 drop policy if exists "members read team" on public.profiles;
 create policy "members read team" on public.profiles
-  for select to authenticated using (public.is_active_member());
+  for select to authenticated using (
+    public.is_active_member() and (
+      id = auth.uid()
+      or public.my_role() = 'master'
+      or (public.my_role() = 'manager' and reports_to = auth.uid())
+    )
+  );
+
+-- Names only, so everyone can see who a job is assigned to and pick people
+-- in the job and client forms. No emails, roles or access status.
+create or replace function public.team_directory()
+returns table (id uuid, full_name text, title text, active boolean)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.full_name, p.title, p.active from public.profiles p
+  where public.is_active_member()
+  order by p.full_name;
+$$;
+revoke all on function public.team_directory() from public, anon;
+grant execute on function public.team_directory() to authenticated;
 
 drop policy if exists "people update own name" on public.profiles;
 create policy "people update own name" on public.profiles

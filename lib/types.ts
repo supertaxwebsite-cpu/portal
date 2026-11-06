@@ -8,7 +8,16 @@ export interface Profile {
   role: Role;
   active: boolean;
   must_change_password: boolean;
+  reports_to?: string | null;
   created_at: string;
+}
+
+/** Names-only view of everyone, for showing who a job is assigned to. */
+export interface Person {
+  id: string;
+  full_name: string;
+  title: string;
+  active: boolean;
 }
 
 export interface Client {
