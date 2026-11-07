@@ -273,7 +273,7 @@ export default function Workspace({ me }: { me: Profile }) {
           <Tile lbl="Due in the next 7 days" n={week.length} cls={week.length ? "warn" : ""} f={{ due: "week" }} />
           <Tile lbl="Waiting on client" n={waiting.length} f={{ status: "waiting" }} />
           <Tile lbl="Ready for review or lodgment" n={review.length} f={{ status: "review_any" }} />
-          <Tile lbl="Lodged this month" n={lodged.length} f={{ status: "closed" }} />
+          <Tile lbl="Lodged this month" n={lodged.length} f={{ status: "lodged" }} />
         </div>
         <div className="panel" style={{ padding: "12px 14px", marginBottom: 16 }}>
           <div className="ph" style={{ padding: 0, marginBottom: 8 }}><h2>All jobs by status</h2><button className="link" onClick={() => gotoJobs({ status: "" })}>See all {jobs.length}</button></div>
@@ -370,7 +370,7 @@ export default function Workspace({ me }: { me: Profile }) {
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
             <option value="open">All open jobs</option><option value="review_any">Ready for review or lodgment</option>
             {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            <option value="closed">Lodged or completed</option><option value="">Everything</option>
+            <option value="">Everything</option>
           </select>
           <select id="jf-due" aria-label="Due" value={jf.due} onChange={set("due")}>
             {[["", "Any due date"], ["overdue", "Overdue"], ["week", "Due in 7 days"], ["week_or_overdue", "Overdue or due in 7 days"], ["month", "Due in 30 days"], ["nodate", "No due date"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}

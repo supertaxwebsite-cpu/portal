@@ -753,3 +753,9 @@ begin
   return hrs;
 end $$;
 revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;
+
+-- ===== "Sent for sign" status; "Completed" removed (Lodged is the final status) =====
+alter table public.jobs drop constraint if exists jobs_status_check;
+update public.jobs set status = 'lodged', lodged_on = coalesce(lodged_on, (updated_at at time zone 'Australia/Sydney')::date) where status = 'done';
+alter table public.jobs add constraint jobs_status_check
+  check (status in ('not_started', 'waiting', 'internal_query', 'in_progress', 'review', 'to_lodge', 'sent_for_sign', 'lodged'));

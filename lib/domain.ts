@@ -30,8 +30,8 @@ export const STATUSES: Status[] = [
   { id: "in_progress", label: "In progress", cls: "info", open: true },
   { id: "review", label: "Ready for review", cls: "accent", open: true },
   { id: "to_lodge", label: "Ready to lodge", cls: "accent", open: true },
+  { id: "sent_for_sign", label: "Sent for sign", cls: "warn", open: true },
   { id: "lodged", label: "Lodged", cls: "ok", open: false },
-  { id: "done", label: "Completed", cls: "ok", open: false },
 ];
 export const ST: Record<string, Status> = Object.fromEntries(STATUSES.map((s) => [s.id, s]));
 export const isOpen = (status: string) => ST[status]?.open !== false;
