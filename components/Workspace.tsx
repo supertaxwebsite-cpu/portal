@@ -85,8 +85,8 @@ export default function Workspace({ me }: { me: Profile }) {
 
   // Initial load + live refresh when anyone changes something.
   useEffect(() => {
-    // Make sure this week's automatic payroll jobs exist (does nothing if they already do).
-    supabase.rpc("generate_payroll_jobs").then(() => load(), () => load());
+    // Make sure today's automatic payroll and BAS jobs exist (does nothing if they already do).
+    supabase.rpc("generate_recurring_jobs").then(({ error }) => (error ? supabase.rpc("generate_payroll_jobs") : null)).then(() => load(), () => load());
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => { clearTimeout(timer); timer = setTimeout(load, 300); };
     const channel = supabase
@@ -681,7 +681,7 @@ function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, c
         {hasPayroll ? <>
           <label className="f">Pay frequency<select id="c-payfreq" value={v.payroll_freq} onChange={set("payroll_freq")}><option value="">Not set (no automatic jobs)</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option></select></label>
           {v.payroll_freq ? <label className="f">{v.payroll_freq === "monthly" ? "A pay date (sets the day of the month)" : "Next pay date"}<input id="c-payanchor" type="date" value={v.payroll_anchor} onChange={set("payroll_anchor")} required /></label> : null}
-          {v.payroll_freq ? <p className="full hint" style={{ margin: 0 }}>A payroll job is created automatically for every pay date, a week ahead, assigned to the client&apos;s manager.</p> : null}
+          {v.payroll_freq ? <p className="full hint" style={{ margin: 0 }}>A payroll job is created automatically on each pay day, assigned to the client&apos;s manager.</p> : null}
         </> : null}
         <label className="f full">Notes<textarea id="c-notes" value={v.notes} onChange={set("notes")} placeholder="Software they use, year-end, quirks…" /></label>
         <p className="full hint" style={{ margin: 0 }}>Don&apos;t store TFNs, passwords or bank details here.</p>

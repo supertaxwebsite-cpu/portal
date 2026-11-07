@@ -435,3 +435,56 @@ do $$ begin
     begin alter publication supabase_realtime add table public.late_requests; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ===== Automatic BAS jobs, and payroll jobs on the pay day =====
+-- Quarterly BAS clients get "Qn FYyy" when each quarter starts; monthly BAS
+-- clients get "Mon YYYY" when each month starts. Due dates follow the ATO
+-- tax agent lodgment program. Payroll jobs are created on the pay day itself.
+create or replace function public.generate_bas_jobs() returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  today date := (now() at time zone 'Australia/Sydney')::date;
+  m int := extract(month from today)::int;
+  y int := extract(year from today)::int;
+  fy int := case when m >= 7 then y + 1 else y end;
+  q int := case when m between 7 and 9 then 1 when m between 10 and 12 then 2 when m between 1 and 3 then 3 else 4 end;
+  q_due date := case q when 1 then make_date(fy - 1, 11, 25) when 2 then make_date(fy, 2, 28) when 3 then make_date(fy, 5, 26) else make_date(fy, 8, 25) end;
+  n1 int; n2 int;
+begin
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'bas', 'Q' || q || ' FY' || right(fy::text, 2), q_due, c.manager_id
+  from public.clients c
+  where 'bas' = any (c.services) and c.bas_freq = 'quarterly'
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n1 = row_count;
+
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'bas', to_char(today, 'Mon YYYY'), (date_trunc('month', today) + interval '1 month 20 days')::date, c.manager_id
+  from public.clients c
+  where 'bas' = any (c.services) and c.bas_freq = 'monthly'
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n2 = row_count;
+  return n1 + n2;
+end $$;
+revoke all on function public.generate_bas_jobs() from public, anon;
+
+-- Payroll and BAS together. Runs daily, when a client is saved, and when the portal opens.
+create or replace function public.generate_recurring_jobs() returns integer
+language plpgsql security definer set search_path = public as $$
+begin
+  return public.generate_payroll_jobs(0) + public.generate_bas_jobs();
+end $$;
+revoke all on function public.generate_recurring_jobs() from public, anon;
+grant execute on function public.generate_recurring_jobs() to authenticated;
+
+create or replace function public.payroll_jobs_after_client_change() returns trigger
+language plpgsql set search_path = public as $$ begin perform public.generate_recurring_jobs(); return null; end $$;
+drop trigger if exists clients_payroll_jobs on public.clients;
+create trigger clients_payroll_jobs after insert or update of services, payroll_freq, payroll_anchor, bas_freq on public.clients
+  for each statement execute function public.payroll_jobs_after_client_change();
+
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('supertax-payroll-jobs', '5 13 * * *', 'select public.generate_recurring_jobs()');
+  end if;
+end $$;
