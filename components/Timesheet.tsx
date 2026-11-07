@@ -123,8 +123,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     setBusy(true);
     const { error } = await supabase.rpc(kind);
     setBusy(false);
-    if (error) { say(`That didn't work: ${error.message}`, true); return; }
-    say(kind === "clock_in" ? "Clocked in" : "Clocked out");
+    if (error) { say(`That didn't work: ${error.message.replace(/clock out/g, "log out").replace(/clocked in/g, "logged in")}`, true); return; }
+    say(kind === "clock_in" ? "Logged in" : "Logged out");
     load();
   }
 
@@ -145,8 +145,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   function exportCsv() {
     const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = [["Date", "Person", "Client", "Job", "Hours", "Description"], ...teamEntries.map((e) => [e.work_date, name(e.user_id), clientName(e.client_id), jobLabel(e.job_id), e.hours, e.description])];
-    rows.push([], ["Date", "Person", "Clocked in", "Clocked out", "Time clocked (hours)", "Timesheet hours", "Status"]);
-    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still clocked in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && "Leave", d.late && "Late", d.half && "Half day"].filter(Boolean).join(", ") || "Present"]));
+    rows.push([], ["Date", "Person", "Logged in", "Logged out", "Time logged in (hours)", "Timesheet hours", "Status"]);
+    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still logged in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && "Leave", d.late && "Late", d.half && "Half day"].filter(Boolean).join(", ") || "Present"]));
     const blob = new Blob(["﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -157,22 +157,22 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
 
   return (
     <>
-      <div className="pagehead"><div><h1>Timesheet</h1><p>Clock in when you start, clock out when you finish, and record what you worked on.</p></div></div>
+      <div className="pagehead"><div><h1>Timesheet</h1><p>Log in when you start, log out when you finish, and record what you worked on.</p></div></div>
 
       <div className="grid2">
         <div className="section">
           <div className="panel" style={{ padding: 16 }}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div>
-                <h2 style={{ margin: 0 }}>{openShift ? "You're clocked in" : "You're clocked out"}</h2>
+                <h2 style={{ margin: 0 }}>{openShift ? "You're logged in" : "You're logged out"}</h2>
                 <p className="note" style={{ margin: "4px 0 0" }}>{openShift
                   ? <>Since {time(openShift.clock_in)}{openShift.work_date !== todayISO() ? ` on ${fmtDate(openShift.work_date)}` : ""} · {hm(mins(openShift, now))}</>
-                  : "Clock in when you start work."}</p>
-                {openShift && !shiftFilled ? <p className="pill warn" style={{ margin: "8px 0 0", whiteSpace: "normal" }}>Fill in your timesheet for {fmtDate(openShift.work_date)} below before you clock out.</p> : null}
+                  : "Log in when you start work."}</p>
+                {openShift && !shiftFilled ? <p className="pill warn" style={{ margin: "8px 0 0", whiteSpace: "normal" }}>Fill in your timesheet for {fmtDate(openShift.work_date)} below before you log out.</p> : null}
               </div>
               {openShift
-                ? <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy || !shiftFilled} title={shiftFilled ? undefined : "Fill in your timesheet first"} onClick={() => clock("clock_out")}>Clock out</button>
-                : <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy} onClick={() => clock("clock_in")}>Clock in</button>}
+                ? <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy || !shiftFilled} title={shiftFilled ? undefined : "Fill in your timesheet first"} onClick={() => clock("clock_out")}>Log out</button>
+                : <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy} onClick={() => clock("clock_in")}>Log in</button>}
             </div>
           </div>
 
@@ -190,7 +190,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
               <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
                 <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}</li>))}</ul>
             ) : <p className="note" style={{ margin: 0 }}>No late starts, half days or leave this month.</p>}
-            <p className="note" style={{ margin: "10px 0 0" }}>Late = clock in after 7:45 am · Half day = under 8 hours clocked · Leave = a weekday with no timesheet. Your manager and the master admin can see this.</p>
+            <p className="note" style={{ margin: "10px 0 0" }}>Late = log in after 7:45 am · Half day = under 8 hours logged in · Leave = a weekday with no timesheet. Your manager and the master admin can see this.</p>
           </div>
         </div>
       </div>
@@ -199,7 +199,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
           <div className="panel">
             <div className="ph"><h2>My timesheet</h2><label className="row note">Date <input type="date" id="ts-day" value={day} max={todayISO()} onChange={(e) => e.target.value && setDay(e.target.value)} /></label></div>
             <p className="note" style={{ padding: "4px 14px 0", margin: 0 }}>
-              {myDayAtt.length ? <>Clocked {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No clock-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
+              {myDayAtt.length ? <>Logged in {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No log-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
             </p>
             <div className="tablebox solo" style={{ margin: 12 }}>
               <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>What you did</th><th></th></tr></thead>
@@ -225,8 +225,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
             <span className="row" style={{ marginLeft: "auto", gap: 6 }}><span className="pill warn">{counts.late} late</span><span className="pill info">{counts.half} half day</span><span className="pill danger">{counts.leave} leave</span></span>
           </div>
           <div className="tablebox">
-            {!summary.length ? <div className="empty"><strong>Nothing recorded for these dates.</strong>Clock-ins and timesheet entries show here.</div> : (
-              <table><thead><tr><th>Date</th><th>Person</th><th>Clocked in</th><th>Clocked out</th><th style={{ textAlign: "right" }}>Time clocked</th><th style={{ textAlign: "right" }}>Timesheet</th><th>Status</th></tr></thead>
+            {!summary.length ? <div className="empty"><strong>Nothing recorded for these dates.</strong>Log-ins and timesheet entries show here.</div> : (
+              <table><thead><tr><th>Date</th><th>Person</th><th>Logged in</th><th>Logged out</th><th style={{ textAlign: "right" }}>Time logged in</th><th style={{ textAlign: "right" }}>Timesheet</th><th>Status</th></tr></thead>
                 <tbody>{summary.map((d) => (
                   <tr key={`${d.date}|${d.user}`}><td>{fmtDate(d.date)}</td><td className="client">{name(d.user)}</td><td>{time(d.first || null) || "—"}</td>
                     <td>{d.open ? <span className="pill info">Still in</span> : time(d.last) || "—"}</td>
