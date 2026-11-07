@@ -622,8 +622,25 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
   const [tab, setTab] = useState<"details" | "history">("details");
   const [sum, setSum] = useState<JobSummary | null>(null);
   const logged = sum?.hours ?? 0;
+  // Add a new client without leaving the form.
+  const [quick, setQuick] = useState<{ name: string; entity: string; abn: string } | null>(null);
+  const [added, setAdded] = useState<Client[]>([]);
+  const allClients = useMemo(() => [...clients, ...added.filter((a) => !clients.some((c) => c.id === a.id))].sort((a, b) => a.name.localeCompare(b.name)), [clients, added]);
+  async function addQuickClient() {
+    if (!quick?.name.trim()) return;
+    if (allClients.some((c) => c.name.trim().toLowerCase() === quick.name.trim().toLowerCase())) { say("A client with this name already exists. Search for it above.", true); return; }
+    setBusy(true);
+    const { data, error } = await supabase.from("clients").insert({ name: quick.name.trim(), entity: quick.entity, abn: quick.abn.trim(), services: SVC[v.service] && v.service !== "other" ? [v.service] : [] }).select().single();
+    setBusy(false);
+    if (error || !data) { say(`Client not added: ${error?.message ?? "try again"}`, true); return; }
+    const c = data as Client;
+    setAdded((x) => [...x, c]);
+    setV((cur) => ({ ...cur, client_id: c.id, assignee_id: cur.assignee_id || c.manager_id || "" }));
+    setQuick(null);
+    say(`${c.name} added`);
+  }
   // Period choices depend on the service (and the client's BAS / payroll settings).
-  const client = clients.find((c) => c.id === v.client_id);
+  const client = allClients.find((c) => c.id === v.client_id);
   const groups = useMemo(() => periodOptions(v.service, client), [v.service, client]);
   const allOpts = groups.flatMap((g) => g.options);
   const [custom, setCustom] = useState(() => !!job?.period && !periodOptions(job.service, clients.find((c) => c.id === job.client_id)).some((g) => g.options.some((o) => o.label === job.period)));
@@ -688,8 +705,19 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>
         {readOnly ? <div className="full hint lockednote">This job is {job?.status === "lodged" ? "lodged" : "completed"}, so it&apos;s read-only. Only a master admin can change it. The History &amp; time tab shows everything that was done.</div>
           : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
-        <label className="f full">Client<ClientPicker id="m-client" required disabled={locked} clients={clients} value={v.client_id} placeholder="Search client by name or ABN…"
-          onChange={(id) => set("client_id")({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>)} /></label>
+        <label className="f full">Client<ClientPicker id="m-client" required disabled={locked} clients={allClients} value={v.client_id} placeholder="Search client by name or ABN…"
+          onChange={(id) => set("client_id")({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>)}
+          onCreate={job ? undefined : (name) => setQuick({ name, entity: "Company", abn: "" })} /></label>
+        {quick ? <div className="full quickclient">
+          <strong>New client</strong>
+          <div className="qrow">
+            <label className="f">Name<input id="qc-name" autoFocus value={quick.name} onChange={(e) => setQuick({ ...quick, name: e.target.value })} placeholder="e.g. Sahej Logistics Pty Ltd" /></label>
+            <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => setQuick({ ...quick, entity: e.target.value })}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
+            <label className="f">ABN<input id="qc-abn" value={quick.abn} onChange={(e) => setQuick({ ...quick, abn: e.target.value })} placeholder="Optional" inputMode="numeric" /></label>
+          </div>
+          <div className="row"><button type="button" className="primary" disabled={busy || !quick.name.trim()} onClick={addQuickClient}>Add client</button><button type="button" onClick={() => setQuick(null)}>Cancel</button>
+            <span className="note">You can add contact details later from the client page.</span></div>
+        </div> : null}
         <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Period{isCustom ? <span className="periodown">
             <input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} />

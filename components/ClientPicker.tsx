@@ -4,7 +4,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 interface C { id: string; name: string; abn?: string }
 
 /** Type-to-search client picker (name or ABN). Works like a select: value is the client id. */
-export default function ClientPicker({ clients, value, onChange, id, disabled, required, placeholder = "Search clients…", emptyLabel, style }: {
+export default function ClientPicker({ clients, value, onChange, onCreate, id, disabled, required, placeholder = "Search clients…", emptyLabel, style }: {
+  onCreate?: (typedName: string) => void;
   clients: C[]; value: string; onChange: (id: string) => void; id?: string; disabled?: boolean; required?: boolean;
   placeholder?: string; emptyLabel?: string; style?: React.CSSProperties;
 }) {
@@ -52,7 +53,11 @@ export default function ClientPicker({ clients, value, onChange, id, disabled, r
   useEffect(() => { setHi(0); }, [q]);
   useEffect(() => { listRef.current?.children[hi]?.scrollIntoView({ block: "nearest" }); }, [hi]);
 
-  const pick = (o: { id: string; label: string }) => { onChange(o.id); setText(o.id ? o.label : ""); setOpen(false); };
+  const pick = (o: { id: string; label: string }) => {
+    if (o.id === "__new") { setOpen(false); onCreate?.(typed ? text.trim() : ""); return; }
+    onChange(o.id); setText(o.id ? o.label : ""); setOpen(false);
+  };
+  if (onCreate) opts.push({ id: "__new", label: typed ? `+ Add new client “${text.trim()}”` : "+ Add a new client" });
   return (
     <div className="picker" style={style}>
       <input ref={inputRef} id={id} type="text" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off"
@@ -70,7 +75,7 @@ export default function ClientPicker({ clients, value, onChange, id, disabled, r
         <ul className="pickerlist" id={listId} role="listbox" ref={listRef}
           style={pos ? { position: "fixed", left: pos.left, width: pos.width, right: "auto", ...(pos.up ? { top: "auto", bottom: window.innerHeight - pos.top } : { top: pos.top }) } : undefined}>
           {opts.length ? opts.map((o, i) => (
-            <li key={o.id || "__all"} role="option" aria-selected={o.id === value} className={`${i === hi ? "hi" : ""} ${o.id === value ? "sel" : ""}`}
+            <li key={o.id || "__all"} role="option" aria-selected={o.id === value} className={`${i === hi ? "hi" : ""} ${o.id === value ? "sel" : ""} ${o.id === "__new" ? "new" : ""}`}
               onMouseDown={(e) => { e.preventDefault(); pick(o); }} onMouseEnter={() => setHi(i)}>
               <span>{o.label}</span>{o.sub ? <small>{o.sub}</small> : null}</li>
           )) : <li className="none">No client matches “{text}”</li>}
