@@ -51,6 +51,7 @@ export interface Job {
   priority: "normal" | "high";
   notes: string;
   lodged_on: string | null;
+  query_from?: string | null;
   updated_at: string;
   updated_by: string | null;
 }

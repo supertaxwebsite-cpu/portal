@@ -7,8 +7,11 @@ export const fmtHours = (h: number) => { const m = Math.max(1, Math.round(h * 60
 const elapsed = (from: string, now: number) => { const m = Math.max(0, Math.floor((now - new Date(from).getTime()) / 60000)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
+  myId: string;
+  personName: (id: string | null) => string;
+  onAnswer: (j: Job) => void;
   running: JobTimer | null;
   clientName: (id: string) => string;
   reviewerName: string;
@@ -32,22 +35,27 @@ export default function MyJobs({ jobs, running, clientName, reviewerName, busy, 
           const on = running?.job_id === j.id;
           const d = j.due_date ? daysFrom(j.due_date) : null;
           const canSubmit = j.status !== "review" && j.status !== "to_lodge";
+          const away = j.assignee_id !== myId; // I sent it for an internal query
+          const incoming = !away && j.status === "internal_query" && !!j.query_from;
           return (
-            <li key={j.id} className={on ? "running" : ""}>
+            <li key={j.id} className={on ? "running" : away ? "away" : ""}>
               <div style={{ minWidth: 0 }}>
                 <div className="t"><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpen(j)}>{clientName(j.client_id)}</button></div>
                 <div className="s">{svcLabel(j.service)} · {j.period}{j.due_date ? <> · <span className={d! < 0 ? "danger" : d! <= 7 ? "warn" : ""}>{d! < 0 ? `${-d!}d overdue` : `due ${fmtDate(j.due_date)}`}</span></> : null}</div>
+                {incoming ? <div className="s"><span className="pill danger">Internal query from {personName(j.query_from ?? null)}</span></div> : null}
               </div>
-              <div className="row actions">
+              {away ? <div className="row actions"><span className="pill danger">With {personName(j.assignee_id)} for internal query</span></div> : <div className="row actions">
                 {on ? <>
                   <span className="timer mono" title={`Started ${new Date(running!.started_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}>● {elapsed(running!.started_at, now)}</span>
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button className="primary" disabled={busy} onClick={() => onStart(j)}>Start</button>}
+                {incoming ? <button disabled={busy} onClick={() => onAnswer(j)}>Send back</button> : <>
                 <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
                   {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
                 {canSubmit ? <button disabled={busy} onClick={() => onSubmit(j)} title={reviewerName ? `Send to ${reviewerName} for review` : "Mark ready for review"}>Submit for review</button> : null}
-              </div>
+                </>}
+              </div>}
             </li>);
         })}</ul>)}
       {running && !jobs.some((j) => j.id === running.job_id) ? (

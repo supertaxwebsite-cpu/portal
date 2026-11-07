@@ -624,3 +624,132 @@ create trigger jobs_guard before update on public.jobs
 alter table public.jobs drop constraint if exists jobs_status_check;
 alter table public.jobs add constraint jobs_status_check
   check (status in ('not_started', 'waiting', 'internal_query', 'in_progress', 'review', 'to_lodge', 'lodged', 'done'));
+
+-- ===== Internal query: send a job to a team member and get it back =====
+-- query_from remembers who sent the job, so it can go back to them.
+alter table public.jobs add column if not exists query_from uuid references public.profiles (id) on delete set null;
+
+-- Let the two functions below move a job between people even for staff.
+create or replace function public.guard_job_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.my_role() is distinct from 'staff'
+     or current_setting('supertax.job_handover', true) = 'on' then return new; end if;
+  new.query_from := old.query_from;
+  if new.status = 'lodged' and old.lodged_on is null then
+    new.lodged_on := (now() at time zone 'Australia/Sydney')::date;
+  else
+    new.lodged_on := old.lodged_on;
+  end if;
+  if new.reviewer_id is distinct from old.reviewer_id
+     and not (old.reviewer_id is null and new.reviewer_id is not distinct from (select reports_to from public.profiles where id = auth.uid())) then
+    raise exception 'Only your manager can change the reviewer of a job' using errcode = '42501';
+  end if;
+  if (new.client_id, new.service, new.period, new.due_date, new.priority, new.assignee_id)
+     is distinct from (old.client_id, old.service, old.period, old.due_date, old.priority, old.assignee_id) then
+    raise exception 'Only your manager can change the client, service, period, due date, priority or assignee of a job' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+
+create or replace function public.send_internal_query(p_job uuid, p_to uuid, p_note text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); who text;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from me and public.my_role() not in ('master', 'manager') then
+    raise exception 'Only the person working on this job can send it for an internal query' using errcode = '42501';
+  end if;
+  if p_to is null or p_to = me or not exists (select 1 from public.profiles where id = p_to and active) then
+    raise exception 'Choose another team member to send the query to';
+  end if;
+  -- Log any time running on this job before it changes hands.
+  if exists (select 1 from public.job_timers where user_id = me and job_id = p_job and ended_at is null) then
+    perform public.end_job_timer(me);
+  end if;
+  select full_name into who from public.profiles where id = me;
+  perform set_config('supertax.job_handover', 'on', true);
+  update public.jobs set
+    status = 'internal_query',
+    query_from = coalesce(j.query_from, j.assignee_id, me),
+    assignee_id = p_to,
+    notes = case when coalesce(trim(p_note), '') = '' then notes
+                 else trim(both E'\n' from notes || E'\n' || 'Internal query from ' || who || ' (' || to_char(now() at time zone 'Australia/Sydney', 'FMDD Mon') || '): ' || trim(p_note)) end
+  where id = p_job;
+  perform set_config('supertax.job_handover', 'off', true);
+end $$;
+
+create or replace function public.answer_internal_query(p_job uuid, p_note text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); who text;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.query_from is null then raise exception 'This job has no internal query to answer'; end if;
+  if j.assignee_id is distinct from me and public.my_role() not in ('master', 'manager') then
+    raise exception 'Only the person the query was sent to can send it back' using errcode = '42501';
+  end if;
+  if exists (select 1 from public.job_timers where user_id = me and job_id = p_job and ended_at is null) then
+    perform public.end_job_timer(me);
+  end if;
+  select full_name into who from public.profiles where id = me;
+  perform set_config('supertax.job_handover', 'on', true);
+  update public.jobs set
+    status = 'in_progress',
+    assignee_id = j.query_from,
+    query_from = null,
+    notes = case when coalesce(trim(p_note), '') = '' then notes
+                 else trim(both E'\n' from notes || E'\n' || 'Reply from ' || who || ' (' || to_char(now() at time zone 'Australia/Sydney', 'FMDD Mon') || '): ' || trim(p_note)) end
+  where id = p_job;
+  perform set_config('supertax.job_handover', 'off', true);
+end $$;
+revoke all on function public.send_internal_query(uuid, uuid, text), public.answer_internal_query(uuid, text) from public, anon;
+grant execute on function public.send_internal_query(uuid, uuid, text), public.answer_internal_query(uuid, text) to authenticated;
+
+-- Starting a job under internal query keeps it as Internal query; the timer note says so.
+create or replace function public.start_job(p_job uuid) returns public.job_timers
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; t public.job_timers;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from auth.uid() then raise exception 'You can only start jobs assigned to you'; end if;
+  if j.status in ('lodged', 'done') then raise exception 'This job is already finished'; end if;
+  select * into t from public.job_timers where user_id = auth.uid() and ended_at is null;
+  if found then
+    if t.job_id = p_job then return t; end if;
+    perform public.end_job_timer(auth.uid());
+  end if;
+  insert into public.job_timers (user_id, job_id) values (auth.uid(), p_job) returning * into t;
+  if j.status in ('not_started', 'waiting') then
+    update public.jobs set status = 'in_progress' where id = p_job;
+  end if;
+  return t;
+end $$;
+
+create or replace function public.end_job_timer(p_uid uuid) returns numeric
+language plpgsql security definer set search_path = public as $$
+declare
+  t public.job_timers;
+  j public.jobs;
+  tz constant text := 'Australia/Sydney';
+  hrs numeric;
+  e uuid;
+begin
+  select * into t from public.job_timers where user_id = p_uid and ended_at is null for update;
+  if not found then return null; end if;
+  select * into j from public.jobs where id = t.job_id;
+  hrs := least(24, greatest(0.01, round((extract(epoch from now() - t.started_at) / 3600)::numeric, 2)));
+  insert into public.timesheet_entries (user_id, work_date, client_id, job_id, hours, description)
+  values (p_uid, (t.started_at at time zone tz)::date, j.client_id, t.job_id, hrs,
+          case when j.status = 'internal_query' and j.assignee_id = p_uid then 'Internal review, timer ' else 'Timer ' end
+          || lower(to_char(t.started_at at time zone tz, 'FMHH12:MIAM')) || ' to ' || lower(to_char(now() at time zone tz, 'FMHH12:MIAM')))
+  returning id into e;
+  update public.job_timers set ended_at = now(), entry_id = e where id = t.id;
+  return hrs;
+end $$;
+revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;

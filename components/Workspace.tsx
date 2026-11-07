@@ -23,6 +23,7 @@ type Modal =
   | { kind: "client"; client?: Client }
   | { kind: "member"; member?: Profile }
   | { kind: "import" }
+  | { kind: "query"; job: Job; mode: "send" | "answer" }
   | { kind: "temp"; name: string; email: string; password: string }
   | { kind: "confirm"; title: string; text: string; yes: string; run: () => Promise<boolean | void> }
   | null;
@@ -167,6 +168,8 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   async function setStatus(j: Job, status: StatusId) {
+    // Internal query: pick who to send it to first.
+    if (status === "internal_query" && j.status !== "internal_query") { setModal({ kind: "query", job: j, mode: "send" }); return; }
     const upd: Partial<Job> = { status };
     if (status === "lodged" && !j.lodged_on) upd.lodged_on = todayISO();
     await save(() => supabase.from("jobs").update(upd).eq("id", j.id), `Marked ${ST[status].label.toLowerCase()}`);
@@ -279,7 +282,8 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="grid2">
           <div className="section">
-            <MyJobs jobs={openJobs.filter((j) => j.assignee_id === me.id)} running={running} clientName={clientName} busy={timerBusy}
+            <MyJobs jobs={openJobs.filter((j) => j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query"))} myId={me.id} personName={personName}
+              onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} running={running} clientName={clientName} busy={timerBusy}
               reviewerName={me.reports_to ? personName(me.reports_to) : ""}
               onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview}
               onOpen={(j) => setModal({ kind: "job", job: j })} onSeeAll={() => gotoJobs({ assignee: me.id })} />
@@ -515,7 +519,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canDelete} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -532,6 +536,14 @@ export default function Workspace({ me }: { me: Profile }) {
           </div></div>
           <footer><span /><button type="button" className="primary" onClick={close}>Done</button></footer></div></Overlay>
       ) : null}
+      {modal?.kind === "query" ? <QueryModal job={modal.job} mode={modal.mode} me={me} team={team} clientName={clientName} personName={personName}
+        run={async (to, note) => {
+          const ok = await timerCall(() => modal.mode === "send"
+            ? supabase.rpc("send_internal_query", { p_job: modal.job.id, p_to: to, p_note: note })
+            : supabase.rpc("answer_internal_query", { p_job: modal.job.id, p_note: note }),
+          () => (modal.mode === "send" ? `Sent to ${personName(to)} for an internal query` : `Sent back to ${personName(modal.job.query_from ?? null)}`));
+          if (ok) close();
+        }} onClose={close} /> : null}
       {modal?.kind === "confirm" ? <ConfirmModal {...modal} onClose={close} /> : null}
 
       {toast ? <div className={`toast${toast.err ? " err" : ""}`} role="status">{toast.msg}</div> : null}
@@ -583,8 +595,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, clients, team, canDelete, locked, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; locked: boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, clients, team, canDelete, locked, onQuery, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; locked: boolean; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const preset = presetClient ? clients.find((c) => c.id === presetClient) : undefined;
@@ -616,10 +628,14 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked, supabas
     // Staff can only change the status and notes of an existing job (the database enforces this too).
     const row: Partial<Job> = locked ? { status: v.status, notes: v.notes, ...(v.status === "lodged" && !job?.lodged_on ? { lodged_on: todayISO() } : {}) } : { ...v, period: v.period.trim(), due_date: v.due_date || null, assignee_id: v.assignee_id || null, reviewer_id: v.reviewer_id || null,
       lodged_on: v.lodged_on || (v.status === "lodged" ? todayISO() : null) };
-    const ok = job ? await save(() => supabase.from("jobs").update(row).eq("id", job.id), "Job saved")
+    // Choosing Internal query: save the other changes, then pick who to send it to.
+    const query = !!job && v.status === "internal_query" && job.status !== "internal_query";
+    if (query) row.status = job.status;
+    const ok = job ? await save(() => supabase.from("jobs").update(row).eq("id", job.id), query ? undefined : "Job saved")
       : await save(() => supabase.from("jobs").insert(row), "Job created");
     setBusy(false);
-    if (ok) onClose();
+    if (ok && query) onQuery({ ...job, ...row } as Job);
+    else if (ok) onClose();
   }
   const opts = (blank: string) => <><option value="">{blank}</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>;
   return (
@@ -880,5 +896,31 @@ function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
       <footer><span className="note">Only the master admin and managers can import.</span><div className="row"><button type="button" onClick={onClose}>Cancel</button>
         <button type="button" className="primary" disabled={busy || !check?.ready.length} onClick={run}>{busy ? "Importing…" : `Import ${check?.ready.length ?? 0} client${check?.ready.length === 1 ? "" : "s"}`}</button></div></footer>
     </div></Overlay>
+  );
+}
+
+function QueryModal({ job, mode, me, team, clientName, personName, run, onClose }: {
+  job: Job; mode: "send" | "answer"; me: Profile; team: Person[]; clientName: (id: string) => string; personName: (id: string | null) => string;
+  run: (to: string, note: string) => Promise<void>; onClose: () => void;
+}) {
+  const [to, setTo] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = mode === "send";
+  const back = personName(job.query_from ?? null);
+  return (
+    <Overlay onClose={onClose}><form className="modal" onSubmit={async (e) => { e.preventDefault(); setBusy(true); await run(to, note); setBusy(false); }}>
+      <header><h2>{send ? "Send for internal query" : "Send back"}</h2><button type="button" onClick={onClose}>Close</button></header>
+      <div className="body">
+        <p className="full muted" style={{ margin: 0 }}>{clientName(job.client_id)} · {svcLabel(job.service)} · {job.period}</p>
+        {send ? <label className="f full">Send to<select id="q-to" required value={to} onChange={(e) => setTo(e.target.value)}>
+          <option value="">Choose a team member…</option>{team.filter((p) => p.id !== me.id).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label> : null}
+        <label className="f full">{send ? "What's the query?" : "Your reply"}<textarea id="q-note" placeholder={send ? "e.g. Please check the GST coding on the October invoices" : "e.g. Checked, the coding is right"} value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        <div className="full hint">{send
+          ? "The job moves to them as an Internal query and shows in their My jobs, where they can Start and Stop it to log their review time. When they send it back, it returns to the person it came from."
+          : `The job goes back to ${back || "the person who sent it"} as In progress. Your note is added to the job's notes.`}</div>
+      </div>
+      <footer><span /><div className="row"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy || (send && !to)}>{send ? "Send query" : `Send back${back ? ` to ${back}` : ""}`}</button></div></footer>
+    </form></Overlay>
   );
 }
