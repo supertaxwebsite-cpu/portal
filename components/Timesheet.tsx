@@ -22,15 +22,19 @@ const sydneyMinutes = (ts: string) => {
 const addDays = (d: string, n: number) => { const [y, m, dd] = d.split("-").map(Number); const x = new Date(Date.UTC(y, m - 1, dd + n)); return x.toISOString().slice(0, 10); };
 const isWeekday = (d: string) => { const [y, m, dd] = d.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay(); return w >= 1 && w <= 5; };
 
-export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean }
+export interface Override { user_id: string; work_date: string; status: "present" | "leave" | "half_day"; note: string }
+export interface LateRequest { user_id: string; work_date: string; reason: string; status: "pending" | "approved" | "rejected" }
 
-function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string; created_at?: string }[], from: string, to: string, now: number): Day[] {
+export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean; override?: Override["status"]; request?: LateRequest["status"]; lateExcused: boolean }
+
+function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string; created_at?: string }[], from: string, to: string, now: number,
+  overrides: Override[] = [], requests: LateRequest[] = []): Day[] {
   const ids = new Set(people.map((p) => p.id));
   const map = new Map<string, Day>();
   const get = (user: string, date: string) => {
     const k = `${date}|${user}`;
     let d = map.get(k);
-    if (!d) { d = { user, date, first: "", last: null, open: false, m: 0, h: 0, late: false, leave: false, half: false }; map.set(k, d); }
+    if (!d) { d = { user, date, first: "", last: null, open: false, m: 0, h: 0, late: false, leave: false, half: false, lateExcused: false }; map.set(k, d); }
     return d;
   };
   att.filter((a) => ids.has(a.user_id) && a.work_date >= from && a.work_date <= to).forEach((a) => {
@@ -46,17 +50,27 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
     const start = p.created_at && p.created_at.slice(0, 10) > from ? p.created_at.slice(0, 10) : from;
     for (let d = start; d <= to && d < today; d = addDays(d, 1)) if (isWeekday(d)) get(p.id, d);
   });
-  return [...map.values()].map((d) => ({
-    ...d,
-    late: !!d.first && sydneyMinutes(d.first) > LATE_AFTER,
-    leave: d.h === 0 && d.date < today,
-    half: !d.open && d.m > 0 && d.m < FULL_DAY_MIN,
-  }));
+  overrides.filter((o) => ids.has(o.user_id) && o.work_date >= from && o.work_date <= to).forEach((o) => { get(o.user_id, o.work_date); });
+  const ov = new Map(overrides.map((o) => [`${o.work_date}|${o.user_id}`, o.status]));
+  const rq = new Map(requests.map((r) => [`${r.work_date}|${r.user_id}`, r.status]));
+  return [...map.values()].map((d) => {
+    const k = `${d.date}|${d.user}`;
+    const override = ov.get(k);
+    const request = rq.get(k);
+    const wasLate = !!d.first && sydneyMinutes(d.first) > LATE_AFTER;
+    const lateExcused = wasLate && request === "approved";
+    // A master admin's status change wins over the automatic Leave / Half day marks.
+    const leave = override ? override === "leave" : d.h === 0 && d.date < today;
+    const half = override ? override === "half_day" : !d.open && d.m > 0 && d.m < FULL_DAY_MIN;
+    return { ...d, override, request, lateExcused, late: wasLate && !lateExcused, leave, half };
+  });
 }
 
 const Status = ({ d }: { d: Day }) => (
-  <>{d.leave ? <span className="pill danger">Leave</span> : null} {d.late ? <span className="pill warn">Late</span> : null} {d.half ? <span className="pill info">Half day</span> : null}
-    {!d.leave && !d.late && !d.half ? <span className="pill ok">{d.open ? "Working" : "Present"}</span> : null}</>
+  <>{d.leave ? <span className="pill danger">Leave</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day</span> : null}
+    {!d.leave && !d.late && !d.half ? <span className="pill ok">{d.open ? "Working" : d.override === "present" ? "Working day" : "Present"}</span> : null}
+    {d.lateExcused ? <> <span className="pill ok">Late approved</span></> : null}
+    {d.override ? <span className="note" title="Changed by the master admin"> ✎</span> : null}</>
 );
 
 const monday = () => { const d = new Date(); const back = (d.getDay() + 6) % 7; d.setDate(d.getDate() - back); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
@@ -74,6 +88,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [missing, setMissing] = useState(false);
+  const [overrides, setOverrides] = useState<Override[]>([]);
+  const [requests, setRequests] = useState<LateRequest[]>([]);
 
   const monthStart = todayISO().slice(0, 8) + "01";
   const lo = [day, from, monthStart].sort()[0];
@@ -89,6 +105,13 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     const all = [...(a.data as Attendance[]), ...((open.data as Attendance[] | null) ?? [])];
     setAtt([...new Map(all.map((x) => [x.id, x])).values()]);
     setEntries((e.data as TimeEntry[]).map((x) => ({ ...x, hours: Number(x.hours) })));
+    // Status changes and late approvals (ignored if that database update hasn't been run yet).
+    const [o, r] = await Promise.all([
+      supabase.from("attendance_overrides").select("*").gte("work_date", lo).lte("work_date", hi),
+      supabase.from("late_requests").select("*").or(`status.eq.pending,and(work_date.gte.${lo},work_date.lte.${hi})`),
+    ]);
+    setOverrides(o.error ? [] : (o.data as Override[]));
+    setRequests(r.error ? [] : (r.data as LateRequest[]));
   }, [supabase, lo, hi, me.id]);
 
   useEffect(() => {
@@ -96,6 +119,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     const ch = supabase.channel("timesheets")
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "timesheet_entries" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_overrides" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "late_requests" }, () => load())
       .subscribe();
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => { clearInterval(t); supabase.removeChannel(ch); };
@@ -132,14 +157,40 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     return <div className="panel empty"><strong>Timesheets aren&apos;t switched on yet.</strong>Your master admin needs to run the latest database update in Supabase.</div>;
   }
 
-  const myMonth = buildDays(att, entries, [me], monthStart, todayISO(), now);
+  const myMonth = buildDays(att, entries, [me], monthStart, todayISO(), now, overrides, requests);
+  const isMaster = me.role === "master";
+
+  async function askApproval(d: Day) {
+    const reason = window.prompt(`Why were you late on ${fmtDate(d.date)}? This goes to the master admin for approval.`);
+    if (reason === null) return;
+    const { error } = await supabase.from("late_requests").insert({ user_id: me.id, work_date: d.date, reason: reason.trim(), status: "pending" });
+    if (error) { say(`Not sent: ${error.message}`, true); return; }
+    say("Sent to the master admin for approval");
+    load();
+  }
+  async function decide(r: LateRequest, status: "approved" | "rejected") {
+    const { error } = await supabase.from("late_requests").update({ status, decided_by: me.id, decided_at: new Date().toISOString() }).eq("user_id", r.user_id).eq("work_date", r.work_date);
+    if (error) { say(`Not saved: ${error.message}`, true); return; }
+    say(status === "approved" ? "Late approved" : "Late not approved");
+    load();
+  }
+  async function setOverride(d: Day, status: string) {
+    const q = status
+      ? supabase.from("attendance_overrides").upsert({ user_id: d.user, work_date: d.date, status, set_by: me.id, set_at: new Date().toISOString() })
+      : supabase.from("attendance_overrides").delete().eq("user_id", d.user).eq("work_date", d.date);
+    const { error } = await q;
+    if (error) { say(`Not saved: ${error.message}`, true); return; }
+    say(status ? "Status changed" : "Back to automatic status");
+    load();
+  }
+  const pending = requests.filter((r) => r.status === "pending" && visible.some((p) => p.id === r.user_id));
 
   // ----- team view -----
   const teamIds = new Set(visible.map((p) => p.id));
   const teamEntries = entries.filter((e) => teamIds.has(e.user_id) && e.work_date >= from && e.work_date <= to && (!who || e.user_id === who))
     .sort((a, b) => a.work_date.localeCompare(b.work_date) || name(a.user_id).localeCompare(name(b.user_id)));
   const teamPeople = visible.filter((p) => !who || p.id === who);
-  const summary = buildDays(att, entries, teamPeople, from, to, now).sort((a, b) => b.date.localeCompare(a.date) || name(a.user).localeCompare(name(b.user)));
+  const summary = buildDays(att, entries, teamPeople, from, to, now, overrides, requests).sort((a, b) => b.date.localeCompare(a.date) || name(a.user).localeCompare(name(b.user)));
   const counts = { late: summary.filter((d) => d.late).length, leave: summary.filter((d) => d.leave).length, half: summary.filter((d) => d.half).length };
 
   function exportCsv() {
@@ -186,9 +237,10 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
               <span className="pill info">{myMonth.filter((d) => d.half).length} half day</span>
               <span className="pill danger">{myMonth.filter((d) => d.leave).length} leave</span>
             </div>
-            {myMonth.some((d) => d.late || d.half || d.leave) ? (
-              <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
-                <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}</li>))}</ul>
+            {myMonth.some((d) => d.late || d.half || d.leave || d.lateExcused) ? (
+              <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave || d.lateExcused).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
+                <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}
+                  {d.late && !d.request ? <> <button type="button" className="link" onClick={() => askApproval(d)}>Ask for approval</button></> : null}</li>))}</ul>
             ) : <p className="note" style={{ margin: 0 }}>No late starts, half days or leave this month.</p>}
             <p className="note" style={{ margin: "10px 0 0" }}>Late = log in after 7:45 am · Half day = under 8 hours logged in · Leave = a weekday with no timesheet. Your manager and the master admin can see this.</p>
           </div>
@@ -217,6 +269,14 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
         <div className="section" style={{ marginTop: 24 }}>
           <div className="pagehead"><div><h2 style={{ fontSize: 20, margin: 0 }}>Team timesheets</h2><p>{me.role === "master" ? "Everyone in the practice." : "You and the team members allocated to you."}</p></div>
             <div className="row"><button type="button" onClick={exportCsv} disabled={!summary.length}>Export CSV</button></div></div>
+          {isMaster && pending.length ? (
+            <div className="panel" style={{ padding: 14, marginBottom: 12, borderColor: "var(--warn)" }}>
+              <h2 style={{ margin: "0 0 8px" }}>Late log-ins waiting for your approval ({pending.length})</h2>
+              <table><tbody>{pending.map((r) => { const first = att.filter((a) => a.user_id === r.user_id && a.work_date === r.work_date).map((a) => a.clock_in).sort()[0]; return (
+                <tr key={`${r.user_id}|${r.work_date}`}><td className="client">{name(r.user_id)}</td><td>{fmtDate(r.work_date)}</td><td>{first ? `Logged in ${time(first)}` : ""}</td><td style={{ whiteSpace: "pre-wrap" }}>{r.reason || <span className="note">No reason given</span>}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}><button type="button" className="primary" onClick={() => decide(r, "approved")}>Approve</button> <button type="button" onClick={() => decide(r, "rejected")}>Don&apos;t approve</button></td></tr>); })}</tbody></table>
+            </div>
+          ) : null}
           <div>
           <div className="toolbar">
             <label className="row note">From <input type="date" id="tt-from" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} /></label>
@@ -231,7 +291,9 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
                   <tr key={`${d.date}|${d.user}`}><td>{fmtDate(d.date)}</td><td className="client">{name(d.user)}</td><td>{time(d.first || null) || "—"}</td>
                     <td>{d.open ? <span className="pill info">Still in</span> : time(d.last) || "—"}</td>
                     <td className="mono" style={{ textAlign: "right" }}>{d.m ? hm(d.m) : "—"}</td>
-                    <td className="mono" style={{ textAlign: "right" }}>{d.h ? hrs(d.h) : "—"}</td><td><Status d={d} /></td></tr>))}</tbody></table>
+                    <td className="mono" style={{ textAlign: "right" }}>{d.h ? hrs(d.h) : "—"}</td><td><Status d={d} />
+                      {isMaster ? <select aria-label="Change status" value={d.override ?? ""} onChange={(e) => setOverride(d, e.target.value)} style={{ marginLeft: 6, fontSize: 12, padding: "2px 4px" }}>
+                        <option value="">Automatic</option><option value="present">Working day</option><option value="half_day">Half day</option><option value="leave">Leave</option></select> : null}</td></tr>))}</tbody></table>
             )}
           </div>
           </div>

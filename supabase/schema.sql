@@ -384,3 +384,54 @@ create policy "edit own timesheet" on public.timesheet_entries
 drop policy if exists "delete own timesheet" on public.timesheet_entries;
 create policy "delete own timesheet" on public.timesheet_entries
   for delete to authenticated using (user_id = auth.uid() and public.is_active_member() and public.timesheet_day_open(work_date));
+
+-- ===== Attendance status changes and late approvals =====
+-- The master admin can set a day's status by hand (overrides Leave / Half day).
+create table if not exists public.attendance_overrides (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  work_date date not null,
+  status text not null check (status in ('present', 'leave', 'half_day')),
+  note text not null default '',
+  set_by uuid references public.profiles (id) on delete set null default auth.uid(),
+  set_at timestamptz not null default now(),
+  primary key (user_id, work_date)
+);
+-- Staff ask for a late log-in to be approved; the master admin approves or rejects it.
+create table if not exists public.late_requests (
+  user_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  work_date date not null,
+  reason text not null default '',
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  decided_by uuid references public.profiles (id) on delete set null,
+  decided_at timestamptz,
+  created_at timestamptz not null default now(),
+  primary key (user_id, work_date)
+);
+alter table public.attendance_overrides enable row level security;
+alter table public.late_requests enable row level security;
+revoke all on public.attendance_overrides, public.late_requests from anon;
+
+drop policy if exists "see overrides" on public.attendance_overrides;
+create policy "see overrides" on public.attendance_overrides for select to authenticated using (public.can_view_person(user_id));
+drop policy if exists "master sets overrides" on public.attendance_overrides;
+create policy "master sets overrides" on public.attendance_overrides for all to authenticated
+  using (public.my_role() = 'master') with check (public.my_role() = 'master');
+
+drop policy if exists "see late requests" on public.late_requests;
+create policy "see late requests" on public.late_requests for select to authenticated using (public.can_view_person(user_id));
+drop policy if exists "ask own late approval" on public.late_requests;
+create policy "ask own late approval" on public.late_requests for insert to authenticated
+  with check (user_id = auth.uid() and status = 'pending' and decided_by is null and public.is_active_member());
+drop policy if exists "withdraw own pending request" on public.late_requests;
+create policy "withdraw own pending request" on public.late_requests for delete to authenticated
+  using ((user_id = auth.uid() and status = 'pending') or public.my_role() = 'master');
+drop policy if exists "master decides late requests" on public.late_requests;
+create policy "master decides late requests" on public.late_requests for update to authenticated
+  using (public.my_role() = 'master') with check (public.my_role() = 'master');
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.attendance_overrides; exception when duplicate_object then null; end;
+    begin alter publication supabase_realtime add table public.late_requests; exception when duplicate_object then null; end;
+  end if;
+end $$;
