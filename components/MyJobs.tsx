@@ -37,7 +37,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
       {meetings.length ? <ul className="list">{meetings.map((m) => { const at = new Date(m.starts_at).getTime(); const nowOn = at <= now && now < at + m.duration_min * 60000; return (
         <li key={m.id} className={`meetrow${nowOn ? " running" : ""}`}><div style={{ minWidth: 0 }}>
           <div className="t"><span className="pill accent">Meeting</span><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpenMeeting?.(m)}>{m.title}</button></div>
-          <div className="s">{nowOn ? "Now" : dateOf(m.starts_at)} · {timeOf(m.starts_at)} · {m.duration_min} min{m.location && !isLink(m.location) ? ` · ${m.location}` : ""}</div></div>
+          <div className="s">{nowOn ? "Now" : at + m.duration_min * 60000 < now ? <span className="danger">Was {dateOf(m.starts_at)}</span> : dateOf(m.starts_at)} · {timeOf(m.starts_at)} · {m.duration_min} min{m.location && !isLink(m.location) ? ` · ${m.location}` : ""}</div></div>
           <div className="row actions">{isLink(m.location) ? <a className="btnlink" href={m.location} target="_blank" rel="noreferrer">Join</a> : null}
             {m.owner_id === myId ? <button onClick={() => onMeetingDone?.(m)}>Done</button> : null}</div></li>); })}</ul> : null}
       {!jobs.length && meetings.length ? null : !jobs.length ? <div className="empty"><strong>No open jobs assigned to you.</strong>Jobs assigned to you show here, ready to start.</div> : (

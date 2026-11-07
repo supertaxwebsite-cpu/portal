@@ -245,6 +245,18 @@ export default function Workspace({ me }: { me: Profile }) {
   );
 
   /* ---------- views ---------- */
+  // Meetings in My jobs: every meeting I booked or was invited to that isn't marked done, for the next 30 days.
+  // Ones I booked stay until I press Done; ones I was invited to drop off after the day they happen.
+  const myMeetings = useMemo(() => {
+    const now = Date.now(), dayStart = new Date(new Date().toDateString()).getTime();
+    return meetings.filter((m) => {
+      if (m.done || !involves(m, me.id)) return false;
+      const at = new Date(m.starts_at).getTime(), end = at + m.duration_min * 60000;
+      if (at > now + 30 * 864e5) return false;
+      return m.owner_id === me.id ? true : end >= dayStart;
+    });
+  }, [meetings, me.id]);
+
   function Overview() {
     const overdue = openJobs.filter((j) => j.due_date && daysFrom(j.due_date) < 0);
     const week = openJobs.filter((j) => j.due_date && daysFrom(j.due_date) >= 0 && daysFrom(j.due_date) <= 7);
@@ -296,7 +308,7 @@ export default function Workspace({ me }: { me: Profile }) {
           <div className="section">
             <MyJobs jobs={openJobs.filter((j) => j.status !== "sent_for_sign" && (j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query")))} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
-              meetings={meetings.filter((m) => !m.done && involves(m, me.id) && new Date(m.starts_at).getTime() + m.duration_min * 60000 >= Date.now() && new Date(m.starts_at).getTime() < Date.now() + 7 * 864e5)}
+              meetings={myMeetings}
               onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })}
               onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")} running={running} clientName={clientName} busy={timerBusy}
               reviewerName={me.reports_to ? personName(me.reports_to) : ""}
