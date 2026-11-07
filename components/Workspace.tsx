@@ -9,7 +9,7 @@ import {
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import Timesheet from "./Timesheet";
-import MyJobs, { fmtHours } from "./MyJobs";
+import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "clients" | "timesheet" | "team";
@@ -46,6 +46,8 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [running, setRunning] = useState<JobTimer | null>(null);
   const [timerBusy, setTimerBusy] = useState(false);
+  const [teamRunning, setTeamRunning] = useState<JobTimer[]>([]);
+  const [jobHours, setJobHours] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [live, setLive] = useState(false);
@@ -82,11 +84,24 @@ export default function Workspace({ me }: { me: Profile }) {
       ]);
       const { data: t } = await supabase.from("job_timers").select("*").eq("user_id", me.id).is("ended_at", null).limit(1);
       setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
+      if (me.role === "master" || me.role === "manager") {
+        // Everyone this person can see (managers: their own staff) who has a job running, plus time logged on those jobs.
+        const { data: tr } = await supabase.from("job_timers").select("*").is("ended_at", null).order("started_at");
+        const list = ((tr as JobTimer[] | null) ?? []).filter((x) => x.job_id);
+        setTeamRunning(list);
+        const ids = [...new Set(list.map((x) => x.job_id as string))];
+        const hrs: Record<string, number> = {};
+        if (ids.length) {
+          const { data: te } = await supabase.from("timesheet_entries").select("job_id,hours").in("job_id", ids);
+          for (const e of (te as { job_id: string; hours: number }[] | null) ?? []) hrs[e.job_id] = (hrs[e.job_id] ?? 0) + Number(e.hours);
+        }
+        setJobHours(hrs);
+      }
       setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); setClients(c); setJobs(j); setLoaded(true); setLoadError("");
     } catch (e) {
       setLoadError((e as Error).message);
     }
-  }, [supabase, me.id]);
+  }, [supabase, me.id, me.role]);
 
   // Initial load + live refresh when anyone changes something.
   useEffect(() => {
@@ -288,6 +303,8 @@ export default function Workspace({ me }: { me: Profile }) {
             ) : null}
           </div>
           <div className="section">
+            {canManage ? <TeamRunning timers={teamRunning} jobHours={jobHours} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} personName={personName}
+              onOpen={(j) => setModal({ kind: "job", job: j })} /> : null}
             <div className="panel"><div className="ph"><h2>Team workload</h2><span className="note">Open jobs · <span style={{ color: "var(--danger)" }}>overdue</span></span></div>
               <div style={{ overflowX: "auto", marginTop: 8 }}><table className="workload"><tbody>{rows.map((r) => { const od = r.js.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; const n = r.js.length; return (
                 <tr key={r.id}><td style={{ width: "40%" }}><button className="link" style={{ color: "var(--fg)" }} onClick={() => gotoJobs({ assignee: r.id })}>{r.name}</button>{r.title ? <div className="note">{r.title}</div> : null}</td>
@@ -577,6 +594,13 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked, supabas
     status: job?.status ?? "not_started", lodged_on: job?.lodged_on ?? "", notes: job?.notes ?? "",
   });
   const [busy, setBusy] = useState(false);
+  const [logged, setLogged] = useState<number | null>(null);
+  useEffect(() => {
+    if (!job || locked) return;
+    supabase.from("timesheet_entries").select("hours").eq("job_id", job.id).then(({ data }) => {
+      if (data) setLogged((data as { hours: number }[]).reduce((t, e) => t + Number(e.hours), 0));
+    });
+  }, [job, locked, supabase]);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const next = { ...v, [k]: e.target.value };
     if (k === "client_id" && !v.assignee_id) next.assignee_id = clients.find((c) => c.id === e.target.value)?.manager_id ?? "";
@@ -613,7 +637,7 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked, supabas
         <label className="f">Status<select id="m-status" value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>
         <label className="f full">Notes<textarea id="m-notes" placeholder="Records outstanding, queries for the client, lodgment receipt number…" value={v.notes} onChange={set("notes")} /></label>
-        {job ? <div className="full hint">Last changed {fmtDate(job.updated_at)}{job.updated_by ? ` by ${personName(job.updated_by)}` : ""}</div> : null}
+        {job ? <div className="full hint">Last changed {fmtDate(job.updated_at)}{job.updated_by ? ` by ${personName(job.updated_by)}` : ""}{logged ? ` · Time logged on this job: ${fmtHours(logged)}` : ""}</div> : null}
       </div>
       <footer>
         {job && canDelete ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}

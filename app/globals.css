@@ -204,6 +204,6 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .myjobs .actions{justify-content:flex-end}
 .myjobs .actions button,.myjobs .actions select{padding:5px 10px;font-size:13px}
 .myjobs li.running{background:var(--accent-soft)}
-.myjobs .timer{color:var(--accent);font-weight:700}
+.myjobs .timer,.workingnow .timer{color:var(--accent);font-weight:700}
 .myjobs .s .danger{color:var(--danger)}.myjobs .s .warn{color:var(--warn)}
 .statussel{width:auto}

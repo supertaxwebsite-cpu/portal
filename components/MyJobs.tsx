@@ -56,3 +56,38 @@ export default function MyJobs({ jobs, running, clientName, reviewerName, busy, 
     </div>
   );
 }
+
+/** Managers and master admins: who is working on what right now, and the total time on each job. */
+export function TeamRunning({ timers, jobHours, jobById, clientName, personName, onOpen }: {
+  timers: JobTimer[];
+  jobHours: Record<string, number>;
+  jobById: (id: string) => Job | undefined;
+  clientName: (id: string) => string;
+  personName: (id: string | null) => string;
+  onOpen: (j: Job) => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (!timers.length) return; const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, [timers.length]);
+  return (
+    <div className="panel workingnow">
+      <div className="ph"><h2>Working now</h2><span className="note">{timers.length ? `${timers.length} running` : "Live"}</span></div>
+      {!timers.length ? <div className="empty"><strong>Nobody has a job running.</strong>When your team presses Start on a job, it shows here.</div> : (
+        <ul className="list">{timers.map((t) => {
+          const j = jobById(t.job_id as string);
+          const runH = Math.max(0, (now - new Date(t.started_at).getTime()) / 3600000);
+          const total = (jobHours[t.job_id as string] ?? 0) + runH;
+          return (
+            <li key={t.id}>
+              <div style={{ minWidth: 0 }}>
+                <div className="t">{personName(t.user_id)}</div>
+                <div className="s">{j ? <button className="link" onClick={() => onOpen(j)}>{clientName(j.client_id)}</button> : "A job"}{j ? ` · ${svcLabel(j.service)} · ${j.period}` : ""}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div className="timer mono" title={`Started ${new Date(t.started_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}>● {elapsed(t.started_at, now)}</div>
+                <div className="note">Total on job {fmtHours(total)}</div>
+              </div>
+            </li>);
+        })}</ul>)}
+    </div>
+  );
+}
