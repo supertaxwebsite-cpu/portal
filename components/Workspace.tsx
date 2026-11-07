@@ -9,6 +9,7 @@ import {
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import Timesheet from "./Timesheet";
+import ClientNotes from "./ClientNotes";
 import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
@@ -459,10 +460,11 @@ export default function Workspace({ me }: { me: Profile }) {
             <dt>Services</dt><dd>{c.services.length ? c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>) : "—"}</dd>
             {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, jobs created automatically` : "No automatic jobs"}</dd></> : null}
             {c.services.some((s) => SVC[s]?.kind === "bas") ? <><dt>BAS cycle</dt><dd>{c.bas_freq === "monthly" ? "Monthly" : "Quarterly"}</dd></> : null}
-            <dt>Notes</dt><dd style={{ whiteSpace: "pre-wrap" }}>{c.notes || "—"}</dd>
+            {c.notes ? <><dt>Notes</dt><dd style={{ whiteSpace: "pre-wrap" }}>{c.notes}</dd></> : null}
             <dt>Last change</dt><dd className="note">{fmtDate(c.updated_at)}{c.updated_by ? ` by ${personName(c.updated_by)}` : ""}</dd>
           </dl></div>
           <div className="section">
+            <ClientNotes key={c.id} clientId={c.id} meId={me.id} isManager={canManage} canDelete={canDelete} supabase={supabase} personName={personName} say={say} />
             <div><h2>Open jobs ({openJ.length})</h2><div className="tablebox solo">{openJ.length ? <Table list={openJ} /> : <div className="empty">No open jobs for this client.</div>}</div></div>
             <div><h2>Lodged and completed ({closedJ.length})</h2><div className="tablebox solo">{closedJ.length ? <Table list={closedJ} /> : <div className="empty">Nothing lodged yet.</div>}</div></div>
           </div>
@@ -515,7 +517,7 @@ export default function Workspace({ me }: { me: Profile }) {
     <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
-      {view === "clients" ? (clientForDetail ? <ClientDetail c={clientForDetail} /> : ClientsView()) : null}
+      {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
 

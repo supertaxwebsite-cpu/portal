@@ -210,3 +210,16 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .statussel{width:auto}
 .statuschip{padding:10px 8px}.statuschip .pill{font-size:11.5px;padding:2px 7px;max-width:100%}
 .pill::before{flex-shrink:0}
+.clientnotes .addnote{padding:4px 14px 12px;display:grid;gap:8px}
+.clientnotes .addnote textarea{min-height:64px}
+.notelist{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.notelist li{padding:10px 14px;border-bottom:1px solid var(--line)}
+.notelist li:last-child{border-bottom:0}
+.notelist li.pinned{background:var(--warn-soft)}
+.notelist .nhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:4px}
+.notelist .nhead .note{margin-left:auto}
+.notelist .nbody{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}
+.notelist .nact{display:flex;gap:12px;margin-top:4px}
+.notelist .nact .link{font-size:13px}
+.notelist .nact .danger{color:var(--danger)}
+.tag.pin{background:var(--warn);color:#fff}

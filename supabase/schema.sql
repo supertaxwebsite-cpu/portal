@@ -758,3 +758,54 @@ revoke all on function public.end_job_timer(uuid) from public, anon, authenticat
 alter table public.jobs drop constraint if exists jobs_status_check;
 alter table public.jobs add constraint jobs_status_check
   check (status in ('not_started', 'waiting', 'internal_query', 'in_progress', 'review', 'to_lodge', 'sent_for_sign', 'lodged', 'done'));
+
+-- ===== Client notes: a dated log of notes on each client, with key notes pinned =====
+create table if not exists public.client_notes (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references public.clients (id) on delete cascade,
+  author_id uuid references public.profiles (id) on delete set null default auth.uid(),
+  category text not null default 'general'
+    check (category in ('general', 'software', 'contact', 'tax', 'payroll', 'instruction')),
+  body text not null check (length(trim(body)) > 0 and length(body) <= 4000),
+  pinned boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists client_notes_client_idx on public.client_notes (client_id, created_at desc);
+alter table public.client_notes enable row level security;
+drop policy if exists "members read client notes" on public.client_notes;
+create policy "members read client notes" on public.client_notes
+  for select to authenticated using (public.is_active_member());
+drop policy if exists "members add client notes" on public.client_notes;
+create policy "members add client notes" on public.client_notes
+  for insert to authenticated with check (public.is_active_member() and author_id = auth.uid());
+-- The writer can edit their own note; master admins and managers can edit (or pin) any note.
+drop policy if exists "edit own or as manager" on public.client_notes;
+create policy "edit own or as manager" on public.client_notes
+  for update to authenticated
+  using (public.is_active_member() and (author_id = auth.uid() or public.my_role() in ('master', 'manager')))
+  with check (public.is_active_member());
+-- Same delete rule as clients and jobs.
+drop policy if exists "delete with delete access" on public.client_notes;
+create policy "delete with delete access" on public.client_notes
+  for delete to authenticated using (public.can_delete_data());
+revoke all on public.client_notes from anon;
+
+create or replace function public.stamp_client_note() returns trigger
+language plpgsql as $$
+begin
+  new.updated_at := now();
+  new.author_id := old.author_id;
+  new.client_id := old.client_id;
+  new.created_at := old.created_at;
+  return new;
+end $$;
+drop trigger if exists client_notes_stamp on public.client_notes;
+create trigger client_notes_stamp before update on public.client_notes
+  for each row execute function public.stamp_client_note();
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.client_notes; exception when duplicate_object then null; end;
+  end if;
+end $$;
