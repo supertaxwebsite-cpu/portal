@@ -498,7 +498,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canDelete} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -566,8 +566,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, clients, team, canDelete, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, clients, team, canDelete, locked, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; locked: boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const preset = presetClient ? clients.find((c) => c.id === presetClient) : undefined;
@@ -589,7 +589,8 @@ function JobModal({ job, presetClient, clients, team, canDelete, supabase, save,
     e.preventDefault();
     if (!v.client_id) { say("Choose a client.", true); return; }
     setBusy(true);
-    const row = { ...v, period: v.period.trim(), due_date: v.due_date || null, assignee_id: v.assignee_id || null, reviewer_id: v.reviewer_id || null,
+    // Staff can only change the status and notes of an existing job (the database enforces this too).
+    const row: Partial<Job> = locked ? { status: v.status, notes: v.notes, ...(v.status === "lodged" && !job?.lodged_on ? { lodged_on: todayISO() } : {}) } : { ...v, period: v.period.trim(), due_date: v.due_date || null, assignee_id: v.assignee_id || null, reviewer_id: v.reviewer_id || null,
       lodged_on: v.lodged_on || (v.status === "lodged" ? todayISO() : null) };
     const ok = job ? await save(() => supabase.from("jobs").update(row).eq("id", job.id), "Job saved")
       : await save(() => supabase.from("jobs").insert(row), "Job created");
@@ -601,15 +602,16 @@ function JobModal({ job, presetClient, clients, team, canDelete, supabase, save,
     <Overlay onClose={onClose}><form className="modal" onSubmit={submit}>
       <header><h2>{job ? "Edit job" : "New job"}</h2><button type="button" onClick={onClose}>Close</button></header>
       <div className="body">
-        <label className="f full">Client<select id="m-client" required value={v.client_id} onChange={set("client_id")}><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <label className="f">Service<select id="m-service" value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
-        <label className="f">Period<input id="m-period" required placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} /></label>
-        <label className="f">Due date<input id="m-due" type="date" value={v.due_date} onChange={set("due_date")} /></label>
-        <label className="f">Priority<select id="m-priority" value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
-        <label className="f">Assigned to<select id="m-assignee" value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
-        <label className="f">Reviewer<select id="m-reviewer" value={v.reviewer_id} onChange={set("reviewer_id")}>{opts("No reviewer")}</select></label>
+        {locked ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
+        <label className="f full">Client<select id="m-client" required disabled={locked} value={v.client_id} onChange={set("client_id")}><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
+        <label className="f">Period<input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} /></label>
+        <label className="f">Due date<input id="m-due" type="date" disabled={locked} value={v.due_date} onChange={set("due_date")} /></label>
+        <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
+        <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
+        <label className="f">Reviewer<select id="m-reviewer" disabled={locked} value={v.reviewer_id} onChange={set("reviewer_id")}>{opts("No reviewer")}</select></label>
         <label className="f">Status<select id="m-status" value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
-        <label className="f">Lodged on<input id="m-lodged" type="date" value={v.lodged_on} onChange={set("lodged_on")} /></label>
+        <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>
         <label className="f full">Notes<textarea id="m-notes" placeholder="Records outstanding, queries for the client, lodgment receipt number…" value={v.notes} onChange={set("notes")} /></label>
         {job ? <div className="full hint">Last changed {fmtDate(job.updated_at)}{job.updated_by ? ` by ${personName(job.updated_by)}` : ""}</div> : null}
       </div>

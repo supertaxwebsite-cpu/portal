@@ -590,3 +590,32 @@ do $$ begin
     begin alter publication supabase_realtime add table public.job_timers; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ===== Staff can't change a job's set-up =====
+-- Staff can update a job's status and notes. Only master admins and managers can change the
+-- client, service, period, due date, priority, assignee, reviewer or lodgment date.
+create or replace function public.guard_job_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.my_role() is distinct from 'staff' then return new; end if;
+  -- Lodgment date: set automatically the first time a job is marked Lodged.
+  if new.status = 'lodged' and old.lodged_on is null then
+    new.lodged_on := (now() at time zone 'Australia/Sydney')::date;
+  else
+    new.lodged_on := old.lodged_on;
+  end if;
+  -- Submitting for review may fill an empty reviewer with the person's own manager.
+  if new.reviewer_id is distinct from old.reviewer_id
+     and not (old.reviewer_id is null and new.reviewer_id is not distinct from (select reports_to from public.profiles where id = auth.uid())) then
+    raise exception 'Only your manager can change the reviewer of a job' using errcode = '42501';
+  end if;
+  if (new.client_id, new.service, new.period, new.due_date, new.priority, new.assignee_id)
+     is distinct from (old.client_id, old.service, old.period, old.due_date, old.priority, old.assignee_id) then
+    raise exception 'Only your manager can change the client, service, period, due date, priority or assignee of a job' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_job_fields() from public, anon, authenticated;
+drop trigger if exists jobs_guard on public.jobs;
+create trigger jobs_guard before update on public.jobs
+  for each row execute function public.guard_job_fields();
