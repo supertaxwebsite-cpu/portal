@@ -10,6 +10,55 @@ const time = (ts: string | null) => (ts ? new Date(ts).toLocaleTimeString("en-AU
 const mins = (a: Attendance, now: number) => Math.max(0, ((a.clock_out ? Date.parse(a.clock_out) : now) - Date.parse(a.clock_in)) / 60000);
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const hrs = (n: number) => `${Number(n.toFixed(2))} h`;
+// Attendance rules: clock in after 7:45 am = Late; a past weekday with no timesheet = Leave;
+// a finished day under 8 hours clocked = Half day.
+const LATE_AFTER = 7 * 60 + 45;
+const FULL_DAY_MIN = 8 * 60;
+const sydneyMinutes = (ts: string) => {
+  const parts = new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ts));
+  const n = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
+  return n("hour") * 60 + n("minute");
+};
+const addDays = (d: string, n: number) => { const [y, m, dd] = d.split("-").map(Number); const x = new Date(Date.UTC(y, m - 1, dd + n)); return x.toISOString().slice(0, 10); };
+const isWeekday = (d: string) => { const [y, m, dd] = d.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay(); return w >= 1 && w <= 5; };
+
+export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean }
+
+function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string; created_at?: string }[], from: string, to: string, now: number): Day[] {
+  const ids = new Set(people.map((p) => p.id));
+  const map = new Map<string, Day>();
+  const get = (user: string, date: string) => {
+    const k = `${date}|${user}`;
+    let d = map.get(k);
+    if (!d) { d = { user, date, first: "", last: null, open: false, m: 0, h: 0, late: false, leave: false, half: false }; map.set(k, d); }
+    return d;
+  };
+  att.filter((a) => ids.has(a.user_id) && a.work_date >= from && a.work_date <= to).forEach((a) => {
+    const d = get(a.user_id, a.work_date);
+    if (!d.first || a.clock_in < d.first) d.first = a.clock_in;
+    if (!a.clock_out) d.open = true; else if (!d.last || a.clock_out > d.last) d.last = a.clock_out;
+    d.m += mins(a, now);
+  });
+  entries.filter((e) => ids.has(e.user_id) && e.work_date >= from && e.work_date <= to).forEach((e) => { get(e.user_id, e.work_date).h += e.hours; });
+  // Past weekdays with nothing recorded count as leave (from the day the person was added).
+  const today = todayISO();
+  people.forEach((p) => {
+    const start = p.created_at && p.created_at.slice(0, 10) > from ? p.created_at.slice(0, 10) : from;
+    for (let d = start; d <= to && d < today; d = addDays(d, 1)) if (isWeekday(d)) get(p.id, d);
+  });
+  return [...map.values()].map((d) => ({
+    ...d,
+    late: !!d.first && sydneyMinutes(d.first) > LATE_AFTER,
+    leave: d.h === 0 && d.date < today,
+    half: !d.open && d.m > 0 && d.m < FULL_DAY_MIN,
+  }));
+}
+
+const Status = ({ d }: { d: Day }) => (
+  <>{d.leave ? <span className="pill danger">Leave</span> : null} {d.late ? <span className="pill warn">Late</span> : null} {d.half ? <span className="pill info">Half day</span> : null}
+    {!d.leave && !d.late && !d.half ? <span className="pill ok">{d.open ? "Working" : "Present"}</span> : null}</>
+);
+
 const monday = () => { const d = new Date(); const back = (d.getDay() + 6) % 7; d.setDate(d.getDate() - back); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
 
 export default function Timesheet({ me, supabase, people, visible, clients, jobs, canSeeTeam, say }: {
@@ -26,7 +75,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [busy, setBusy] = useState(false);
   const [missing, setMissing] = useState(false);
 
-  const lo = [day, from].sort()[0];
+  const monthStart = todayISO().slice(0, 8) + "01";
+  const lo = [day, from, monthStart].sort()[0];
   const hi = [day, to].sort()[1];
   const load = useCallback(async () => {
     const [a, e] = await Promise.all([
@@ -82,33 +132,21 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     return <div className="panel empty"><strong>Timesheets aren&apos;t switched on yet.</strong>Your master admin needs to run the latest database update in Supabase.</div>;
   }
 
+  const myMonth = buildDays(att, entries, [me], monthStart, todayISO(), now);
+
   // ----- team view -----
   const teamIds = new Set(visible.map((p) => p.id));
   const teamEntries = entries.filter((e) => teamIds.has(e.user_id) && e.work_date >= from && e.work_date <= to && (!who || e.user_id === who))
     .sort((a, b) => a.work_date.localeCompare(b.work_date) || name(a.user_id).localeCompare(name(b.user_id)));
-  const teamAtt = att.filter((a) => teamIds.has(a.user_id) && a.work_date >= from && a.work_date <= to && (!who || a.user_id === who));
-  const daysKey = new Map<string, { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number }>();
-  teamAtt.forEach((a) => {
-    const k = `${a.work_date}|${a.user_id}`;
-    const d = daysKey.get(k) ?? { user: a.user_id, date: a.work_date, first: a.clock_in, last: a.clock_out, open: false, m: 0, h: 0 };
-    if (a.clock_in < d.first) d.first = a.clock_in;
-    if (!a.clock_out) d.open = true; else if (!d.last || a.clock_out > d.last) d.last = a.clock_out;
-    d.m += mins(a, now);
-    daysKey.set(k, d);
-  });
-  teamEntries.forEach((e) => {
-    const k = `${e.work_date}|${e.user_id}`;
-    const d = daysKey.get(k) ?? { user: e.user_id, date: e.work_date, first: "", last: null, open: false, m: 0, h: 0 };
-    d.h += e.hours;
-    daysKey.set(k, d);
-  });
-  const summary = [...daysKey.values()].sort((a, b) => b.date.localeCompare(a.date) || name(a.user).localeCompare(name(b.user)));
+  const teamPeople = visible.filter((p) => !who || p.id === who);
+  const summary = buildDays(att, entries, teamPeople, from, to, now).sort((a, b) => b.date.localeCompare(a.date) || name(a.user).localeCompare(name(b.user)));
+  const counts = { late: summary.filter((d) => d.late).length, leave: summary.filter((d) => d.leave).length, half: summary.filter((d) => d.half).length };
 
   function exportCsv() {
     const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = [["Date", "Person", "Client", "Job", "Hours", "Description"], ...teamEntries.map((e) => [e.work_date, name(e.user_id), clientName(e.client_id), jobLabel(e.job_id), e.hours, e.description])];
-    rows.push([], ["Date", "Person", "Clocked in", "Clocked out", "Time clocked (hours)", "Timesheet hours"]);
-    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still clocked in" : time(d.last), (d.m / 60).toFixed(2), d.h]));
+    rows.push([], ["Date", "Person", "Clocked in", "Clocked out", "Time clocked (hours)", "Timesheet hours", "Status"]);
+    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still clocked in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && "Leave", d.late && "Late", d.half && "Half day"].filter(Boolean).join(", ") || "Present"]));
     const blob = new Blob(["﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -142,8 +180,17 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
 
         <div className="section">
           <div className="panel" style={{ padding: 16 }}>
-            <h2 style={{ marginTop: 0 }}>Who sees your timesheet</h2>
-            <p className="note" style={{ margin: 0 }}>You can add, change and remove only your own entries. Your manager and the master admin can see them. Clock times come from the portal&apos;s clock and can&apos;t be edited.</p>
+            <h2 style={{ marginTop: 0 }}>My attendance this month</h2>
+            <div className="row" style={{ margin: "6px 0 10px" }}>
+              <span className="pill warn">{myMonth.filter((d) => d.late).length} late</span>
+              <span className="pill info">{myMonth.filter((d) => d.half).length} half day</span>
+              <span className="pill danger">{myMonth.filter((d) => d.leave).length} leave</span>
+            </div>
+            {myMonth.some((d) => d.late || d.half || d.leave) ? (
+              <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
+                <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}</li>))}</ul>
+            ) : <p className="note" style={{ margin: 0 }}>No late starts, half days or leave this month.</p>}
+            <p className="note" style={{ margin: "10px 0 0" }}>Late = clock in after 7:45 am · Half day = under 8 hours clocked · Leave = a weekday with no timesheet. Your manager and the master admin can see this.</p>
           </div>
         </div>
       </div>
@@ -175,15 +222,16 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
             <label className="row note">From <input type="date" id="tt-from" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} /></label>
             <label className="row note">To <input type="date" id="tt-to" value={to} onChange={(e) => e.target.value && setTo(e.target.value)} /></label>
             <select id="tt-who" aria-label="Person" value={who} onChange={(e) => setWho(e.target.value)}><option value="">Everyone</option>{visible.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>
+            <span className="row" style={{ marginLeft: "auto", gap: 6 }}><span className="pill warn">{counts.late} late</span><span className="pill info">{counts.half} half day</span><span className="pill danger">{counts.leave} leave</span></span>
           </div>
           <div className="tablebox">
             {!summary.length ? <div className="empty"><strong>Nothing recorded for these dates.</strong>Clock-ins and timesheet entries show here.</div> : (
-              <table><thead><tr><th>Date</th><th>Person</th><th>Clocked in</th><th>Clocked out</th><th style={{ textAlign: "right" }}>Time clocked</th><th style={{ textAlign: "right" }}>Timesheet</th></tr></thead>
+              <table><thead><tr><th>Date</th><th>Person</th><th>Clocked in</th><th>Clocked out</th><th style={{ textAlign: "right" }}>Time clocked</th><th style={{ textAlign: "right" }}>Timesheet</th><th>Status</th></tr></thead>
                 <tbody>{summary.map((d) => (
                   <tr key={`${d.date}|${d.user}`}><td>{fmtDate(d.date)}</td><td className="client">{name(d.user)}</td><td>{time(d.first || null) || "—"}</td>
                     <td>{d.open ? <span className="pill info">Still in</span> : time(d.last) || "—"}</td>
                     <td className="mono" style={{ textAlign: "right" }}>{d.m ? hm(d.m) : "—"}</td>
-                    <td className="mono" style={{ textAlign: "right" }}>{d.h ? hrs(d.h) : <span className="pill warn">None</span>}</td></tr>))}</tbody></table>
+                    <td className="mono" style={{ textAlign: "right" }}>{d.h ? hrs(d.h) : "—"}</td><td><Status d={d} /></td></tr>))}</tbody></table>
             )}
           </div>
           </div>
