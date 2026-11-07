@@ -172,6 +172,23 @@ nav.tabs a:hover{color:#fff;background:rgba(255,255,255,.08)}
 nav.tabs a[aria-current="page"]{color:#fff;background:rgba(34,163,220,.22)}
 .userbox{display:flex;align-items:center;gap:10px;color:#b8c7d6;font-size:13px}
 .userbox strong{color:#fff;font-weight:600}
+.bell{position:relative}
+.userbox .bellbtn{position:relative;display:grid;place-items:center;width:36px;height:36px;padding:0;border-radius:999px}
+.bellbtn .badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e5484d;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.bellpop{position:fixed;width:360px;max-height:70vh;overflow:auto;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);z-index:60}
+.bellhead{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+.bellhead strong{color:var(--fg)}
+.userbox .bellpop button.link{background:none;border:0;color:var(--accent,#0b6bcb);padding:0;font-size:13px}
+.bellempty{padding:18px 14px;color:var(--muted);font-size:13px}
+.belllist{list-style:none;margin:0;padding:0}
+.belllist li{border-bottom:1px solid var(--line)}
+.belllist li:last-child{border-bottom:0}
+.userbox .belllist button{white-space:normal;display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;background:none;border:0;border-radius:0;padding:10px 14px 10px 24px;color:var(--fg);font-size:13px;position:relative}
+.belllist button:hover{background:var(--surface-2)}
+.belllist li.unread button::before{content:"";position:absolute;left:10px;top:16px;width:7px;height:7px;border-radius:50%;background:#e5484d}
+.belllist .who b{font-weight:600;color:var(--fg)}
+.belllist .what{color:var(--fg);overflow-wrap:anywhere}
+.belllist .when{color:var(--muted);font-size:12px}
 .userbox button{background:transparent;color:#e6eef6;border-color:rgba(255,255,255,.25)}
 button.primary,.btn.primary{background:var(--brand-orange);border-color:var(--brand-orange);color:#1a1205}
 button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:center;text-decoration:none;display:inline-block}

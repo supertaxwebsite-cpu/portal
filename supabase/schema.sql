@@ -1051,3 +1051,82 @@ do $$ begin
     begin alter publication supabase_realtime add table public.meetings; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ============================================================
+-- Notifications (the bell): a note for each person when something is sent to them.
+-- Written only by the triggers below; people read and mark their own as read.
+-- ============================================================
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  actor_id uuid references public.profiles (id) on delete set null,
+  kind text not null check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting')),
+  job_id uuid references public.jobs (id) on delete cascade,
+  meeting_id uuid references public.meetings (id) on delete cascade,
+  service text not null default '',
+  body text not null default '',
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
+alter table public.notifications enable row level security;
+drop policy if exists "read own notifications" on public.notifications;
+create policy "read own notifications" on public.notifications
+  for select to authenticated using (user_id = auth.uid());
+drop policy if exists "mark own notifications" on public.notifications;
+create policy "mark own notifications" on public.notifications
+  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+drop policy if exists "clear own notifications" on public.notifications;
+create policy "clear own notifications" on public.notifications
+  for delete to authenticated using (user_id = auth.uid());
+revoke all on public.notifications from anon;
+revoke insert, update on public.notifications from authenticated;
+grant select, delete on public.notifications to authenticated;
+grant update (read_at) on public.notifications to authenticated;
+
+create or replace function public.notify_job() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); what text; k text;
+begin
+  select c.name || ' · ' || new.period into what from public.clients c where c.id = new.client_id;
+  if new.assignee_id is not null and new.assignee_id is distinct from me
+     and (tg_op = 'INSERT' or new.assignee_id is distinct from old.assignee_id) then
+    k := case
+      when new.status = 'internal_query' and (tg_op = 'INSERT' or old.status is distinct from 'internal_query') then 'internal_query'
+      when tg_op = 'UPDATE' and old.status = 'internal_query' and new.status is distinct from 'internal_query' then 'query_answered'
+      else 'job_assigned' end;
+    insert into public.notifications (user_id, actor_id, kind, job_id, service, body) values (new.assignee_id, me, k, new.id, new.service, coalesce(what, ''));
+  end if;
+  if tg_op = 'UPDATE' and new.status = 'review' and old.status is distinct from 'review'
+     and new.reviewer_id is not null and new.reviewer_id is distinct from me and new.reviewer_id is distinct from new.assignee_id then
+    insert into public.notifications (user_id, actor_id, kind, job_id, service, body) values (new.reviewer_id, me, 'review', new.id, new.service, coalesce(what, ''));
+  end if;
+  return new;
+end $$;
+revoke all on function public.notify_job() from public, anon, authenticated;
+drop trigger if exists jobs_notify on public.jobs;
+create trigger jobs_notify after insert or update on public.jobs
+  for each row execute function public.notify_job();
+
+create or replace function public.notify_meeting() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  insert into public.notifications (user_id, actor_id, kind, meeting_id, body)
+  select distinct a, me, 'meeting', new.id, new.title
+  from unnest(new.attendees) a
+  where a is distinct from me and a <> new.owner_id
+    and (tg_op = 'INSERT' or not (a = any (old.attendees)))
+    and exists (select 1 from public.profiles p where p.id = a);
+  return new;
+end $$;
+revoke all on function public.notify_meeting() from public, anon, authenticated;
+drop trigger if exists meetings_notify on public.meetings;
+create trigger meetings_notify after insert or update of attendees on public.meetings
+  for each row execute function public.notify_meeting();
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.notifications; exception when duplicate_object then null; end;
+  end if;
+end $$;

@@ -11,6 +11,7 @@ import IdleSignOut from "./IdleSignOut";
 import UpdateBanner from "./UpdateBanner";
 import { MeetingsView, MeetingModal, MeetingReminders, involves, type Meeting } from "./Meetings";
 import type { MeetingDraft } from "@/lib/quickMeeting";
+import Bell, { type Notice } from "./Bell";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
@@ -544,8 +545,19 @@ export default function Workspace({ me }: { me: Profile }) {
     );
   }
 
+  async function openNotice(n: Notice) {
+    if (n.job_id) {
+      const j = jobs.find((x) => x.id === n.job_id);
+      if (j) setModal({ kind: "job", job: j }); else say("That job has been deleted or is no longer visible to you.", true);
+    } else if (n.meeting_id) {
+      let m = meetings.find((x) => x.id === n.meeting_id);
+      if (!m) { const { data } = await supabase.from("meetings").select("*").eq("id", n.meeting_id).maybeSingle(); m = (data as Meeting | null) ?? undefined; }
+      if (m) setModal({ kind: "meeting", meeting: m }); else say("That meeting has been cancelled.", true);
+    }
+  }
+
   return (
-    <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam}>
+    <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
@@ -591,7 +603,7 @@ export default function Workspace({ me }: { me: Profile }) {
 }
 
 /* ---------- layout ---------- */
-function Shell({ me, view, go, live, showTeam, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; children: React.ReactNode }) {
+function Shell({ me, view, go, live, showTeam, bell, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; children: React.ReactNode }) {
   const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
   return (
     <>
@@ -599,7 +611,7 @@ function Shell({ me, view, go, live, showTeam, children }: { me: Profile; view: 
         <div className="brand"><img src="/logo.webp" alt="Supertax" width={136} height={34} /><small>Practice Desk</small></div>
         <nav className="tabs" aria-label="Sections">{tabs.map(([v, l]) => (
           <a key={v} href={`#${v}`} aria-current={view === v ? "page" : undefined} onClick={(e) => { e.preventDefault(); go(v); }}>{l}</a>))}</nav>
-        <div className="userbox"><span><strong>{me.full_name}</strong></span><SignOutButton /></div>
+        <div className="userbox">{bell}<span><strong>{me.full_name}</strong></span><SignOutButton /></div>
       </div></header>
       <IdleSignOut />
       <UpdateBanner />
