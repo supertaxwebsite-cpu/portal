@@ -10,6 +10,7 @@ import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import UpdateBanner from "./UpdateBanner";
 import { MeetingsView, MeetingModal, MeetingReminders, involves, type Meeting } from "./Meetings";
+import type { MeetingDraft } from "@/lib/quickMeeting";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
@@ -28,7 +29,7 @@ type Modal =
   | { kind: "client"; client?: Client }
   | { kind: "member"; member?: Profile }
   | { kind: "import" }
-  | { kind: "meeting"; meeting?: Meeting; date?: string }
+  | { kind: "meeting"; meeting?: Meeting; date?: string; draft?: MeetingDraft }
   | { kind: "query"; job: Job; mode: "send" | "answer" }
   | { kind: "temp"; name: string; email: string; password: string }
   | { kind: "confirm"; title: string; text: string; yes: string; run: () => Promise<boolean | void> }
@@ -551,7 +552,8 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
-        onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })} /> : null}
+        onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
+        quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
       {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
@@ -579,7 +581,7 @@ export default function Workspace({ me }: { me: Profile }) {
           if (ok) close();
         }} onClose={close} /> : null}
       {modal?.kind === "confirm" ? <ConfirmModal {...modal} onClose={close} /> : null}
-      {modal?.kind === "meeting" ? <MeetingModal meeting={modal.meeting} date={modal.date} meId={me.id} canEdit={!modal.meeting || modal.meeting.owner_id === me.id || isMaster}
+      {modal?.kind === "meeting" ? <MeetingModal meeting={modal.meeting} date={modal.date} draft={modal.draft} meId={me.id} canEdit={!modal.meeting || modal.meeting.owner_id === me.id || isMaster}
         team={team} clients={clients} supabase={supabase} say={say} personName={personName} onClose={close} onSaved={load} /> : null}
       <MeetingReminders meetings={meetings} meId={me.id} clientName={clientName} onOpen={(m) => setModal({ kind: "meeting", meeting: m })} />
 

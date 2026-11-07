@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ClientPicker from "./ClientPicker";
+import { parseMeeting, type MeetingDraft } from "@/lib/quickMeeting";
 
 type SB = ReturnType<typeof createClient>;
 export interface Meeting {
@@ -23,9 +24,9 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 export const involves = (m: Meeting, id: string) => m.owner_id === id || m.attendees.includes(id);
 
 /* ---------- Meetings page: month calendar + upcoming list ---------- */
-export function MeetingsView({ meetings, meId, isMaster, personName, clientName, onBook, onOpen }: {
+export function MeetingsView({ meetings, meId, isMaster, personName, clientName, onBook, onOpen, quick }: {
   meetings: Meeting[]; meId: string; isMaster: boolean; personName: (id: string | null) => string; clientName: (id: string) => string;
-  onBook: (date?: string) => void; onOpen: (m: Meeting) => void;
+  onBook: (date?: string) => void; onOpen: (m: Meeting) => void; quick?: QuickProps;
 }) {
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [mine, setMine] = useState(!isMaster ? true : false);
@@ -64,7 +65,7 @@ export function MeetingsView({ meetings, meId, isMaster, personName, clientName,
               </div>); })}
           </div>
         </div>
-        <div className="panel">
+        <div className="meetside"><div className="panel">
           <div className="ph"><h2>Upcoming</h2></div>
           {!upcoming.length ? <div className="empty"><strong>No upcoming meetings.</strong>Click a day on the calendar or Book a meeting.</div> : (
             <ul className="list">{upcoming.map((m) => (
@@ -74,22 +75,72 @@ export function MeetingsView({ meetings, meId, isMaster, personName, clientName,
                 <div className="s">{[personName(m.owner_id), ...m.attendees.filter((a) => a !== m.owner_id).map((a) => personName(a))].filter(Boolean).join(", ")}</div>
               </div>{isLink(m.location) ? <a className="btnlink" href={m.location} target="_blank" rel="noreferrer">Join</a> : null}</li>))}</ul>)}
         </div>
+        {quick ? <QuickBook {...quick} meId={meId} personName={personName} clientName={clientName} /> : null}
+        </div>
       </div>
     </>
   );
 }
 
+/* ---------- Quick book: type a sentence, check the preview, book ---------- */
+interface QuickProps { clients: C[]; team: P[]; supabase: SB; say: (m: string, err?: boolean) => void; onSaved: () => void; onEdit: (d: MeetingDraft) => void }
+const EXAMPLES = ["Meeting with Sahej Logistics Tuesday 3pm", "Call with Deepa tomorrow 10:30am for 1 hour on Teams", "BAS review with ABC Pty Ltd 14/11 at 2pm in the office"];
+function QuickBook({ clients, team, supabase, say, onSaved, onEdit, meId, personName, clientName }: QuickProps & { meId: string; personName: (id: string | null) => string; clientName: (id: string) => string }) {
+  const [text, setText] = useState("");
+  const [d, setD] = useState<MeetingDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const understand = () => { if (text.trim()) setD(parseMeeting(text, clients, team, meId)); };
+  async function book() {
+    if (!d) return;
+    const starts = new Date(`${d.date}T${d.time}`);
+    if (starts.getTime() < Date.now() - 60000 && !window.confirm("That time has already passed. Book it anyway?")) return;
+    setBusy(true);
+    const { error } = await supabase.from("meetings").insert({ title: d.title, client_id: d.client_id || null, starts_at: starts.toISOString(), duration_min: d.duration_min,
+      location: d.location, notes: d.notes, attendees: d.attendees, remind_min: 15, owner_id: meId });
+    setBusy(false);
+    if (error) { say(/row-level security|permission/i.test(error.message) ? "Only master admins and managers can book meetings." : `Not saved: ${error.message}`, true); return; }
+    say("Meeting booked"); setText(""); setD(null); onSaved();
+  }
+  const when = d ? new Date(`${d.date}T${d.time}`) : null;
+  return (
+    <div className="panel quickbook">
+      <div className="ph"><h2>Quick book</h2><span className="note">Type it, we fill it in</span></div>
+      <div className="qbbody">
+        <textarea id="qb-text" rows={3} value={text} placeholder={`e.g. ${EXAMPLES[0]}`} onChange={(e) => { setText(e.target.value); setD(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); understand(); } }} />
+        {!d ? <>
+          <div className="row" style={{ justifyContent: "space-between" }}><span className="note">Client name, day and time is enough.</span><button className="primary" disabled={!text.trim()} onClick={understand}>Read it</button></div>
+          <div className="qbex">{EXAMPLES.slice(1).map((x) => <button key={x} className="link" onClick={() => { setText(x); setD(parseMeeting(x, clients, team, meId)); }}>{x}</button>)}</div>
+        </> : <>
+          <dl className="qbprev">
+            <dt>Title</dt><dd>{d.title}</dd>
+            <dt>Client</dt><dd>{d.client_id ? clientName(d.client_id) : <span className="warn">No client matched</span>}</dd>
+            <dt>When</dt><dd>{when ? `${when.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })}, ${when.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}` : ""}</dd>
+            <dt>Length</dt><dd>{d.duration_min} min</dd>
+            {d.location ? <><dt>Where</dt><dd>{d.location}</dd></> : null}
+            {d.attendees.length ? <><dt>Invite</dt><dd>{d.attendees.map((a) => personName(a)).join(", ")}</dd></> : null}
+          </dl>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <button onClick={() => onEdit(d)}>Change details</button>
+            <button id="qb-book" className="primary" disabled={busy} onClick={book}>Book it</button>
+          </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Book / edit a meeting ---------- */
-export function MeetingModal({ meeting, date, meId, canEdit, team, clients, supabase, say, personName, onClose, onSaved }: {
-  meeting?: Meeting; date?: string; meId: string; canEdit: boolean; team: P[]; clients: C[]; supabase: SB;
+export function MeetingModal({ meeting, date, draft, meId, canEdit, team, clients, supabase, say, personName, onClose, onSaved }: {
+  meeting?: Meeting; date?: string; draft?: MeetingDraft; meId: string; canEdit: boolean; team: P[]; clients: C[]; supabase: SB;
   say: (m: string, err?: boolean) => void; personName: (id: string | null) => string; onClose: () => void; onSaved: () => void;
 }) {
   const s = meeting ? new Date(meeting.starts_at) : null;
   const [v, setV] = useState({
-    title: meeting?.title ?? "", client_id: meeting?.client_id ?? "",
-    date: s ? dayKey(s) : date ?? dayKey(new Date()), time: s ? `${pad(s.getHours())}:${pad(s.getMinutes())}` : "10:00",
-    duration: String(meeting?.duration_min ?? 30), location: meeting?.location ?? "", notes: meeting?.notes ?? "",
-    attendees: meeting?.attendees ?? [], remind: String(meeting?.remind_min ?? 15),
+    title: meeting?.title ?? draft?.title ?? "", client_id: meeting?.client_id ?? draft?.client_id ?? "",
+    date: s ? dayKey(s) : draft?.date ?? date ?? dayKey(new Date()), time: s ? `${pad(s.getHours())}:${pad(s.getMinutes())}` : draft?.time ?? "10:00",
+    duration: String(meeting?.duration_min ?? draft?.duration_min ?? 30), location: meeting?.location ?? draft?.location ?? "", notes: meeting?.notes ?? draft?.notes ?? "",
+    attendees: meeting?.attendees ?? draft?.attendees ?? [], remind: String(meeting?.remind_min ?? 15),
   });
   const [busy, setBusy] = useState(false);
   const ro = !!meeting && !canEdit;
