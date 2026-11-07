@@ -10,6 +10,7 @@ import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
+import ClientPicker from "./ClientPicker";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
@@ -380,7 +381,7 @@ export default function Workspace({ me }: { me: Profile }) {
             {[["", "Any due date"], ["overdue", "Overdue"], ["week", "Due in 7 days"], ["week_or_overdue", "Overdue or due in 7 days"], ["month", "Due in 30 days"], ["nodate", "No due date"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <select id="jf-assignee" aria-label="Assigned to" value={jf.assignee} onChange={set("assignee")}><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>
-          <select id="jf-client" aria-label="Client" value={jf.client} onChange={set("client")}><option value="">All clients</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <ClientPicker id="jf-client" clients={clients} value={jf.client} emptyLabel="All clients" onChange={(id) => setJf({ ...jf, client: id })} style={{ minWidth: 200 }} />
           <button onClick={() => setJf(NO_FILTER)}>Clear</button>
         </div>
         <div className="tablebox">
@@ -685,7 +686,8 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>
         {readOnly ? <div className="full hint lockednote">This job is {job?.status === "lodged" ? "lodged" : "completed"}, so it&apos;s read-only. Only a master admin can change it. The History &amp; time tab shows everything that was done.</div>
           : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
-        <label className="f full">Client<select id="m-client" required disabled={locked} value={v.client_id} onChange={set("client_id")}><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label className="f full">Client<ClientPicker id="m-client" required disabled={locked} clients={clients} value={v.client_id} placeholder="Type to search by client name or ABN…"
+          onChange={(id) => set("client_id")({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>)} /></label>
         <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Period{isCustom ? <span className="periodown">
             <input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} />

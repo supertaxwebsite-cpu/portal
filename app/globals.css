@@ -243,3 +243,11 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .periodown{display:grid;gap:4px}
 .periodown .link{justify-self:start;font-size:12px}
 .repeatbox{display:grid;gap:6px;padding:10px 12px;border:1px dashed var(--line);border-radius:8px;background:var(--surface-2)}
+.picker{position:relative;min-width:0}
+.picker input{width:100%}
+.pickerlist{position:absolute;z-index:40;left:0;right:0;top:calc(100% + 4px);max-height:260px;overflow-y:auto;margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);min-width:220px}
+.pickerlist li{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:7px 9px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:400}
+.pickerlist li small{color:var(--muted);white-space:nowrap;font-size:12px}
+.pickerlist li.hi{background:var(--surface-2)}
+.pickerlist li.sel{font-weight:600}
+.pickerlist li.none{color:var(--muted);cursor:default}

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, Person, Profile, TimeEntry } from "@/lib/types";
+import ClientPicker from "./ClientPicker";
 import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
@@ -353,8 +354,7 @@ function EntryRow({ e, day, locked, userId, clients, jobs, supabase, say, onSave
   }
   return (
     <tr>
-      <td><select aria-label="Client" value={v.client_id} onChange={(x) => setV({ ...v, client_id: x.target.value, job_id: "" })} style={{ maxWidth: 180 }}>
-        <option value="">Select client</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
+      <td><ClientPicker clients={clients} value={v.client_id} placeholder="Search client…" onChange={(id) => setV({ ...v, client_id: id, job_id: "" })} style={{ maxWidth: 200 }} /></td>
       <td><select aria-label="Job" value={v.job_id} onChange={(x) => setV({ ...v, job_id: x.target.value })} disabled={!v.client_id} style={{ maxWidth: 170 }}>
         <option value="">—</option>{clientJobs.map((j) => <option key={j.id} value={j.id}>{svcLabel(j.service)} · {j.period}</option>)}</select></td>
       <td style={{ textAlign: "right" }}><input aria-label="Hours" type="number" min="0.25" max="24" step="0.25" value={v.hours} onChange={(x) => setV({ ...v, hours: x.target.value })} style={{ width: 72 }} /></td>
