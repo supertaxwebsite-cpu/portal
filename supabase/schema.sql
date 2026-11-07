@@ -809,3 +809,128 @@ do $$ begin
     begin alter publication supabase_realtime add table public.client_notes; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ===== Job history: automatic activity log + comments =====
+create table if not exists public.job_activity (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references public.jobs (id) on delete cascade,
+  actor_id uuid references public.profiles (id) on delete set null default auth.uid(),
+  kind text not null check (kind in ('created', 'status', 'assignee', 'reviewer', 'due', 'comment')),
+  from_value text,
+  to_value text,
+  body text not null default '' check (length(body) <= 4000),
+  created_at timestamptz not null default now()
+);
+create index if not exists job_activity_job_idx on public.job_activity (job_id, created_at);
+alter table public.job_activity enable row level security;
+drop policy if exists "members read job activity" on public.job_activity;
+create policy "members read job activity" on public.job_activity
+  for select to authenticated using (public.is_active_member());
+-- People add comments; everything else is written by the trigger below.
+drop policy if exists "members add job comments" on public.job_activity;
+create policy "members add job comments" on public.job_activity
+  for insert to authenticated with check (public.is_active_member() and kind = 'comment' and actor_id = auth.uid() and length(trim(body)) > 0);
+drop policy if exists "delete own comment or with delete access" on public.job_activity;
+create policy "delete own comment or with delete access" on public.job_activity
+  for delete to authenticated using (kind = 'comment' and (actor_id = auth.uid() or public.can_delete_data()));
+revoke update on public.job_activity from authenticated;
+revoke all on public.job_activity from anon;
+
+create or replace function public.log_job_activity() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.job_activity (job_id, actor_id, kind, to_value) values (new.id, auth.uid(), 'created', new.status);
+    return new;
+  end if;
+  if new.status is distinct from old.status then
+    insert into public.job_activity (job_id, actor_id, kind, from_value, to_value) values (new.id, auth.uid(), 'status', old.status, new.status);
+  end if;
+  if new.assignee_id is distinct from old.assignee_id then
+    insert into public.job_activity (job_id, actor_id, kind, from_value, to_value) values (new.id, auth.uid(), 'assignee', old.assignee_id::text, new.assignee_id::text);
+  end if;
+  if new.reviewer_id is distinct from old.reviewer_id then
+    insert into public.job_activity (job_id, actor_id, kind, from_value, to_value) values (new.id, auth.uid(), 'reviewer', old.reviewer_id::text, new.reviewer_id::text);
+  end if;
+  if new.due_date is distinct from old.due_date then
+    insert into public.job_activity (job_id, actor_id, kind, from_value, to_value) values (new.id, auth.uid(), 'due', old.due_date::text, new.due_date::text);
+  end if;
+  return new;
+end $$;
+revoke all on function public.log_job_activity() from public, anon, authenticated;
+drop trigger if exists jobs_activity on public.jobs;
+create trigger jobs_activity after insert or update on public.jobs
+  for each row execute function public.log_job_activity();
+
+-- Jobs created before the log existed get a "created" entry.
+insert into public.job_activity (job_id, actor_id, kind, to_value, created_at)
+select j.id, null, 'created', null, j.created_at from public.jobs j
+where not exists (select 1 from public.job_activity a where a.job_id = j.id);
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.job_activity; exception when duplicate_object then null; end;
+  end if;
+end $$;
+
+-- Internal query and reply text also go into the job's comments.
+create or replace function public.send_internal_query(p_job uuid, p_to uuid, p_note text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); who text;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from me and public.my_role() not in ('master', 'manager') then
+    raise exception 'Only the person working on this job can send it for an internal query' using errcode = '42501';
+  end if;
+  if p_to is null or p_to = me or not exists (select 1 from public.profiles where id = p_to and active) then
+    raise exception 'Choose another team member to send the query to';
+  end if;
+  -- Log any time running on this job before it changes hands.
+  if exists (select 1 from public.job_timers where user_id = me and job_id = p_job and ended_at is null) then
+    perform public.end_job_timer(me);
+  end if;
+  select full_name into who from public.profiles where id = me;
+  perform set_config('supertax.job_handover', 'on', true);
+  update public.jobs set
+    status = 'internal_query',
+    query_from = coalesce(j.query_from, j.assignee_id, me),
+    assignee_id = p_to,
+    notes = case when coalesce(trim(p_note), '') = '' then notes
+                 else trim(both E'\n' from notes || E'\n' || 'Internal query from ' || who || ' (' || to_char(now() at time zone 'Australia/Sydney', 'FMDD Mon') || '): ' || trim(p_note)) end
+  where id = p_job;
+  perform set_config('supertax.job_handover', 'off', true);
+  if coalesce(trim(p_note), '') <> '' then
+    insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'comment', 'Internal query: ' || trim(p_note));
+  end if;
+end $$;
+
+create or replace function public.answer_internal_query(p_job uuid, p_note text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); who text;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.query_from is null then raise exception 'This job has no internal query to answer'; end if;
+  if j.assignee_id is distinct from me and public.my_role() not in ('master', 'manager') then
+    raise exception 'Only the person the query was sent to can send it back' using errcode = '42501';
+  end if;
+  if exists (select 1 from public.job_timers where user_id = me and job_id = p_job and ended_at is null) then
+    perform public.end_job_timer(me);
+  end if;
+  select full_name into who from public.profiles where id = me;
+  perform set_config('supertax.job_handover', 'on', true);
+  update public.jobs set
+    status = 'in_progress',
+    assignee_id = j.query_from,
+    query_from = null,
+    notes = case when coalesce(trim(p_note), '') = '' then notes
+                 else trim(both E'\n' from notes || E'\n' || 'Reply from ' || who || ' (' || to_char(now() at time zone 'Australia/Sydney', 'FMDD Mon') || '): ' || trim(p_note)) end
+  where id = p_job;
+  perform set_config('supertax.job_handover', 'off', true);
+  if coalesce(trim(p_note), '') <> '' then
+    insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'comment', 'Reply: ' || trim(p_note));
+  end if;
+end $$;

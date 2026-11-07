@@ -223,3 +223,19 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .notelist .nact .link{font-size:13px}
 .notelist .nact .danger{color:var(--danger)}
 .tag.pin{background:var(--warn);color:#fff}
+.modal.wide{max-width:780px}
+.modal .tabs{display:flex;gap:4px;padding:0 18px;border-bottom:1px solid var(--line)}
+.modal .tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:10px 12px;font-weight:600;color:var(--muted)}
+.modal .tabs button.on{border-bottom-color:var(--brand-orange);color:var(--fg)}
+.jobhistory{padding:16px 18px;display:grid;gap:18px}
+.jobhistory h3{font-size:14px;margin:0 0 8px;display:flex;gap:8px;align-items:baseline}
+.jobhistory .timer{color:var(--accent);font-weight:700}
+.timeline{list-style:none;margin:8px 0 0;padding:0;border-left:2px solid var(--line)}
+.timeline li{position:relative;padding:6px 0 10px 14px;font-size:14px;overflow-wrap:anywhere}
+.timeline li::before{content:"";position:absolute;left:-6px;top:11px;width:10px;height:10px;border-radius:50%;background:var(--line);border:2px solid var(--surface)}
+.timeline li.comment::before{background:var(--brand-orange)}
+.timeline li.time::before{background:var(--accent)}
+.timeline .hwho{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:baseline}
+.timeline .hwho .link{font-size:12px;margin-left:auto}
+.timeline .hwho .danger{color:var(--danger)}
+.timeline .hcomment{margin-top:4px;padding:8px 10px;background:var(--surface-2);border-radius:8px;white-space:pre-wrap}
