@@ -8,7 +8,7 @@ type SB = ReturnType<typeof createClient>;
 
 const time = (ts: string | null) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }) : "");
 const mins = (a: Attendance, now: number) => Math.max(0, ((a.clock_out ? Date.parse(a.clock_out) : now) - Date.parse(a.clock_in)) / 60000);
-const hm = (m: number) => `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, "0")}m`;
+const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const hrs = (n: number) => `${Number(n.toFixed(2))} h`;
 const monday = () => { const d = new Date(); const back = (d.getDay() + 6) % 7; d.setDate(d.getDate() - back); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
 
@@ -60,6 +60,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const myDay = entries.filter((e) => e.user_id === me.id && e.work_date === day);
   const myHours = myDay.reduce((s, e) => s + e.hours, 0);
   // Clock out is allowed only once the shift's day has at least one timesheet line.
+  // Previous days are locked (except the master admin, and the day of a shift still clocked in).
+  const dayOpen = day >= todayISO() || me.role === "master" || (!!openShift && openShift.work_date === day);
   const shiftFilled = !!openShift && entries.some((e) => e.user_id === me.id && e.work_date === openShift.work_date);
   // While clocked in, show the shift's own day (a shift that started before midnight stays on that day).
   const jumped = useRef("");
@@ -136,19 +138,6 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
             </div>
           </div>
 
-          <div className="panel">
-            <div className="ph"><h2>My timesheet</h2><label className="row note">Date <input type="date" id="ts-day" value={day} max={todayISO()} onChange={(e) => e.target.value && setDay(e.target.value)} /></label></div>
-            <p className="note" style={{ padding: "4px 14px 0", margin: 0 }}>
-              {myDayAtt.length ? <>Clocked {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No clock-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
-            </p>
-            <div className="tablebox solo" style={{ margin: 12 }}>
-              <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>What you did</th><th></th></tr></thead>
-                <tbody>
-                  {myDay.map((e) => <EntryRow key={e.id} e={e} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
-                  <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />
-                </tbody></table>
-            </div>
-          </div>
         </div>
 
         <div className="section">
@@ -157,6 +146,24 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
             <p className="note" style={{ margin: 0 }}>You can add, change and remove only your own entries. Your manager and the master admin can see them. Clock times come from the portal&apos;s clock and can&apos;t be edited.</p>
           </div>
         </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+          <div className="panel">
+            <div className="ph"><h2>My timesheet</h2><label className="row note">Date <input type="date" id="ts-day" value={day} max={todayISO()} onChange={(e) => e.target.value && setDay(e.target.value)} /></label></div>
+            <p className="note" style={{ padding: "4px 14px 0", margin: 0 }}>
+              {myDayAtt.length ? <>Clocked {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No clock-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
+            </p>
+            <div className="tablebox solo" style={{ margin: 12 }}>
+              <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>What you did</th><th></th></tr></thead>
+                <tbody>
+                  {myDay.map((e) => <EntryRow key={e.id} e={e} locked={!dayOpen} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
+                  {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">Nothing was recorded for this day.</td></tr> : null}
+                  {dayOpen ? <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} /> : null}
+                </tbody></table>
+            </div>
+            {!dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask the master admin if something needs correcting.</p> : null}
+          </div>
       </div>
 
       {canSeeTeam ? (
@@ -195,11 +202,12 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   );
 }
 
-function EntryRow({ e, day, userId, clients, jobs, supabase, say, onSaved }: {
-  e?: TimeEntry; day?: string; userId: string; clients: Client[]; jobs: Job[]; supabase: SB; say: (m: string, er?: boolean) => void; onSaved: () => void;
+function EntryRow({ e, day, locked, userId, clients, jobs, supabase, say, onSaved }: {
+  e?: TimeEntry; day?: string; locked?: boolean; userId: string; clients: Client[]; jobs: Job[]; supabase: SB; say: (m: string, er?: boolean) => void; onSaved: () => void;
 }) {
   const [v, setV] = useState({ client_id: e?.client_id ?? "", job_id: e?.job_id ?? "", hours: e ? String(e.hours) : "", description: e?.description ?? "" });
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const clientJobs = useMemo(() => jobs.filter((j) => j.client_id === v.client_id), [jobs, v.client_id]);
   const dirty = !e || v.client_id !== (e.client_id ?? "") || v.job_id !== (e.job_id ?? "") || Number(v.hours) !== e.hours || v.description !== e.description;
 
@@ -215,6 +223,7 @@ function EntryRow({ e, day, userId, clients, jobs, supabase, say, onSaved }: {
     setBusy(false);
     if (error) { say(`Not saved: ${error.message}`, true); return; }
     say(e ? "Saved" : "Added");
+    setEditing(false);
     onSaved();
   }
   async function remove() {
@@ -224,18 +233,25 @@ function EntryRow({ e, day, userId, clients, jobs, supabase, say, onSaved }: {
     onSaved();
   }
 
+  // Saved lines show as plain text; the blank row at the bottom is the only form.
+  if (e && (locked || !editing)) {
+    const c = clients.find((x) => x.id === e.client_id);
+    const j = jobs.find((x) => x.id === e.job_id);
+    return <tr><td>{c?.name ?? "General / admin"}</td><td>{j ? `${svcLabel(j.service)} · ${j.period}` : "—"}</td><td className="mono" style={{ textAlign: "right" }}>{e.hours} h</td><td style={{ whiteSpace: "pre-wrap" }}>{e.description}</td>
+      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{locked ? null : <><button type="button" className="link" onClick={() => setEditing(true)}>Edit</button><button type="button" className="link" onClick={remove} style={{ marginLeft: 8 }}>Remove</button></>}</td></tr>;
+  }
   return (
     <tr>
       <td><select aria-label="Client" value={v.client_id} onChange={(x) => setV({ ...v, client_id: x.target.value, job_id: "" })} style={{ maxWidth: 180 }}>
-        <option value="">General / admin</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
+        <option value="">Select client</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
       <td><select aria-label="Job" value={v.job_id} onChange={(x) => setV({ ...v, job_id: x.target.value })} disabled={!v.client_id} style={{ maxWidth: 170 }}>
         <option value="">—</option>{clientJobs.map((j) => <option key={j.id} value={j.id}>{svcLabel(j.service)} · {j.period}</option>)}</select></td>
-      <td style={{ textAlign: "right" }}><input aria-label="Hours" type="number" min="0.25" max="24" step="0.25" value={v.hours} onChange={(x) => setV({ ...v, hours: x.target.value })} style={{ width: 72 }} placeholder="0.0" /></td>
-      <td><input aria-label="What you did" value={v.description} onChange={(x) => setV({ ...v, description: x.target.value })} placeholder="e.g. Prepared Q2 BAS" style={{ minWidth: 160, width: "100%" }}
+      <td style={{ textAlign: "right" }}><input aria-label="Hours" type="number" min="0.25" max="24" step="0.25" value={v.hours} onChange={(x) => setV({ ...v, hours: x.target.value })} style={{ width: 72 }} /></td>
+      <td><input aria-label="What you did" value={v.description} onChange={(x) => setV({ ...v, description: x.target.value })} style={{ minWidth: 160, width: "100%" }}
         onKeyDown={(x) => { if (x.key === "Enter" && dirty) save(); }} /></td>
       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
         {dirty ? <button type="button" className={e ? undefined : "primary"} disabled={busy} onClick={save}>{e ? "Save" : "Add"}</button> : null}
-        {e ? <button type="button" className="link" onClick={remove} style={{ marginLeft: 6 }}>Remove</button> : null}
+        {e ? <button type="button" className="link" onClick={() => { setEditing(false); setV({ client_id: e.client_id ?? "", job_id: e.job_id ?? "", hours: String(e.hours), description: e.description }); }} style={{ marginLeft: 6 }}>Cancel</button> : null}
       </td>
     </tr>
   );

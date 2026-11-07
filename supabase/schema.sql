@@ -360,3 +360,27 @@ do $$ begin
     perform cron.schedule('supertax-payroll-jobs', '0 20 * * *', 'select public.generate_payroll_jobs()');
   end if;
 end $$;
+
+-- ===== Lock previous days' timesheets =====
+-- Entries can be added, changed or removed only for today (Sydney time), or for
+-- the day of a shift you're still clocked in to. The master admin can still edit
+-- their own past entries.
+create or replace function public.timesheet_day_open(d date) returns boolean
+language sql stable security definer set search_path = public as $$
+  select d >= (now() at time zone 'Australia/Sydney')::date
+      or public.my_role() = 'master'
+      or exists (select 1 from public.attendance where user_id = auth.uid() and work_date = d and clock_out is null);
+$$;
+revoke all on function public.timesheet_day_open(date) from public, anon;
+grant execute on function public.timesheet_day_open(date) to authenticated;
+
+drop policy if exists "add own timesheet" on public.timesheet_entries;
+create policy "add own timesheet" on public.timesheet_entries
+  for insert to authenticated with check (user_id = auth.uid() and public.is_active_member() and public.timesheet_day_open(work_date));
+drop policy if exists "edit own timesheet" on public.timesheet_entries;
+create policy "edit own timesheet" on public.timesheet_entries
+  for update to authenticated using (user_id = auth.uid() and public.is_active_member() and public.timesheet_day_open(work_date))
+  with check (user_id = auth.uid() and public.timesheet_day_open(work_date));
+drop policy if exists "delete own timesheet" on public.timesheet_entries;
+create policy "delete own timesheet" on public.timesheet_entries
+  for delete to authenticated using (user_id = auth.uid() and public.is_active_member() and public.timesheet_day_open(work_date));
