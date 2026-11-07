@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
-import {
+import { clientUpcoming,
   ENTITIES, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
@@ -444,6 +444,7 @@ export default function Workspace({ me }: { me: Profile }) {
   function ClientDetail({ c }: { c: Client }) {
     const js = jobs.filter((j) => j.client_id === c.id).sort((a, b) => (b.due_date ?? "").localeCompare(a.due_date ?? ""));
     const openJ = js.filter((j) => isOpen(j.status)), closedJ = js.filter((j) => !isOpen(j.status));
+    const upcoming = clientUpcoming(c, js);
     const Table = ({ list }: { list: Job[] }) => (
       <table><thead><tr><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
         <tbody>{list.map((j) => (
@@ -469,6 +470,9 @@ export default function Workspace({ me }: { me: Profile }) {
           <div className="section">
             <ClientNotes key={c.id} clientId={c.id} meId={me.id} isManager={canManage} canDelete={canDelete} supabase={supabase} personName={personName} say={say} />
             <div><h2>Open jobs ({openJ.length})</h2><div className="tablebox solo">{openJ.length ? <Table list={openJ} /> : <div className="empty">No open jobs for this client.</div>}</div></div>
+            {upcoming.length ? <div><h2>Upcoming jobs ({upcoming.length})</h2><div className="tablebox solo"><table><thead><tr><th>Service</th><th>Period</th><th>Created on</th><th>Due</th></tr></thead>
+              <tbody>{upcoming.map((u) => <tr key={u.key}><td>{svcLabel(u.service)}</td><td className="mono">{u.period}</td><td><span className="pill">{fmtDate(u.appears)}</span></td><td>{u.due ? fmtDate(u.due) : <span className="muted">—</span>}</td></tr>)}</tbody></table>
+              <div className="note" style={{ padding: "8px 12px" }}>Created automatically: BAS the day after the period ends, payroll on each pay day.</div></div></div> : null}
             <div><h2>Lodged and completed ({closedJ.length})</h2><div className="tablebox solo">{closedJ.length ? <Table list={closedJ} /> : <div className="empty">Nothing lodged yet.</div>}</div></div>
           </div>
         </div>

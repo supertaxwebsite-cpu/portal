@@ -136,3 +136,54 @@ export function projectedWork(clients: { id: string; name: string; services: str
   [...pay.entries()].sort().forEach(([d, names]) => out.push({ key: `pay-${d}`, label: `Payroll · pay day ${fmtDate(d)}`, detail: `${names.length} client${names.length === 1 ? "" : "s"}`, appears: d, clients: names }));
   return out.sort((a, b) => a.appears.localeCompare(b.appears));
 }
+
+export interface Upcoming { key: string; service: string; period: string; appears: string; due: string }
+/** Jobs that will be created automatically for one client (BAS after each period ends, payroll on each pay day).
+ *  Leaves out any that already exist. */
+export function clientUpcoming(c: { services: string[]; bas_freq: string; payroll_freq?: string; payroll_anchor?: string | null }, existing: { service: string; period: string }[], days = 120): Upcoming[] {
+  const today = todayISO();
+  const [y, m] = today.split("-").map(Number);
+  const dn = (s: string) => { const [a, b, d] = s.split("-").map(Number); return Date.UTC(a, b - 1, d) / 864e5; };
+  const fromNum = (n: number) => new Date(n * 864e5).toISOString().slice(0, 10);
+  const horizon = dn(today) + days;
+  const has = new Set(existing.map((j) => `${j.service}|${j.period}`));
+  const out: Upcoming[] = [];
+  const add = (u: Upcoming) => { if (!has.has(`${u.service}|${u.period}`) && u.appears > today && dn(u.appears) <= horizon) out.push(u); };
+  const after = (yy: number, mm: number) => (mm === 12 ? iso(yy + 1, 1, 1) : iso(yy, mm + 1, 1));
+  if (c.services.includes("bas")) {
+    if (c.bas_freq === "monthly") {
+      for (let k = 0; k < 5; k++) {
+        const mm = ((m - 1 + k) % 12) + 1, yy = y + Math.floor((m - 1 + k) / 12);
+        const p: PeriodInput = { freq: "monthly", fy: 0, q: 0, month: `${yy}-${pad(mm)}`, text: "" };
+        add({ key: `bas-${yy}-${mm}`, service: "bas", period: periodLabel("bas", p), appears: after(yy, mm), due: suggestDue("bas", p) });
+      }
+    } else {
+      let fy = m >= 7 ? y + 1 : y, q = m >= 7 && m <= 9 ? 1 : m >= 10 ? 2 : m <= 3 ? 3 : 4;
+      for (let k = 0; k < 3; k++) {
+        const endMonth = [9, 12, 3, 6][q - 1], endYear = q <= 2 ? fy - 1 : fy;
+        const p: PeriodInput = { freq: "quarterly", fy, q, month: "", text: "" };
+        add({ key: `bas-q${q}-${fy}`, service: "bas", period: periodLabel("bas", p), appears: after(endYear, endMonth), due: suggestDue("bas", p) });
+        q++; if (q > 4) { q = 1; fy++; }
+      }
+    }
+  }
+  if (c.services.includes("payroll") && c.payroll_freq && c.payroll_anchor) {
+    const a = dn(c.payroll_anchor);
+    for (let n = dn(today) + 1; n <= horizon && out.filter((u) => u.service === "payroll").length < 8; n++) {
+      if (n < a) continue;
+      const d = fromNum(n);
+      let hit = false;
+      if (c.payroll_freq === "weekly") hit = (n - a) % 7 === 0;
+      else if (c.payroll_freq === "fortnightly") hit = (n - a) % 14 === 0;
+      else if (c.payroll_freq === "monthly") {
+        const [dy, dm, dd] = d.split("-").map(Number);
+        hit = dd === Math.min(Number(c.payroll_anchor.slice(8, 10)), new Date(Date.UTC(dy, dm, 0)).getUTCDate());
+      }
+      if (hit) {
+        const [dy, dm, dd] = d.split("-").map(Number);
+        add({ key: `pay-${d}`, service: "payroll", period: c.payroll_freq === "monthly" ? `${MONTHS[dm - 1]} ${dy}` : `Pay ${dd} ${MONTHS[dm - 1]} ${dy}`, appears: d, due: d });
+      }
+    }
+  }
+  return out.sort((a, b) => a.appears.localeCompare(b.appears));
+}
