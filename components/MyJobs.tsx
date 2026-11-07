@@ -2,13 +2,17 @@
 import { useEffect, useState } from "react";
 import type { Job, JobTimer, StatusId } from "@/lib/types";
 import { STATUSES, ST, daysFrom, fmtDate, svcLabel } from "@/lib/domain";
+import { dateOf, isLink, timeOf, type Meeting } from "./Meetings";
 
 export const fmtHours = (h: number) => { const m = Math.max(1, Math.round(h * 60)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 const elapsed = (from: string, now: number) => { const m = Math.max(0, Math.floor((now - new Date(from).getTime()) / 60000)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, onAnswer, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
+  meetings?: Meeting[];
+  onOpenMeeting?: (m: Meeting) => void;
+  onMeetingDone?: (m: Meeting) => void;
   myId: string;
   personName: (id: string | null) => string;
   onAnswer: (j: Job) => void;
@@ -24,13 +28,19 @@ export default function MyJobs({ jobs, myId, personName, running, clientName, re
   onSeeAll: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { if (!running) return; const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, [running]);
+  useEffect(() => { if (!running && !meetings.length) return; const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, [running, meetings.length]);
   const list = [...jobs].sort((a, b) => (a.id === running?.job_id ? -1 : b.id === running?.job_id ? 1 : (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")));
   const shown = list.slice(0, 10);
   return (
     <div className="panel myjobs">
       <div className="ph"><h2>My jobs</h2>{jobs.length ? <button className="link" onClick={onSeeAll}>See all {jobs.length}</button> : null}</div>
-      {!jobs.length ? <div className="empty"><strong>No open jobs assigned to you.</strong>Jobs assigned to you show here, ready to start.</div> : (
+      {meetings.length ? <ul className="list">{meetings.map((m) => { const at = new Date(m.starts_at).getTime(); const nowOn = at <= now && now < at + m.duration_min * 60000; return (
+        <li key={m.id} className={`meetrow${nowOn ? " running" : ""}`}><div style={{ minWidth: 0 }}>
+          <div className="t"><span className="pill accent">Meeting</span><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpenMeeting?.(m)}>{m.title}</button></div>
+          <div className="s">{nowOn ? "Now" : dateOf(m.starts_at)} · {timeOf(m.starts_at)} · {m.duration_min} min{m.location && !isLink(m.location) ? ` · ${m.location}` : ""}</div></div>
+          <div className="row actions">{isLink(m.location) ? <a className="btnlink" href={m.location} target="_blank" rel="noreferrer">Join</a> : null}
+            {m.owner_id === myId ? <button onClick={() => onMeetingDone?.(m)}>Done</button> : null}</div></li>); })}</ul> : null}
+      {!jobs.length && meetings.length ? null : !jobs.length ? <div className="empty"><strong>No open jobs assigned to you.</strong>Jobs assigned to you show here, ready to start.</div> : (
         <ul className="list">{shown.map((j) => {
           const on = running?.job_id === j.id;
           const d = j.due_date ? daysFrom(j.due_date) : null;

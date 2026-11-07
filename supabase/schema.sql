@@ -1006,3 +1006,48 @@ begin
   return hrs;
 end $$;
 revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;
+
+-- ===== Meetings calendar (booked by master admins and managers) =====
+create table if not exists public.meetings (
+  id uuid primary key default gen_random_uuid(),
+  title text not null check (length(trim(title)) > 0 and length(title) <= 200),
+  client_id uuid references public.clients (id) on delete set null,
+  starts_at timestamptz not null,
+  duration_min integer not null default 30 check (duration_min between 5 and 720),
+  location text not null default '',
+  notes text not null default '',
+  owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  attendees uuid[] not null default '{}',
+  remind_min integer not null default 15 check (remind_min between 0 and 10080),
+  done boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists meetings_starts_idx on public.meetings (starts_at);
+alter table public.meetings enable row level security;
+drop policy if exists "see own, invited or as master" on public.meetings;
+create policy "see own, invited or as master" on public.meetings
+  for select to authenticated using (public.is_active_member() and (owner_id = auth.uid() or auth.uid() = any (attendees) or public.my_role() = 'master'));
+drop policy if exists "managers book meetings" on public.meetings;
+create policy "managers book meetings" on public.meetings
+  for insert to authenticated with check (public.is_active_member() and owner_id = auth.uid() and public.my_role() in ('master', 'manager'));
+drop policy if exists "owner or master edits meetings" on public.meetings;
+create policy "owner or master edits meetings" on public.meetings
+  for update to authenticated using (public.is_active_member() and (owner_id = auth.uid() or public.my_role() = 'master'))
+  with check (public.is_active_member());
+drop policy if exists "owner or master deletes meetings" on public.meetings;
+create policy "owner or master deletes meetings" on public.meetings
+  for delete to authenticated using (public.is_active_member() and (owner_id = auth.uid() or public.my_role() = 'master'));
+revoke all on public.meetings from anon;
+
+create or replace function public.stamp_meeting() returns trigger
+language plpgsql as $$ begin new.updated_at := now(); new.owner_id := old.owner_id; return new; end $$;
+drop trigger if exists meetings_stamp on public.meetings;
+create trigger meetings_stamp before update on public.meetings
+  for each row execute function public.stamp_meeting();
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.meetings; exception when duplicate_object then null; end;
+  end if;
+end $$;

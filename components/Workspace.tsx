@@ -9,6 +9,7 @@ import { periodOptions, clientUpcoming,
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import UpdateBanner from "./UpdateBanner";
+import { MeetingsView, MeetingModal, MeetingReminders, involves, type Meeting } from "./Meetings";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
@@ -16,8 +17,8 @@ import JobHistory, { type JobSummary } from "./JobHistory";
 import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
-type View = "overview" | "jobs" | "clients" | "timesheet" | "team";
-const VIEWS: View[] = ["overview", "jobs", "clients", "timesheet", "team"];
+type View = "overview" | "jobs" | "clients" | "timesheet" | "team" | "meetings";
+const VIEWS: View[] = ["overview", "jobs", "clients", "timesheet", "team", "meetings"];
 interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string }
 const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "" };
 
@@ -27,6 +28,7 @@ type Modal =
   | { kind: "client"; client?: Client }
   | { kind: "member"; member?: Profile }
   | { kind: "import" }
+  | { kind: "meeting"; meeting?: Meeting; date?: string }
   | { kind: "query"; job: Job; mode: "send" | "answer" }
   | { kind: "temp"; name: string; email: string; password: string }
   | { kind: "confirm"; title: string; text: string; yes: string; run: () => Promise<boolean | void> }
@@ -50,6 +52,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [running, setRunning] = useState<JobTimer | null>(null);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [timerBusy, setTimerBusy] = useState(false);
   const [teamRunning, setTeamRunning] = useState<JobTimer[]>([]);
   const [jobHours, setJobHours] = useState<Record<string, number>>({});
@@ -89,6 +92,8 @@ export default function Workspace({ me }: { me: Profile }) {
       ]);
       const { data: t } = await supabase.from("job_timers").select("*").eq("user_id", me.id).is("ended_at", null).limit(1);
       setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
+      const { data: mt } = await supabase.from("meetings").select("*").gte("starts_at", new Date(Date.now() - 120 * 864e5).toISOString()).order("starts_at");
+      setMeetings((mt as Meeting[] | null) ?? []);
       if (me.role === "master" || me.role === "manager") {
         // Everyone this person can see (managers: their own staff) who has a job running, plus time logged on those jobs.
         const { data: tr } = await supabase.from("job_timers").select("*").is("ended_at", null).order("started_at");
@@ -120,6 +125,7 @@ export default function Workspace({ me }: { me: Profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "job_timers" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "meetings" }, refresh)
       .subscribe((status) => setLive(status === "SUBSCRIBED"));
     const onFocus = () => refresh();
     window.addEventListener("focus", onFocus);
@@ -130,7 +136,7 @@ export default function Workspace({ me }: { me: Profile }) {
   useEffect(() => {
     const route = () => {
       const h = window.location.hash.replace("#", "") as View;
-      setView(VIEWS.includes(h) && (h !== "team" || canSeeTeam) ? h : "overview");
+      setView(VIEWS.includes(h) && ((h !== "team" && h !== "meetings") || canSeeTeam) ? h : "overview");
     };
     route();
     window.addEventListener("hashchange", route);
@@ -289,7 +295,10 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="grid2">
           <div className="section">
             <MyJobs jobs={openJobs.filter((j) => j.status !== "sent_for_sign" && (j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query")))} myId={me.id} personName={personName}
-              onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} running={running} clientName={clientName} busy={timerBusy}
+              onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
+              meetings={meetings.filter((m) => !m.done && involves(m, me.id) && new Date(m.starts_at).getTime() + m.duration_min * 60000 >= Date.now() && new Date(m.starts_at).getTime() < Date.now() + 7 * 864e5)}
+              onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })}
+              onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")} running={running} clientName={clientName} busy={timerBusy}
               reviewerName={me.reports_to ? personName(me.reports_to) : ""}
               onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview}
               onOpen={(j) => setModal({ kind: "job", job: j })} onSeeAll={() => gotoJobs({ assignee: me.id })} />
@@ -529,6 +538,8 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
+      {view === "meetings" && canSeeTeam ? <MeetingsView meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
+        onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })} /> : null}
 
       {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
@@ -556,6 +567,9 @@ export default function Workspace({ me }: { me: Profile }) {
           if (ok) close();
         }} onClose={close} /> : null}
       {modal?.kind === "confirm" ? <ConfirmModal {...modal} onClose={close} /> : null}
+      {modal?.kind === "meeting" ? <MeetingModal meeting={modal.meeting} date={modal.date} meId={me.id} canEdit={!modal.meeting || modal.meeting.owner_id === me.id || isMaster}
+        team={team} clients={clients} supabase={supabase} say={say} personName={personName} onClose={close} onSaved={load} /> : null}
+      <MeetingReminders meetings={meetings} meId={me.id} clientName={clientName} onOpen={(m) => setModal({ kind: "meeting", meeting: m })} />
 
       {toast ? <div className={`toast${toast.err ? " err" : ""}`} role="status">{toast.msg}</div> : null}
     </Shell>
@@ -564,7 +578,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
 /* ---------- layout ---------- */
 function Shell({ me, view, go, live, showTeam, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string]] : [])];
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
