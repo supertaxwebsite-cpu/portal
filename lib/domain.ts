@@ -32,6 +32,7 @@ export const STATUSES: Status[] = [
   { id: "to_lodge", label: "Ready to lodge", cls: "accent", open: true },
   { id: "sent_for_sign", label: "Sent for sign", cls: "warn", open: true },
   { id: "lodged", label: "Lodged", cls: "ok", open: false },
+  { id: "done", label: "Completed", cls: "ok", open: false }, // change requests and admin work, never lodged
 ];
 export const ST: Record<string, Status> = Object.fromEntries(STATUSES.map((s) => [s.id, s]));
 export const isOpen = (status: string) => ST[status]?.open !== false;

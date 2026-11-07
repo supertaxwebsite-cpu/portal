@@ -56,7 +56,7 @@ export interface Job {
   updated_by: string | null;
 }
 
-export type StatusId = "not_started" | "waiting" | "internal_query" | "in_progress" | "review" | "to_lodge" | "sent_for_sign" | "lodged";
+export type StatusId = "not_started" | "waiting" | "internal_query" | "in_progress" | "review" | "to_lodge" | "sent_for_sign" | "lodged" | "done";
 
 export interface Attendance {
   id: string;
