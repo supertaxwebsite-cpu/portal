@@ -457,6 +457,7 @@ begin
   select c.id, 'bas', 'Q' || q || ' FY' || right(fy::text, 2), q_due, c.manager_id
   from public.clients c
   where 'bas' = any (c.services) and c.bas_freq = 'quarterly'
+    and today - q_end <= 31  -- only a quarter that has just ended; older quarters aren't back-filled
   on conflict (client_id, service, period) do nothing;
   get diagnostics n1 = row_count;
 
