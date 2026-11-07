@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
-import { clientUpcoming,
+import { periodOptions, clientUpcoming,
   ENTITIES, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
@@ -619,9 +619,31 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
   const [tab, setTab] = useState<"details" | "history">("details");
   const [sum, setSum] = useState<JobSummary | null>(null);
   const logged = sum?.hours ?? 0;
+  // Period choices depend on the service (and the client's BAS / payroll settings).
+  const client = clients.find((c) => c.id === v.client_id);
+  const groups = useMemo(() => periodOptions(v.service, client), [v.service, client]);
+  const allOpts = groups.flatMap((g) => g.options);
+  const [custom, setCustom] = useState(() => !!job?.period && !periodOptions(job.service, clients.find((c) => c.id === job.client_id)).some((g) => g.options.some((o) => o.label === job.period)));
+  const isCustom = custom || !groups.length;
+  const [autoDue, setAutoDue] = useState(!job);
+  const pickPeriod = (label: string) => {
+    if (label === "__own") { setCustom(true); setV({ ...v, period: "" }); return; }
+    const o = allOpts.find((x) => x.label === label);
+    setV({ ...v, period: label, due_date: autoDue || !v.due_date ? o?.due ?? v.due_date : v.due_date });
+    if (!v.due_date) setAutoDue(true);
+  };
+  // Repeat automatically (BAS and payroll are created by the system each period).
+  const canRepeat = !job && (v.service === "bas" || v.service === "payroll");
+  const alreadyRepeats = !!client && (v.service === "bas" ? client.services.includes("bas")
+    : v.service === "payroll" ? client.services.includes("payroll") && !!client.payroll_freq && !!client.payroll_anchor : false);
+  const [repeat, setRepeat] = useState(false);
+  const [payFreq, setPayFreq] = useState("fortnightly");
+  const [payAnchor, setPayAnchor] = useState("");
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const next = { ...v, [k]: e.target.value };
     if (k === "client_id" && !v.assignee_id) next.assignee_id = clients.find((c) => c.id === e.target.value)?.manager_id ?? "";
+    if (k === "service" && !job) { next.period = ""; if (autoDue) next.due_date = ""; setCustom(false); }
+    if (k === "due_date") setAutoDue(false);
     setV(next);
   };
   if (!clients.length) {
@@ -639,6 +661,14 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
     if (query) row.status = job.status;
     const ok = job ? await save(() => supabase.from("jobs").update(row).eq("id", job.id), query ? undefined : "Job saved")
       : await save(() => supabase.from("jobs").insert(row), "Job created");
+    // Set the client up so the next periods are created automatically.
+    if (ok && !job && canRepeat && repeat && !alreadyRepeats && client) {
+      const services = client.services.includes(v.service) ? client.services : [...client.services, v.service];
+      const upd = v.service === "bas"
+        ? { services, bas_freq: /^Q/.test(v.period) ? "quarterly" : "monthly" }
+        : { services, payroll_freq: payFreq, payroll_anchor: payAnchor || (/^Pay /.test(v.period) ? v.due_date : "") || null };
+      await save(() => supabase.from("clients").update(upd).eq("id", client.id), "Job created and set to repeat automatically");
+    }
     setBusy(false);
     if (ok && query) onQuery({ ...job, ...row } as Job);
     else if (ok) onClose();
@@ -657,7 +687,24 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
           : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
         <label className="f full">Client<select id="m-client" required disabled={locked} value={v.client_id} onChange={set("client_id")}><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
-        <label className="f">Period<input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} /></label>
+        <label className="f">Period{isCustom ? <span className="periodown">
+            <input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} />
+            {groups.length && !locked ? <button type="button" className="link" onClick={() => { setCustom(false); setV({ ...v, period: "" }); }}>Pick from list</button> : null}</span>
+          : <select id="m-period" required disabled={locked} value={v.period} onChange={(e) => pickPeriod(e.target.value)}>
+            <option value="">Choose a period…</option>
+            {groups.map((g) => <optgroup key={g.label} label={g.label}>{g.options.map((o) => <option key={o.label} value={o.label}>{o.label}</option>)}</optgroup>)}
+            <option value="__own">Other (type your own)…</option>
+          </select>}</label>
+        {canRepeat ? <div className="full repeatbox">
+          {alreadyRepeats ? <span className="note">✓ This client is already set up for automatic {v.service === "bas" ? `${client?.bas_freq === "monthly" ? "monthly" : "quarterly"} BAS` : `${client?.payroll_freq} payroll`} jobs. The next one is created by itself.</span> : <>
+            <label className="row" style={{ gap: 8, fontWeight: 600 }}><input id="m-repeat" type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} /> Repeat automatically for this client</label>
+            {repeat && v.service === "bas" ? <span className="note">The next {/^Q/.test(v.period) || !v.period ? "quarter's" : "month's"} BAS job is created by itself the day after that period ends{/^Q/.test(v.period) || !v.period ? " (e.g. Q2 FY27 appears on 1 Jan 2027)" : ""}.</span> : null}
+            {repeat && v.service === "payroll" ? <div className="row">
+              <label className="f" style={{ flex: 1 }}>How often<select id="m-payfreq" value={payFreq} onChange={(e) => setPayFreq(e.target.value)}><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option></select></label>
+              <label className="f" style={{ flex: 1 }}>A pay day<input id="m-payday" type="date" required value={payAnchor || (/^Pay /.test(v.period) ? v.due_date : "")} onChange={(e) => setPayAnchor(e.target.value)} /></label>
+              <span className="note" style={{ flexBasis: "100%" }}>A payroll job is created on each pay day from then on.</span></div> : null}
+          </>}
+        </div> : null}
         <label className="f">Due date<input id="m-due" type="date" disabled={locked} value={v.due_date} onChange={set("due_date")} /></label>
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>

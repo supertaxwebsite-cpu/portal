@@ -187,3 +187,63 @@ export function clientUpcoming(c: { services: string[]; bas_freq: string; payrol
   }
   return out.sort((a, b) => a.appears.localeCompare(b.appears));
 }
+
+export interface PeriodOption { label: string; due: string }
+export interface PeriodGroup { label: string; options: PeriodOption[] }
+/** Period choices for the New job form, based on the service and the client's settings. */
+export function periodOptions(service: string, client?: { bas_freq?: string; payroll_freq?: string; payroll_anchor?: string | null }): PeriodGroup[] {
+  const s = SVC[service];
+  if (!s || s.kind === "custom") return [];
+  const today = todayISO();
+  const [y, m] = today.split("-").map(Number);
+  const months = (back: number, ahead: number) => {
+    const out: PeriodOption[] = [];
+    for (let k = ahead; k >= -back; k--) {
+      const t = (y * 12 + (m - 1)) + k, yy = Math.floor(t / 12), mm = (t % 12) + 1;
+      const p: PeriodInput = { freq: "monthly", fy: 0, q: 0, month: `${yy}-${pad(mm)}`, text: "" };
+      out.push({ label: `${MONTHS[mm - 1]} ${yy}`, due: suggestDue(service, p) });
+    }
+    return out;
+  };
+  if (s.kind === "bas") {
+    const quarters: PeriodOption[] = [];
+    let fy = m >= 7 ? y + 1 : y, q = m >= 7 && m <= 9 ? 1 : m >= 10 ? 2 : m <= 3 ? 3 : 4;
+    for (let k = 0; k < 6; k++) { // the current quarter and the five before it
+      const p: PeriodInput = { freq: "quarterly", fy, q, month: "", text: "" };
+      quarters.push({ label: periodLabel(service, p), due: suggestDue(service, p) });
+      q--; if (q < 1) { q = 4; fy--; }
+    }
+    const monthly = months(8, 1).map((o) => ({ ...o, due: suggestDue(service, { freq: "monthly", fy: 0, q: 0, month: monthISO(o.label), text: "" }) }));
+    const qg = { label: "Quarterly", options: quarters }, mg = { label: "Monthly", options: monthly };
+    return client?.bas_freq === "monthly" ? [mg, qg] : [qg, mg];
+  }
+  if (s.kind === "monthly") {
+    const groups: PeriodGroup[] = [];
+    if (service === "payroll" && client?.payroll_anchor && (client.payroll_freq === "weekly" || client.payroll_freq === "fortnightly")) {
+      const step = client.payroll_freq === "weekly" ? 7 : 14;
+      const dn = (x: string) => { const [a, b, c] = x.split("-").map(Number); return Date.UTC(a, b - 1, c) / 864e5; };
+      const a = dn(client.payroll_anchor), t0 = dn(today);
+      let n = a + Math.ceil((t0 - a) / step) * step; // next pay day on or after today
+      const pays: PeriodOption[] = [];
+      for (let k = -6; k <= 3; k++) {
+        const d = new Date((n + k * step) * 864e5).toISOString().slice(0, 10);
+        if (d < client.payroll_anchor) continue;
+        const [dy, dm, dd] = d.split("-").map(Number);
+        pays.push({ label: `Pay ${dd} ${MONTHS[dm - 1]} ${dy}`, due: d });
+      }
+      if (pays.length) groups.push({ label: "Pay days", options: pays.reverse() });
+    }
+    groups.push({ label: "Months", options: months(8, 1) });
+    return groups;
+  }
+  const fy = currentFY();
+  if (s.kind === "annual") return [{ label: "Financial year", options: [fy + 1, fy, fy - 1, fy - 2, fy - 3].map((f) => { const p: PeriodInput = { freq: "quarterly", fy: f, q: 0, month: "", text: "" }; return { label: periodLabel(service, p), due: suggestDue(service, p) }; }) }];
+  if (s.kind === "fbt") return [{ label: "FBT year", options: [fy + 1, fy, fy - 1].map((f) => { const p: PeriodInput = { freq: "quarterly", fy: f, q: 0, month: "", text: "" }; return { label: periodLabel(service, p), due: suggestDue(service, p) }; }) }];
+  return [];
+}
+/** "Oct 2026" -> "2026-10" */
+export function monthISO(label: string): string {
+  const [mon, yr] = label.split(" ");
+  const i = MONTHS.indexOf(mon);
+  return i < 0 ? "" : `${yr}-${pad(i + 1)}`;
+}
