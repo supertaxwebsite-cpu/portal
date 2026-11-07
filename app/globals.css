@@ -173,8 +173,10 @@ nav.tabs a[aria-current="page"]{color:#fff;background:rgba(34,163,220,.22)}
 .userbox{display:flex;align-items:center;gap:10px;color:#b8c7d6;font-size:13px}
 .userbox strong{color:#fff;font-weight:600}
 .bell{position:relative}
-.userbox .bellbtn{position:relative;display:grid;place-items:center;width:36px;height:36px;padding:0;border-radius:999px}
-.bellbtn .badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e5484d;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.userbox .bellbtn{position:relative;display:grid;place-items:center;width:36px;height:36px;padding:0;border-radius:999px;background:var(--brand-orange);border-color:var(--brand-orange);color:#1a1205}
+.userbox .bellbtn:hover{background:#ffb347;border-color:#ffb347}
+.userbox .bellbtn[aria-expanded="true"]{box-shadow:0 0 0 3px rgba(245,154,34,.35)}
+.bellbtn .badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e5484d;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--navy)}
 .bellpop{position:fixed;width:360px;max-height:70vh;overflow:auto;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);z-index:60}
 .bellhead{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
 .bellhead strong{color:var(--fg)}
