@@ -74,3 +74,11 @@ export interface TimeEntry {
   hours: number;
   description: string;
 }
+
+export interface JobTimer {
+  id: string;
+  user_id: string;
+  job_id: string | null;
+  started_at: string;
+  ended_at: string | null;
+}

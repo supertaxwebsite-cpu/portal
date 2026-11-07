@@ -491,3 +491,102 @@ do $$ begin
     perform cron.schedule('supertax-payroll-jobs', '5 13 * * *', 'select public.generate_recurring_jobs()');
   end if;
 end $$;
+
+-- ===== Job timers: Start / Stop a job from "My jobs"; the time goes to the timesheet =====
+create table if not exists public.job_timers (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  job_id uuid references public.jobs (id) on delete set null,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  entry_id uuid references public.timesheet_entries (id) on delete set null
+);
+-- One running job per person.
+create unique index if not exists job_timers_one_running on public.job_timers (user_id) where ended_at is null;
+alter table public.job_timers enable row level security;
+drop policy if exists "see own or team job timers" on public.job_timers;
+create policy "see own or team job timers" on public.job_timers
+  for select to authenticated using (public.can_view_person(user_id));
+-- Start and stop times come from the server clock only, through start_job() and stop_job().
+revoke insert, update, delete on public.job_timers from authenticated;
+revoke all on public.job_timers from anon;
+
+-- Ends a person's running timer and adds the time to their timesheet. Internal only.
+create or replace function public.end_job_timer(p_uid uuid) returns numeric
+language plpgsql security definer set search_path = public as $$
+declare
+  t public.job_timers;
+  j public.jobs;
+  tz constant text := 'Australia/Sydney';
+  hrs numeric;
+  e uuid;
+begin
+  select * into t from public.job_timers where user_id = p_uid and ended_at is null for update;
+  if not found then return null; end if;
+  select * into j from public.jobs where id = t.job_id;
+  hrs := least(24, greatest(0.01, round((extract(epoch from now() - t.started_at) / 3600)::numeric, 2)));
+  insert into public.timesheet_entries (user_id, work_date, client_id, job_id, hours, description)
+  values (p_uid, (t.started_at at time zone tz)::date, j.client_id, t.job_id, hrs,
+          'Timer ' || lower(to_char(t.started_at at time zone tz, 'FMHH12:MIAM')) || ' to ' || lower(to_char(now() at time zone tz, 'FMHH12:MIAM')))
+  returning id into e;
+  update public.job_timers set ended_at = now(), entry_id = e where id = t.id;
+  return hrs;
+end $$;
+revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;
+
+-- Start working on one of my jobs. Starting another job stops (and logs) the one running.
+create or replace function public.start_job(p_job uuid) returns public.job_timers
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; t public.job_timers;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from auth.uid() then raise exception 'You can only start jobs assigned to you'; end if;
+  if j.status in ('lodged', 'done') then raise exception 'This job is already finished'; end if;
+  select * into t from public.job_timers where user_id = auth.uid() and ended_at is null;
+  if found then
+    if t.job_id = p_job then return t; end if;
+    perform public.end_job_timer(auth.uid());
+  end if;
+  insert into public.job_timers (user_id, job_id) values (auth.uid(), p_job) returning * into t;
+  if j.status in ('not_started', 'waiting') then
+    update public.jobs set status = 'in_progress' where id = p_job;
+  end if;
+  return t;
+end $$;
+
+-- Stop my running job. Returns the hours added to my timesheet.
+create or replace function public.stop_job() returns numeric
+language plpgsql security definer set search_path = public as $$
+declare hrs numeric;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  hrs := public.end_job_timer(auth.uid());
+  if hrs is null then raise exception 'No job is running'; end if;
+  return hrs;
+end $$;
+revoke all on function public.start_job(uuid), public.stop_job() from public, anon;
+grant execute on function public.start_job(uuid), public.stop_job() to authenticated;
+
+-- Logging out stops a running job first, so its time is on the timesheet.
+create or replace function public.clock_out() returns public.attendance
+language plpgsql security definer set search_path = public as $$
+declare r public.attendance;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into r from public.attendance where user_id = auth.uid() and clock_out is null order by clock_in desc limit 1;
+  if not found then raise exception 'You are not clocked in'; end if;
+  perform public.end_job_timer(auth.uid());
+  if not exists (select 1 from public.timesheet_entries where user_id = auth.uid() and work_date = r.work_date) then
+    raise exception 'Fill in your timesheet for % before you clock out', to_char(r.work_date, 'FMDD Mon YYYY');
+  end if;
+  update public.attendance set clock_out = now() where id = r.id returning * into r;
+  return r;
+end $$;
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.job_timers; exception when duplicate_object then null; end;
+  end if;
+end $$;

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Client, Job, Person, Profile, StatusId } from "@/lib/types";
+import type { Client, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import {
   ENTITIES, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
@@ -9,6 +9,7 @@ import {
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import Timesheet from "./Timesheet";
+import MyJobs, { fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "clients" | "timesheet" | "team";
@@ -43,6 +44,8 @@ export default function Workspace({ me }: { me: Profile }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [running, setRunning] = useState<JobTimer | null>(null);
+  const [timerBusy, setTimerBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [live, setLive] = useState(false);
@@ -77,11 +80,13 @@ export default function Workspace({ me }: { me: Profile }) {
         fetchAll<Client>((a, b) => supabase.from("clients").select("*").order("name").range(a, b)),
         fetchAll<Job>((a, b) => supabase.from("jobs").select("*").order("due_date", { nullsFirst: false }).range(a, b)),
       ]);
+      const { data: t } = await supabase.from("job_timers").select("*").eq("user_id", me.id).is("ended_at", null).limit(1);
+      setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
       setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); setClients(c); setJobs(j); setLoaded(true); setLoadError("");
     } catch (e) {
       setLoadError((e as Error).message);
     }
-  }, [supabase]);
+  }, [supabase, me.id]);
 
   // Initial load + live refresh when anyone changes something.
   useEffect(() => {
@@ -94,6 +99,7 @@ export default function Workspace({ me }: { me: Profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "job_timers" }, refresh)
       .subscribe((status) => setLive(status === "SUBSCRIBED"));
     const onFocus = () => refresh();
     window.addEventListener("focus", onFocus);
@@ -149,6 +155,31 @@ export default function Workspace({ me }: { me: Profile }) {
     const upd: Partial<Job> = { status };
     if (status === "lodged" && !j.lodged_on) upd.lodged_on = todayISO();
     await save(() => supabase.from("jobs").update(upd).eq("id", j.id), `Marked ${ST[status].label.toLowerCase()}`);
+  }
+
+  /** My jobs: start/stop the job timer (time goes to the timesheet), change status, submit for review. */
+  async function timerCall(fn: () => PromiseLike<{ data: unknown; error: { message: string } | null }>, ok: (d: unknown) => string | null) {
+    setTimerBusy(true);
+    const { data, error } = await fn();
+    setTimerBusy(false);
+    if (error) { say(/function|schema cache|does not exist/i.test(error.message) ? "The job timer isn't set up in the database yet." : error.message, true); return false; }
+    const m = ok(data); if (m) say(m);
+    await load();
+    return true;
+  }
+  const startJob = (j: Job) => timerCall(() => supabase.rpc("start_job", { p_job: j.id }),
+    () => (running && running.job_id !== j.id ? `Started ${clientName(j.client_id)}. The previous job's time is on your timesheet.` : `Started ${clientName(j.client_id)}`));
+  const stopJob = () => timerCall(() => supabase.rpc("stop_job"), (h) => `Added ${fmtHours(Number(h))} to your timesheet`);
+  const myReviewer = (j: Job) => j.reviewer_id ?? me.reports_to ?? null;
+  async function myStatus(j: Job, status: StatusId) {
+    if (running?.job_id === j.id && !isOpen(status) && !(await stopJob())) return;
+    await setStatus(j, status);
+  }
+  async function submitForReview(j: Job) {
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    const rev = myReviewer(j);
+    await save(() => supabase.from("jobs").update({ status: "review", reviewer_id: rev }).eq("id", j.id),
+      rev && rev !== me.id ? `Sent to ${personName(rev)} for review` : "Marked ready for review");
   }
 
   function exportCsv(list: Job[]) {
@@ -233,6 +264,10 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="grid2">
           <div className="section">
+            <MyJobs jobs={openJobs.filter((j) => j.assignee_id === me.id)} running={running} clientName={clientName} busy={timerBusy}
+              reviewerName={me.reports_to ? personName(me.reports_to) : ""}
+              onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview}
+              onOpen={(j) => setModal({ kind: "job", job: j })} onSeeAll={() => gotoJobs({ assignee: me.id })} />
             <div className="panel">
               <div className="ph"><h2>Needs attention</h2>{attention.length ? <button className="link" onClick={() => gotoJobs({ due: "week_or_overdue" })}>See all</button> : null}</div>
               {attention.length ? (
