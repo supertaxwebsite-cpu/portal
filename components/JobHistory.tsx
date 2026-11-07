@@ -14,8 +14,8 @@ const when = (s: string) => new Date(s).toLocaleString("en-AU", { day: "numeric"
 const stLabel = (s: string | null) => (s ? ST[s]?.label ?? s : "—");
 
 /** Everything that happened on one job: time per person, comments, and a full timeline. */
-export default function JobHistory({ jobId, meId, canDelete, supabase, personName, say, onSummary }: {
-  jobId: string; meId: string; canDelete: boolean; supabase: SB;
+export default function JobHistory({ jobId, readOnly, meId, canDelete, supabase, personName, say, onSummary }: {
+  jobId: string; readOnly?: boolean; meId: string; canDelete: boolean; supabase: SB;
   personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onSummary?: (s: JobSummary) => void;
 }) {
   const [acts, setActs] = useState<Activity[] | null>(null);
@@ -87,7 +87,7 @@ export default function JobHistory({ jobId, meId, canDelete, supabase, personNam
   const items: Item[] = [
     ...(acts ?? []).map((a): Item => a.kind === "comment"
       ? { key: a.id, at: a.created_at, type: "comment", node: <><div className="hwho"><b>{personName(a.actor_id) || "Former staff"}</b> commented <span className="note">{when(a.created_at)}</span>
-          {a.actor_id === meId || canDelete ? <button type="button" className="link danger" onClick={() => delComment(a.id)}>Delete</button> : null}</div><div className="hcomment">{a.body}</div></> }
+          {!readOnly && (a.actor_id === meId || canDelete) ? <button type="button" className="link danger" onClick={() => delComment(a.id)}>Delete</button> : null}</div><div className="hcomment">{a.body}</div></> }
       : { key: a.id, at: a.created_at, type: "change", node: <div className="hwho"><b>{a.actor_id ? personName(a.actor_id) || "Former staff" : "Automatic"}</b> {describe(a)} <span className="note">{when(a.created_at)}</span></div> }),
     ...entries.map((e): Item => ({ key: e.id, at: e.created_at, type: "time", node: <div className="hwho"><b>{personName(e.user_id) || "Former staff"}</b> logged <b>{fmtHours(e.hours)}</b> for {fmtDate(e.work_date)}{e.description ? <span className="muted"> · {e.description}</span> : null} <span className="note">{when(e.created_at)}</span></div> })),
     ...timers.map((t): Item => ({ key: t.id, at: t.started_at, type: "time", node: <div className="hwho"><b>{personName(t.user_id)}</b> is working on it now <span className="timer mono">● {fmtHours(Math.max(1 / 60, (now - new Date(t.started_at).getTime()) / 3600000))}</span> <span className="note">started {when(t.started_at)}</span></div> })),
@@ -106,11 +106,11 @@ export default function JobHistory({ jobId, meId, canDelete, supabase, personNam
           <tr><td><b>Total</b></td><td /><td className="mono" style={{ textAlign: "right" }}><b>{fmtHours(total)}</b></td></tr></tbody></table>
           : <p className="note" style={{ margin: 0 }}>No time logged on this job yet. Time from Start/Stop and from timesheets shows here.</p>}
       </section>
-      <section>
+      {readOnly ? null : <section>
         <h3>Add a comment</h3>
         <textarea id="jh-comment" placeholder="What you did, what's outstanding, questions for the team…" value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} />
         <div className="row" style={{ justifyContent: "flex-end", marginTop: 6 }}><button type="button" className="primary" disabled={busy || !text.trim()} onClick={addComment}>Add comment</button></div>
-      </section>
+      </section>}
       <section>
         <div className="row" style={{ justifyContent: "space-between" }}><h3 style={{ margin: 0 }}>History</h3>
           <div className="row">{([["all", "All"], ["comment", `Comments (${comments.length})`], ["time", "Time"], ["change", "Changes"]] as const).map(([k, l]) =>

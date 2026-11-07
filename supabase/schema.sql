@@ -934,3 +934,75 @@ begin
     insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'comment', 'Reply: ' || trim(p_note));
   end if;
 end $$;
+
+-- ===== Lodged and Completed jobs are read-only, except for master admins =====
+create or replace function public.job_is_locked(p_job uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null and public.my_role() is distinct from 'master'
+     and exists (select 1 from public.jobs where id = p_job and status in ('lodged', 'done'));
+$$;
+revoke all on function public.job_is_locked(uuid) from public, anon;
+grant execute on function public.job_is_locked(uuid) to authenticated;
+
+create or replace function public.guard_closed_job() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.my_role() = 'master' then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+  if old.status in ('lodged', 'done') then
+    raise exception 'This job is % and can only be changed by a master admin', case when old.status = 'lodged' then 'lodged' else 'completed' end
+      using errcode = '42501';
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+revoke all on function public.guard_closed_job() from public, anon, authenticated;
+drop trigger if exists jobs_closed_guard on public.jobs;
+create trigger jobs_closed_guard before update or delete on public.jobs
+  for each row execute function public.guard_closed_job();
+
+-- No new comments or time on a closed job (a timer that was already running can still stop).
+create or replace function public.guard_closed_job_children() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if current_setting('supertax.timer_stop', true) = 'on' then return new; end if;
+  if tg_table_name = 'job_activity' then
+    if new.kind <> 'comment' then return new; end if;
+  end if;
+  if new.job_id is not null and (tg_op = 'INSERT' or new.job_id is distinct from old.job_id) and public.job_is_locked(new.job_id) then
+    raise exception 'This job is lodged or completed. Only a master admin can add to it.' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_closed_job_children() from public, anon, authenticated;
+drop trigger if exists timesheet_closed_job_guard on public.timesheet_entries;
+create trigger timesheet_closed_job_guard before insert or update on public.timesheet_entries
+  for each row execute function public.guard_closed_job_children();
+drop trigger if exists job_activity_closed_guard on public.job_activity;
+create trigger job_activity_closed_guard before insert on public.job_activity
+  for each row execute function public.guard_closed_job_children();
+
+create or replace function public.end_job_timer(p_uid uuid) returns numeric
+language plpgsql security definer set search_path = public as $$
+declare
+  t public.job_timers;
+  j public.jobs;
+  tz constant text := 'Australia/Sydney';
+  hrs numeric;
+  e uuid;
+begin
+  select * into t from public.job_timers where user_id = p_uid and ended_at is null for update;
+  if not found then return null; end if;
+  select * into j from public.jobs where id = t.job_id;
+  hrs := least(24, greatest(0.01, round((extract(epoch from now() - t.started_at) / 3600)::numeric, 2)));
+  perform set_config('supertax.timer_stop', 'on', true);
+  insert into public.timesheet_entries (user_id, work_date, client_id, job_id, hours, description)
+  values (p_uid, (t.started_at at time zone tz)::date, j.client_id, t.job_id, hrs,
+          case when j.status = 'internal_query' and j.assignee_id = p_uid then 'Internal review, timer ' else 'Timer ' end
+          || lower(to_char(t.started_at at time zone tz, 'FMHH12:MIAM')) || ' to ' || lower(to_char(now() at time zone tz, 'FMHH12:MIAM')))
+  returning id into e;
+  perform set_config('supertax.timer_stop', 'off', true);
+  update public.job_timers set ended_at = now(), entry_id = e where id = t.id;
+  return hrs;
+end $$;
+revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;

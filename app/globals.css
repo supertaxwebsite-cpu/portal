@@ -239,3 +239,4 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .timeline .hwho .link{font-size:12px;margin-left:auto}
 .timeline .hwho .danger{color:var(--danger)}
 .timeline .hcomment{margin-top:4px;padding:8px 10px;background:var(--surface-2);border-radius:8px;white-space:pre-wrap}
+.hint.lockednote{background:var(--warn-soft);color:var(--warn);padding:8px 10px;border-radius:8px;font-weight:600}

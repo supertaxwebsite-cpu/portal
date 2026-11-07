@@ -228,8 +228,10 @@ export default function Workspace({ me }: { me: Profile }) {
     return <div className="due"><span className="mono">{fmtDate(j.due_date)}</span>{note}</div>;
   };
   const statusCls = (j: Job) => { const s = ST[j.status] ?? ST.not_started; return s.open && j.due_date && daysFrom(j.due_date) < 0 ? "danger" : s.cls; };
+  // Lodged and completed jobs are read-only for everyone except master admins.
+  const closedFor = (j: Job) => !isOpen(j.status) && !isMaster;
   const StatusSelect = ({ j }: { j: Job }) => (
-    <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} onChange={(e) => setStatus(j, e.target.value as StatusId)}>
+    <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : undefined} onChange={(e) => setStatus(j, e.target.value as StatusId)}>
       {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
     </select>
   );
@@ -393,7 +395,7 @@ export default function Workspace({ me }: { me: Profile }) {
                     <td>{svcLabel(j.service)}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
                     <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}{j.reviewer_id ? <div className="note">Review: {personName(j.reviewer_id)}</div> : null}</td>
                     <td><StatusSelect j={j} /></td>
-                    <td><button onClick={() => setModal({ kind: "job", job: j })}>Edit</button></td>
+                    <td><button onClick={() => setModal({ kind: "job", job: j })}>{closedFor(j) ? "View" : "Edit"}</button></td>
                   </tr>))}</tbody></table>
               <div className="count">{list.length} job{list.length === 1 ? "" : "s"}{list.length > 500 ? " · showing the first 500, narrow the filters to see the rest" : ""}</div>
             </>
@@ -446,7 +448,7 @@ export default function Workspace({ me }: { me: Profile }) {
       <table><thead><tr><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
         <tbody>{list.map((j) => (
           <tr key={j.id}><td>{svcLabel(j.service)}{j.priority === "high" ? <span className="prio">!</span> : null}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
-            <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td><td><button onClick={() => setModal({ kind: "job", job: j })}>Edit</button></td></tr>))}</tbody></table>
+            <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td><td><button onClick={() => setModal({ kind: "job", job: j })}>{closedFor(j) ? "View" : "Edit"}</button></td></tr>))}</tbody></table>
     );
     return (
       <>
@@ -522,7 +524,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canDelete} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -598,10 +600,11 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, clients, team, canDelete, locked, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; locked: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
+  const locked = staffLock || readOnly;
   const preset = presetClient ? clients.find((c) => c.id === presetClient) : undefined;
   const [v, setV] = useState({
     client_id: job?.client_id ?? presetClient ?? "", service: job?.service ?? "bas", period: job?.period ?? "", due_date: job?.due_date ?? "",
@@ -639,14 +642,15 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked, meId, o
   const opts = (blank: string) => <><option value="">{blank}</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>;
   return (
     <Overlay onClose={onClose}><form className={`modal ${job ? "wide" : ""}`} onSubmit={submit}>
-      <header><h2>{job ? "Edit job" : "New job"}</h2><button type="button" onClick={onClose}>Close</button></header>
+      <header><h2>{readOnly ? "Job (read-only)" : job ? "Edit job" : "New job"}</h2><button type="button" onClick={onClose}>Close</button></header>
       {job ? <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === "details"} className={tab === "details" ? "on" : ""} onClick={() => setTab("details")}>Details</button>
         <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>History &amp; time{sum ? ` · ${sum.hours ? fmtHours(sum.hours) : "0h"}${sum.comments ? ` · ${sum.comments} comment${sum.comments === 1 ? "" : "s"}` : ""}` : ""}</button>
       </div> : null}
-      {job ? <div style={{ display: tab === "history" ? "block" : "none" }}><JobHistory jobId={job.id} meId={meId} canDelete={canDelete} supabase={supabase} personName={personName} say={say} onSummary={setSum} /></div> : null}
+      {job ? <div style={{ display: tab === "history" ? "block" : "none" }}><JobHistory jobId={job.id} readOnly={readOnly} meId={meId} canDelete={canDelete} supabase={supabase} personName={personName} say={say} onSummary={setSum} /></div> : null}
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>
-        {locked ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
+        {readOnly ? <div className="full hint lockednote">This job is {job?.status === "lodged" ? "lodged" : "completed"}, so it&apos;s read-only. Only a master admin can change it. The History &amp; time tab shows everything that was done.</div>
+          : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
         <label className="f full">Client<select id="m-client" required disabled={locked} value={v.client_id} onChange={set("client_id")}><option value="">Choose a client…</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Period<input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} /></label>
@@ -654,14 +658,14 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked, meId, o
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked} value={v.reviewer_id} onChange={set("reviewer_id")}>{opts("No reviewer")}</select></label>
-        <label className="f">Status<select id="m-status" value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
+        <label className="f">Status<select id="m-status" disabled={readOnly} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>
-        <label className="f full">Notes<textarea id="m-notes" placeholder="Records outstanding, queries for the client, lodgment receipt number…" value={v.notes} onChange={set("notes")} /></label>
+        <label className="f full">Notes<textarea id="m-notes" readOnly={readOnly} placeholder="Records outstanding, queries for the client, lodgment receipt number…" value={v.notes} onChange={set("notes")} /></label>
         {job ? <div className="full hint">Last changed {fmtDate(job.updated_at)}{job.updated_by ? ` by ${personName(job.updated_by)}` : ""}{logged ? <> · <button type="button" className="link" onClick={() => setTab("history")}>{fmtHours(logged)} logged, see history</button></> : null}</div> : null}
       </div>
       <footer>
-        {job && canDelete ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}
-        <div className="row"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy}>{job ? "Save changes" : "Create job"}</button></div>
+        {job && canDelete && !readOnly ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}
+        <div className="row"><button type="button" onClick={onClose}>{readOnly ? "Close" : "Cancel"}</button>{readOnly ? null : <button type="submit" className="primary" disabled={busy}>{job ? "Save changes" : "Create job"}</button>}</div>
       </footer>
     </form></Overlay>
   );

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, Person, Profile, TimeEntry } from "@/lib/types";
-import { fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
+import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
 
@@ -318,7 +318,8 @@ function EntryRow({ e, day, locked, userId, clients, jobs, supabase, say, onSave
   const [v, setV] = useState({ client_id: e?.client_id ?? "", job_id: e?.job_id ?? "", hours: e ? String(e.hours) : "", description: e?.description ?? "" });
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
-  const clientJobs = useMemo(() => jobs.filter((j) => j.client_id === v.client_id), [jobs, v.client_id]);
+  // Lodged and completed jobs are closed for new time.
+  const clientJobs = useMemo(() => jobs.filter((j) => j.client_id === v.client_id && (ST[j.status]?.open !== false || j.id === v.job_id)), [jobs, v.client_id, v.job_id]);
   const dirty = !e || v.client_id !== (e.client_id ?? "") || v.job_id !== (e.job_id ?? "") || Number(v.hours) !== e.hours || v.description !== e.description;
 
   async function save() {
