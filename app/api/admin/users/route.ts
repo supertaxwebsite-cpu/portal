@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   const email = String(body.email ?? "").trim().toLowerCase();
   const fullName = String(body.fullName ?? "").trim();
   const title = String(body.title ?? "").trim();
-  const role = body.role === "manager" ? "manager" : "staff";
+  const role = body.role === "master" || body.role === "manager" ? body.role : "staff";
   if (!email || !fullName) return NextResponse.json({ error: "Enter their name and email." }, { status: 400 });
 
   const admin = createAdminClient();

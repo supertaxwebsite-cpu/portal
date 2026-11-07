@@ -12,19 +12,18 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (id === me.id) return NextResponse.json({ error: "You can't change your own master admin access." }, { status: 400 });
   const body = await req.json().catch(() => ({}));
   const update: Record<string, unknown> = {};
-  if (body.role === "manager" || body.role === "staff") update.role = body.role;
+  if (body.role === "master" || body.role === "manager" || body.role === "staff") update.role = body.role;
   if (typeof body.title === "string") update.title = body.title.trim();
   if (typeof body.fullName === "string" && body.fullName.trim()) update.full_name = body.fullName.trim();
   if (typeof body.active === "boolean") update.active = body.active;
   if (body.reportsTo === null || body.reportsTo === "") update.reports_to = null;
   else if (typeof body.reportsTo === "string") update.reports_to = body.reportsTo;
-  if (update.role === "manager") update.reports_to = null;
+  if (update.role === "manager" || update.role === "master") update.reports_to = null;
   if (!Object.keys(update).length) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
 
   const admin = createAdminClient();
   const { data: target } = await admin.from("profiles").select("role").eq("id", id).maybeSingle();
   if (!target) return NextResponse.json({ error: "That person no longer exists." }, { status: 404 });
-  if (target.role === "master") return NextResponse.json({ error: "The master admin can't be changed here." }, { status: 400 });
   if (typeof update.reports_to === "string") {
     if (update.reports_to === id) return NextResponse.json({ error: "Someone can't report to themselves." }, { status: 400 });
     const { data: mgr } = await admin.from("profiles").select("role").eq("id", update.reports_to).maybeSingle();

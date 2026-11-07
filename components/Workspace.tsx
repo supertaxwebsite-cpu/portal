@@ -421,7 +421,7 @@ export default function Workspace({ me }: { me: Profile }) {
                       onClick={async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete` : `${p.full_name} can now delete clients and jobs`); }}>{p.can_delete ? "Yes" : "No"}</button>
                   : p.can_delete ? "Yes" : "No"}</td>
               <td className="mono" style={{ textAlign: "right" }}>{oj.length}</td><td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : undefined }}>{od}</td>
-              <td style={{ textAlign: "right" }}>{isMaster && p.role !== "master" ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
+              <td style={{ textAlign: "right" }}>{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Your master admin sets this under Team → Manage.</p> : null}
         <div className="panel" style={{ padding: 16, marginTop: 16 }}>
           <h2>What each role can do</h2>
@@ -722,7 +722,7 @@ function MemberModal({ member, managers, adminCall, onClose, onTemp, confirm, sa
         <label className="f">Name<input id="u-name" required value={v.fullName} onChange={set("fullName")} /></label>
         <label className="f">Email{member ? <input id="u-email" value={v.email} disabled /> : <input id="u-email" type="email" required value={v.email} onChange={set("email")} />}</label>
         <label className="f">Job title<input id="u-title" value={v.title} onChange={set("title")} placeholder="e.g. Senior accountant" /></label>
-        <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Manager</option></select></label>
+        <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Manager</option><option value="master">Master admin (full control)</option></select></label>
         {v.role === "staff" ? (
           <label className="f">Reports to (manager)<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No manager</option>{managers.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></label>
         ) : null}
