@@ -286,7 +286,7 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="grid2">
           <div className="section">
-            <MyJobs jobs={openJobs.filter((j) => j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query"))} myId={me.id} personName={personName}
+            <MyJobs jobs={openJobs.filter((j) => j.status !== "sent_for_sign" && (j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query")))} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} running={running} clientName={clientName} busy={timerBusy}
               reviewerName={me.reports_to ? personName(me.reports_to) : ""}
               onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview}
