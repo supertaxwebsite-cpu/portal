@@ -93,3 +93,44 @@ export function periodLabel(service: string, p: PeriodInput): string {
 }
 
 export const roleLabel = (r: string) => (r === "master" ? "Master admin" : r === "manager" ? "Manager" : "Staff");
+
+/** Work the portal will create automatically later (shown as "Projected work"). */
+export interface Projected { key: string; label: string; detail: string; appears: string; clients: string[] }
+export function projectedWork(clients: { id: string; name: string; services: string[]; bas_freq: string; payroll_freq?: string; payroll_anchor?: string | null }[], days = 14): Projected[] {
+  const today = todayISO();
+  const [y, m] = today.split("-").map(Number);
+  const out: Projected[] = [];
+  // Quarterly BAS for the quarter we're in: appears the day after the quarter ends.
+  const fy = m >= 7 ? y + 1 : y;
+  const q = m >= 7 && m <= 9 ? 1 : m >= 10 ? 2 : m <= 3 ? 3 : 4;
+  const qEndMonth = [9, 12, 3, 6][q - 1];
+  const qEndYear = q <= 2 ? fy - 1 : fy;
+  const after = (yy: number, mm: number) => (mm === 12 ? iso(yy + 1, 1, 1) : iso(yy, mm + 1, 1));
+  const qb = clients.filter((c) => c.services.includes("bas") && c.bas_freq === "quarterly");
+  if (qb.length) out.push({ key: "bas-q", label: `BAS Q${q} FY${String(fy).slice(2)}`, detail: `${qb.length} quarterly BAS client${qb.length === 1 ? "" : "s"}`, appears: after(qEndYear, qEndMonth), clients: qb.map((c) => c.name) });
+  const mb = clients.filter((c) => c.services.includes("bas") && c.bas_freq === "monthly");
+  if (mb.length) out.push({ key: "bas-m", label: `BAS ${MONTHS[m - 1]} ${y}`, detail: `${mb.length} monthly BAS client${mb.length === 1 ? "" : "s"}`, appears: after(y, m), clients: mb.map((c) => c.name) });
+  // Payroll pay days in the next couple of weeks (after today).
+  const dnumL = (s: string) => { const [a, b, c] = s.split("-").map(Number); return Date.UTC(a, b - 1, c) / 864e5; };
+  const fromNum = (n: number) => new Date(n * 864e5).toISOString().slice(0, 10);
+  const t0 = dnumL(today);
+  const pay = new Map<string, string[]>();
+  clients.filter((c) => c.services.includes("payroll") && c.payroll_freq && c.payroll_anchor).forEach((c) => {
+    const a = dnumL(c.payroll_anchor!);
+    for (let n = t0 + 1; n <= t0 + days; n++) {
+      if (n < a) continue;
+      const d = fromNum(n);
+      let hit = false;
+      if (c.payroll_freq === "weekly") hit = (n - a) % 7 === 0;
+      else if (c.payroll_freq === "fortnightly") hit = (n - a) % 14 === 0;
+      else if (c.payroll_freq === "monthly") {
+        const [dy, dm, dd] = d.split("-").map(Number);
+        const last = new Date(Date.UTC(dy, dm, 0)).getUTCDate();
+        hit = dd === Math.min(Number(c.payroll_anchor!.slice(8, 10)), last);
+      }
+      if (hit) pay.set(d, [...(pay.get(d) ?? []), c.name]);
+    }
+  });
+  [...pay.entries()].sort().forEach(([d, names]) => out.push({ key: `pay-${d}`, label: `Payroll · pay day ${fmtDate(d)}`, detail: `${names.length} client${names.length === 1 ? "" : "s"}`, appears: d, clients: names }));
+  return out.sort((a, b) => a.appears.localeCompare(b.appears));
+}

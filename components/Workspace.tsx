@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Client, Job, Person, Profile, StatusId } from "@/lib/types";
 import {
   ENTITIES, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
-  periodLabel, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
+  periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
@@ -198,6 +198,7 @@ export default function Workspace({ me }: { me: Profile }) {
     const un = openJobs.filter((j) => !j.assignee_id || !profileById.get(j.assignee_id)?.active);
     if (un.length) rows.push({ id: "__none", name: "Unassigned", title: "", js: un });
     const max = Math.max(1, ...rows.map((r) => r.js.length));
+    const projected = projectedWork(clients);
     const Tile = ({ lbl, n, cls, f }: { lbl: string; n: number; cls?: string; f: Partial<JobFilter> }) => (
       <button className={`tile ${cls ?? ""}`} onClick={() => gotoJobs(f)}><span className="lbl">{lbl}</span><span className="val">{n}</span></button>
     );
@@ -252,6 +253,12 @@ export default function Workspace({ me }: { me: Profile }) {
                 <tr key={r.id}><td style={{ width: "40%" }}><button className="link" style={{ color: "var(--fg)" }} onClick={() => gotoJobs({ assignee: r.id })}>{r.name}</button>{r.title ? <div className="note">{r.title}</div> : null}</td>
                   <td><div className="bar" title={`${n} open, ${od} overdue`}><i className="d" style={{ width: `${(od / max) * 100}%` }} /><i className="o" style={{ width: `${((n - od) / max) * 100}%` }} /></div></td>
                   <td className="mono" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{n}{od ? <> · <span style={{ color: "var(--danger)" }}>{od}</span></> : null}</td></tr>); })}</tbody></table></div></div>
+            {projected.length ? (
+              <div className="panel"><div className="ph"><h2>Projected work</h2><span className="note">Created automatically when the period ends</span></div>
+                <ul className="list">{projected.map((p) => (
+                  <li key={p.key}><div style={{ minWidth: 0 }}><div className="t">{p.label}</div><div className="s" title={p.clients.join(", ")}>{p.detail}: {p.clients.slice(0, 3).join(", ")}{p.clients.length > 3 ? ` +${p.clients.length - 3} more` : ""}</div></div>
+                    <span className="pill">Appears {fmtDate(p.appears)}</span></li>))}</ul></div>
+            ) : null}
           </div>
         </div>
       </>

@@ -437,16 +437,18 @@ do $$ begin
 end $$;
 
 -- ===== Automatic BAS jobs, and payroll jobs on the pay day =====
--- Quarterly BAS clients get "Qn FYyy" when each quarter starts; monthly BAS
--- clients get "Mon YYYY" when each month starts. Due dates follow the ATO
+-- Quarterly BAS clients get "Qn FYyy" once the quarter has ended (e.g. Q2 on
+-- 1 January); monthly BAS clients get "Mon YYYY" once the month has ended. Due dates follow the ATO
 -- tax agent lodgment program. Payroll jobs are created on the pay day itself.
 create or replace function public.generate_bas_jobs() returns integer
 language plpgsql security definer set search_path = public as $$
 declare
   today date := (now() at time zone 'Australia/Sydney')::date;
-  m int := extract(month from today)::int;
-  y int := extract(year from today)::int;
-  fy int := case when m >= 7 then y + 1 else y end;
+  -- The BAS job for a period appears once that period has ended.
+  q_end date := (date_trunc('quarter', today) - interval '1 day')::date;
+  m_end date := (date_trunc('month', today) - interval '1 day')::date;
+  m int := extract(month from q_end)::int;
+  fy int := case when m >= 7 then extract(year from q_end)::int + 1 else extract(year from q_end)::int end;
   q int := case when m between 7 and 9 then 1 when m between 10 and 12 then 2 when m between 1 and 3 then 3 else 4 end;
   q_due date := case q when 1 then make_date(fy - 1, 11, 25) when 2 then make_date(fy, 2, 28) when 3 then make_date(fy, 5, 26) else make_date(fy, 8, 25) end;
   n1 int; n2 int;
@@ -459,7 +461,7 @@ begin
   get diagnostics n1 = row_count;
 
   insert into public.jobs (client_id, service, period, due_date, assignee_id)
-  select c.id, 'bas', to_char(today, 'Mon YYYY'), (date_trunc('month', today) + interval '1 month 20 days')::date, c.manager_id
+  select c.id, 'bas', to_char(m_end, 'Mon YYYY'), (m_end + interval '21 days')::date, c.manager_id
   from public.clients c
   where 'bas' = any (c.services) and c.bas_freq = 'monthly'
   on conflict (client_id, service, period) do nothing;
