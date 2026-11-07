@@ -251,3 +251,5 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .pickerlist li.hi{background:var(--surface-2)}
 .pickerlist li.sel{font-weight:600}
 .pickerlist li.none{color:var(--muted);cursor:default}
+.updatebar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:60;display:flex;gap:12px;align-items:center;padding:10px 12px 10px 16px;background:var(--fg);color:var(--surface);border-radius:10px;box-shadow:var(--shadow);font-size:14px;max-width:calc(100% - 32px)}
+.picker input{padding-left:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23889' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:9px center}

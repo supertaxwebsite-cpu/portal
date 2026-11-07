@@ -8,6 +8,7 @@ import { periodOptions, clientUpcoming,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
+import UpdateBanner from "./UpdateBanner";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
@@ -573,6 +574,7 @@ function Shell({ me, view, go, live, showTeam, children }: { me: Profile; view: 
         <div className="userbox"><span><strong>{me.full_name}</strong></span><SignOutButton /></div>
       </div></header>
       <IdleSignOut />
+      <UpdateBanner />
       <main className="wrap">
         {children}
         <p className="note" style={{ marginTop: 28 }}><span className={`live${live ? "" : " off"}`}>{live ? "Live: changes by your team appear automatically" : "Connecting to live updates…"}</span></p>
@@ -686,7 +688,7 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>
         {readOnly ? <div className="full hint lockednote">This job is {job?.status === "lodged" ? "lodged" : "completed"}, so it&apos;s read-only. Only a master admin can change it. The History &amp; time tab shows everything that was done.</div>
           : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
-        <label className="f full">Client<ClientPicker id="m-client" required disabled={locked} clients={clients} value={v.client_id} placeholder="Type to search by client name or ABN…"
+        <label className="f full">Client<ClientPicker id="m-client" required disabled={locked} clients={clients} value={v.client_id} placeholder="Search client by name or ABN…"
           onChange={(id) => set("client_id")({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>)} /></label>
         <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Period{isCustom ? <span className="periodown">
