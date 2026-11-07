@@ -226,6 +226,11 @@ export default function Workspace({ me }: { me: Profile }) {
           <Tile lbl="Ready for review or lodgment" n={review.length} f={{ status: "review_any" }} />
           <Tile lbl="Lodged this month" n={lodged.length} f={{ status: "closed" }} />
         </div>
+        <div className="panel" style={{ padding: "12px 14px", marginBottom: 16 }}>
+          <div className="ph" style={{ padding: 0, marginBottom: 8 }}><h2>All jobs by status</h2><button className="link" onClick={() => gotoJobs({ status: "" })}>See all {jobs.length}</button></div>
+          <div className="statusrow">{STATUSES.map((st) => { const n = jobs.filter((j) => j.status === st.id).length; return (
+            <button key={st.id} className="statuschip" onClick={() => gotoJobs({ status: st.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>); })}</div>
+        </div>
         <div className="grid2">
           <div className="section">
             <div className="panel">
