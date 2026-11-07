@@ -70,7 +70,7 @@ const Status = ({ d }: { d: Day }) => (
   <>{d.leave ? <span className="pill danger">Leave</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day</span> : null}
     {!d.leave && !d.late && !d.half ? <span className="pill ok">{d.open ? "Working" : d.override === "present" ? "Working day" : "Present"}</span> : null}
     {d.lateExcused ? <> <span className="pill ok">Late approved</span></> : null}
-    {d.override ? <span className="note" title="Changed by the master admin"> ✎</span> : null}</>
+    {d.override ? <span className="note" title="Changed by your manager"> ✎</span> : null}</>
 );
 
 const monday = () => { const d = new Date(); const back = (d.getDay() + 6) % 7; d.setDate(d.getDate() - back); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
@@ -154,18 +154,18 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   }
 
   if (missing) {
-    return <div className="panel empty"><strong>Timesheets aren&apos;t switched on yet.</strong>Your master admin needs to run the latest database update in Supabase.</div>;
+    return <div className="panel empty"><strong>Timesheets aren&apos;t switched on yet.</strong>Ask your manager to switch them on.</div>;
   }
 
   const myMonth = buildDays(att, entries, [me], monthStart, todayISO(), now, overrides, requests);
   const isMaster = me.role === "master";
 
   async function askApproval(d: Day) {
-    const reason = window.prompt(`Why were you late on ${fmtDate(d.date)}? This goes to the master admin for approval.`);
+    const reason = window.prompt(`Why were you late on ${fmtDate(d.date)}? This goes to your manager for approval.`);
     if (reason === null) return;
     const { error } = await supabase.from("late_requests").insert({ user_id: me.id, work_date: d.date, reason: reason.trim(), status: "pending" });
     if (error) { say(`Not sent: ${error.message}`, true); return; }
-    say("Sent to the master admin for approval");
+    say("Sent to your manager for approval");
     load();
   }
   async function decide(r: LateRequest, status: "approved" | "rejected") {
@@ -242,7 +242,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
                 <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}
                   {d.late && !d.request ? <> <button type="button" className="link" onClick={() => askApproval(d)}>Ask for approval</button></> : null}</li>))}</ul>
             ) : <p className="note" style={{ margin: 0 }}>No late starts, half days or leave this month.</p>}
-            <p className="note" style={{ margin: "10px 0 0" }}>Late = log in after 7:45 am · Half day = under 8 hours logged in · Leave = a weekday with no timesheet. Your manager and the master admin can see this.</p>
+            <p className="note" style={{ margin: "10px 0 0" }}>Late = log in after 7:45 am · Half day = under 8 hours logged in · Leave = a weekday with no timesheet. Your manager can see this.</p>
           </div>
         </div>
       </div>
@@ -261,7 +261,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
                   {dayOpen ? <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} /> : null}
                 </tbody></table>
             </div>
-            {!dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask the master admin if something needs correcting.</p> : null}
+            {!dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask your manager if something needs correcting.</p> : null}
           </div>
       </div>
 

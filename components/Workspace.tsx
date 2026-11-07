@@ -127,7 +127,7 @@ export default function Workspace({ me }: { me: Profile }) {
     const { error } = await fn();
     if (error) {
       const msg = error.code === "23505" ? "That job already exists for this client and period."
-        : /row-level security|permission/i.test(error.message) ? "You don't have permission to do that. Ask your master admin."
+        : /row-level security|permission/i.test(error.message) ? "You don't have permission to do that. Ask your manager."
         : `That change was not saved: ${error.message}`;
       say(msg, true);
       return false;
@@ -422,7 +422,7 @@ export default function Workspace({ me }: { me: Profile }) {
                   : p.can_delete ? "Yes" : "No"}</td>
               <td className="mono" style={{ textAlign: "right" }}>{oj.length}</td><td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : undefined }}>{od}</td>
               <td style={{ textAlign: "right" }}>{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
-        {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Your master admin sets this under Team → Manage.</p> : null}
+        {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Ask for team members to be allocated to you.</p> : null}
         <div className="panel" style={{ padding: 16, marginTop: 16 }}>
           <h2>What each role can do</h2>
           <p className="note" style={{ margin: 0 }}><strong>Staff</strong> add and update clients and jobs. <strong>Managers</strong> can also delete clients and jobs, see their own team here, and give their staff delete access with the Can delete button. The <strong>Master admin</strong> sees everyone, can give any staff member delete access, adds people, changes roles, resets passwords and switches access off.</p>

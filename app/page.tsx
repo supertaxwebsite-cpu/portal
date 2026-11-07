@@ -14,7 +14,7 @@ export default async function Home() {
   const { data: me } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
   if (!me || !me.active) {
     return (
-      <AuthCard title="No access" lead="Your account isn't active in Supertax Practice Desk. Speak to your master admin.">
+      <AuthCard title="No access" lead="Your account isn't active in Supertax Practice Desk. Speak to your manager.">
         <SignOutButton />
       </AuthCard>
     );
