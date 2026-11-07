@@ -51,7 +51,7 @@ create table if not exists public.jobs (
   assignee_id uuid references public.profiles (id) on delete set null,
   reviewer_id uuid references public.profiles (id) on delete set null,
   status text not null default 'not_started'
-    check (status in ('not_started', 'waiting', 'in_progress', 'review', 'to_lodge', 'lodged', 'done')),
+    check (status in ('not_started', 'waiting', 'internal_query', 'in_progress', 'review', 'to_lodge', 'lodged', 'done')),
   priority text not null default 'normal' check (priority in ('normal', 'high')),
   notes text not null default '',
   lodged_on date,
@@ -550,7 +550,7 @@ begin
     perform public.end_job_timer(auth.uid());
   end if;
   insert into public.job_timers (user_id, job_id) values (auth.uid(), p_job) returning * into t;
-  if j.status in ('not_started', 'waiting') then
+  if j.status in ('not_started', 'waiting', 'internal_query') then
     update public.jobs set status = 'in_progress' where id = p_job;
   end if;
   return t;
@@ -619,3 +619,8 @@ revoke all on function public.guard_job_fields() from public, anon, authenticate
 drop trigger if exists jobs_guard on public.jobs;
 create trigger jobs_guard before update on public.jobs
   for each row execute function public.guard_job_fields();
+
+-- ===== "Internal query" job status (for databases created before it existed) =====
+alter table public.jobs drop constraint if exists jobs_status_check;
+alter table public.jobs add constraint jobs_status_check
+  check (status in ('not_started', 'waiting', 'internal_query', 'in_progress', 'review', 'to_lodge', 'lodged', 'done'));

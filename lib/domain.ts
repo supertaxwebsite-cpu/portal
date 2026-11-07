@@ -26,6 +26,7 @@ export interface Status { id: StatusId; label: string; cls: string; open: boolea
 export const STATUSES: Status[] = [
   { id: "not_started", label: "Not started", cls: "none", open: true },
   { id: "waiting", label: "Waiting on client", cls: "warn", open: true },
+  { id: "internal_query", label: "Internal query", cls: "danger", open: true },
   { id: "in_progress", label: "In progress", cls: "info", open: true },
   { id: "review", label: "Ready for review", cls: "accent", open: true },
   { id: "to_lodge", label: "Ready to lodge", cls: "accent", open: true },
