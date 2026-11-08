@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import type { Job, JobTimer } from "@/lib/types";
-import { daysFrom, fmtDate } from "@/lib/domain";
+import type { Client, Job, JobTimer } from "@/lib/types";
+import { clientUpcoming, daysFrom, fmtDate } from "@/lib/domain";
 
 const elapsed = (from: string, now: number) => { const m = Math.max(0, Math.floor((now - new Date(from).getTime()) / 60000)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
 const at = (s?: string | null) => (s ? new Date(s).toLocaleString("en-AU", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
@@ -15,8 +15,8 @@ export function payStage(j: Job) {
 }
 const STAGE = ["Processing", "Super to confirm", "STP to lodge", "Finished"];
 
-export default function PayrollView({ jobs, meId, canSignOff, clientName, personName, running, busy, onStart, onStop, onSubmit, onStep, onOpen, onNew }: {
-  jobs: Job[]; meId: string; canSignOff: boolean;
+export default function PayrollView({ jobs, clients, meId, canSignOff, clientName, personName, running, busy, onStart, onStop, onSubmit, onStep, onOpen, onNew }: {
+  jobs: Job[]; clients: Client[]; meId: string; canSignOff: boolean;
   clientName: (id: string) => string; personName: (id: string | null) => string;
   running: JobTimer | null; busy: boolean;
   onStart: (j: Job) => void; onStop: () => void; onSubmit: (j: Job) => void;
@@ -40,6 +40,12 @@ export default function PayrollView({ jobs, meId, canSignOff, clientName, person
     ["Finished in the last 7 days", "ok", scoped.filter((j) => payStage(j) === 3 && (j.stp_done_at ? (now - new Date(j.stp_done_at).getTime()) / 864e5 <= 7 : j.lodged_on ? daysFrom(j.lodged_on) >= -7 : false))
       .sort((a, b) => (b.stp_done_at ?? b.lodged_on ?? "").localeCompare(a.stp_done_at ?? a.lodged_on ?? ""))],
   ];
+  // Pay runs in the next 30 days that will be created automatically on the pay day.
+  const coming = useMemo(() => clients.filter((c) => c.services.includes("payroll") && c.payroll_freq && c.payroll_anchor).flatMap((c) =>
+    clientUpcoming(c, pay.filter((j) => j.client_id === c.id), 30).filter((u) => u.service === "payroll")
+      .map((u) => ({ ...u, client: c, who: c.payroll_assignee || c.manager_id || null })))
+    .filter((u) => scope !== "mine" || u.who === meId)
+    .sort((a, b) => a.due.localeCompare(b.due) || a.client.name.localeCompare(b.client.name)), [clients, pay, scope, meId]);
   const counts = [0, 1, 2].map((s) => scoped.filter((j) => payStage(j) === s && due(j) <= 0).length);
   let n = 0;
 
@@ -56,7 +62,7 @@ export default function PayrollView({ jobs, meId, canSignOff, clientName, person
         {([["mine", "My pay runs"], ...(canSignOff ? [["signoff", "Waiting for sign-off"]] : []), ["all", "All pay runs"]] as [typeof scope, string][]).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={scope === k} className={`chip ${scope === k ? "on" : ""}`} onClick={() => setScope(k)}>{l}</button>))}
       </div>
-      {groups.every(([, , js]) => !js.length) ? <div className="panel empty"><strong>No payroll jobs here.</strong>Payroll jobs are created automatically on each client&apos;s pay day (set the pay frequency on the client), or add one with New payroll job.</div> : null}
+      {groups.every(([, , js]) => !js.length) && !coming.length ? <div className="panel empty"><strong>No payroll jobs here.</strong>Payroll jobs are created automatically on each client&apos;s pay day (set the pay frequency on the client), or add one with New payroll job.</div> : null}
       {groups.map(([title, cls, js]) => js.length ? (
         <div key={title} className="panel paygroup">
           <div className="ph"><h2><span className={`dot ${cls}`} />{title}</h2><span className="note">{js.length} pay run{js.length === 1 ? "" : "s"}</span></div>
@@ -96,6 +102,19 @@ export default function PayrollView({ jobs, meId, canSignOff, clientName, person
               </li>);
           })}</ul>
         </div>) : null)}
+      {coming.length && scope !== "signoff" ? <div className="panel paygroup coming">
+        <div className="ph"><h2><span className="dot" />Coming up in the next 30 days</h2><span className="note">Created automatically on each pay day</span></div>
+        <ul className="paylist">{coming.map((u) => (
+          <li key={`${u.client.id}-${u.key}`} className="payrow future">
+            <span className="num">·</span>
+            <div className="paymain">
+              <div className="t">{u.client.name}</div>
+              <div className="s">{u.period} · Will go to {personName(u.who) || "nobody (set it on the client)"}</div>
+            </div>
+            <span className="duechip"><b>Pay day {fmtDate(u.due)}</b><span>in {daysFrom(u.due)} day{daysFrom(u.due) === 1 ? "" : "s"}</span></span>
+            <span className="note payact">{u.client.payroll_freq}</span>
+          </li>))}</ul>
+      </div> : null}
     </>
   );
 }

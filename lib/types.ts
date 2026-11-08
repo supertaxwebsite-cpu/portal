@@ -35,6 +35,8 @@ export interface Client {
   bas_freq: "quarterly" | "monthly";
   payroll_freq?: "" | "weekly" | "fortnightly" | "monthly";
   payroll_anchor?: string | null;
+  payroll_assignee?: string | null;
+  bas_assignee?: string | null;
   notes: string;
   updated_at: string;
   updated_by: string | null;

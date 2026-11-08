@@ -1241,3 +1241,69 @@ begin
 end $$;
 revoke all on function public.payroll_step(uuid, text) from public, anon;
 grant execute on function public.payroll_step(uuid, text) to authenticated;
+
+-- ============================================================
+-- Default team member for each client's automatic jobs (payroll, BAS).
+-- Empty = the client's manager, as before.
+-- ============================================================
+alter table public.clients add column if not exists payroll_assignee uuid references public.profiles (id) on delete set null;
+alter table public.clients add column if not exists bas_assignee uuid references public.profiles (id) on delete set null;
+
+create or replace function public.generate_payroll_jobs(lead_days integer default 7) returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  today date := (now() at time zone 'Australia/Sydney')::date;
+  n integer;
+begin
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'payroll',
+         case when c.payroll_freq = 'monthly' then to_char(x.d, 'Mon YYYY') else 'Pay ' || to_char(x.d, 'FMDD Mon YYYY') end,
+         x.d, coalesce(c.payroll_assignee, c.manager_id)
+  from public.clients c
+  cross join lateral (select g::date as d from generate_series(today, today + least(greatest(lead_days, 0), 31), interval '1 day') g) x
+  where 'payroll' = any (c.services)
+    and c.payroll_anchor is not null
+    and x.d >= c.payroll_anchor
+    and case c.payroll_freq
+      when 'weekly' then (x.d - c.payroll_anchor) % 7 = 0
+      when 'fortnightly' then (x.d - c.payroll_anchor) % 14 = 0
+      when 'monthly' then extract(day from x.d) = least(extract(day from c.payroll_anchor),
+                          extract(day from (date_trunc('month', x.d) + interval '1 month - 1 day')))
+      else false
+    end
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.generate_payroll_jobs(integer) from public, anon;
+grant execute on function public.generate_payroll_jobs(integer) to authenticated;
+
+create or replace function public.generate_bas_jobs() returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  today date := (now() at time zone 'Australia/Sydney')::date;
+  q_end date := (date_trunc('quarter', today) - interval '1 day')::date;
+  m_end date := (date_trunc('month', today) - interval '1 day')::date;
+  m int := extract(month from q_end)::int;
+  fy int := case when m >= 7 then extract(year from q_end)::int + 1 else extract(year from q_end)::int end;
+  q int := case when m between 7 and 9 then 1 when m between 10 and 12 then 2 when m between 1 and 3 then 3 else 4 end;
+  q_due date := case q when 1 then make_date(fy - 1, 11, 25) when 2 then make_date(fy, 2, 28) when 3 then make_date(fy, 5, 26) else make_date(fy, 8, 25) end;
+  n1 int; n2 int;
+begin
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'bas', 'Q' || q || ' FY' || right(fy::text, 2), q_due, coalesce(c.bas_assignee, c.manager_id)
+  from public.clients c
+  where 'bas' = any (c.services) and c.bas_freq = 'quarterly'
+    and today - q_end <= 31
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n1 = row_count;
+
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'bas', to_char(m_end, 'Mon YYYY'), (m_end + interval '21 days')::date, coalesce(c.bas_assignee, c.manager_id)
+  from public.clients c
+  where 'bas' = any (c.services) and c.bas_freq = 'monthly'
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n2 = row_count;
+  return n1 + n2;
+end $$;
+revoke all on function public.generate_bas_jobs() from public, anon;

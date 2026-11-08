@@ -582,7 +582,7 @@ export default function Workspace({ me }: { me: Profile }) {
     <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
-      {view === "payroll" ? <PayrollView jobs={jobs} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
+      {view === "payroll" ? <PayrollView jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} onStep={payrollStep} onOpen={(j) => setModal({ kind: "job", job: j })} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
@@ -896,6 +896,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
     name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
     email: client?.email ?? "", phone: client?.phone ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
+    payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
   });
   const hasPayroll = v.services.includes("payroll");
   const [busy, setBusy] = useState(false);
@@ -911,10 +912,14 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
     }
     setBusy(true);
     if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
-    const { payroll_freq, payroll_anchor, ...base } = v;
+    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, ...base } = v;
+    // Default people for automatic jobs: only sent when set or changed, so saving works before that database update.
+    const who: Record<string, string | null> = {};
+    if (payroll_assignee || client?.payroll_assignee) who.payroll_assignee = hasPayroll ? payroll_assignee || null : null;
+    if (bas_assignee || client?.bas_assignee) who.bas_assignee = v.services.includes("bas") ? bas_assignee || null : null;
     // Payroll fields are sent only when relevant, so saving works even before the payroll database update.
     const payroll = hasPayroll || client?.payroll_freq ? { payroll_freq: hasPayroll ? payroll_freq : "", payroll_anchor: hasPayroll && payroll_freq ? payroll_anchor || null : null } : {};
-    const row: Record<string, unknown> = { ...base, ...payroll, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
+    const row: Record<string, unknown> = { ...base, ...payroll, ...who, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
     const ok = client ? await save(() => supabase.from("clients").update(row).eq("id", client.id), "Client saved") : await save(() => supabase.from("clients").insert(row), "Client added");
     setBusy(false);
     if (ok) onClose();
@@ -939,10 +944,12 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
         <div className="f full">Services you provide<div className="checks">{SERVICES.map((s) => (
           <label key={s.id}><input type="checkbox" checked={v.services.includes(s.id)} onChange={(e) => setV({ ...v, services: e.target.checked ? [...v.services, s.id] : v.services.filter((x) => x !== s.id) })} /> {s.label}</label>))}</div></div>
         <label className="f">BAS / IAS cycle<select id="c-basfreq" value={v.bas_freq} onChange={set("bas_freq")}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option></select></label>
+        {v.services.includes("bas") ? <label className="f">BAS jobs go to<select id="c-basto" value={v.bas_assignee} onChange={set("bas_assignee")}><option value="">The client&apos;s manager</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label> : null}
         {hasPayroll ? <>
           <label className="f">Pay frequency<select id="c-payfreq" value={v.payroll_freq} onChange={set("payroll_freq")}><option value="">Not set (no automatic jobs)</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option></select></label>
+          <label className="f">Payroll jobs go to<select id="c-payto" value={v.payroll_assignee} onChange={set("payroll_assignee")}><option value="">The client&apos;s manager</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
           {v.payroll_freq ? <label className="f">{v.payroll_freq === "monthly" ? "A pay date (sets the day of the month)" : "Next pay date"}<input id="c-payanchor" type="date" value={v.payroll_anchor} onChange={set("payroll_anchor")} required /></label> : null}
-          {v.payroll_freq ? <p className="full hint" style={{ margin: 0 }}>A payroll job is created automatically on each pay day, assigned to the client&apos;s manager.</p> : null}
+          {v.payroll_freq ? <p className="full hint" style={{ margin: 0 }}>A payroll job is created automatically on each pay day and assigned to the person above (or the client&apos;s manager). They get a bell notification.</p> : null}
         </> : null}
         <label className="f full">Notes<textarea id="c-notes" value={v.notes} onChange={set("notes")} placeholder="Software they use, year-end, quirks…" /></label>
         <p className="full hint" style={{ margin: 0 }}>Don&apos;t store TFNs, passwords or bank details here.</p>

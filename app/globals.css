@@ -363,3 +363,8 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .payact .timer{color:var(--accent);font-weight:700}
 .payact .okline{color:#1f7a45}
 @media (max-width:600px){.paysum{grid-template-columns:1fr 1fr 1fr;gap:6px}.paystat{padding:8px}.paystat .val{font-size:22px}.paystat .note{display:none}.paysteps li span{display:none}.paysteps li{padding:3px}}
+.payrow.future{border-left-color:var(--line);border-style:dashed;border-left-style:solid;background:transparent}
+.payrow.future .t{font-weight:600}
+.payrow.future .payact{text-transform:capitalize}
+.paygroup.coming .duechip{grid-column:2}
+@media (min-width:900px){.paygroup.coming .duechip{grid-column:auto}}
