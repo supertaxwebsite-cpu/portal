@@ -270,7 +270,10 @@ export default function Workspace({ me }: { me: Profile }) {
     const review = openJobs.filter((j) => j.status === "review" || j.status === "to_lodge");
     const month = todayISO().slice(0, 7);
     const lodged = jobs.filter((j) => (j.lodged_on ?? "").startsWith(month));
-    const attention = [...overdue, ...week].sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")).slice(0, 12);
+    // Needs attention is personal: my own jobs that are overdue, due within 7 days, or high priority.
+    const attention = openJobs.filter((j) => j.assignee_id === me.id && j.status !== "sent_for_sign"
+      && ((j.due_date && daysFrom(j.due_date) <= 7) || j.priority === "high"))
+      .sort((a, b) => Number(b.priority === "high") - Number(a.priority === "high") || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
     const svcs = SERVICES.filter((s) => openJobs.some((j) => j.service === s.id));
     const cols = STATUSES.filter((s) => s.open);
     const rows = team.map((p) => ({ id: p.id, name: p.full_name, title: p.title, js: openJobs.filter((j) => j.assignee_id === p.id) }));
@@ -321,13 +324,13 @@ export default function Workspace({ me }: { me: Profile }) {
               onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview}
               onOpen={(j) => setModal({ kind: "job", job: j })} onSeeAll={() => gotoJobs({ assignee: me.id })} />
             <div className="panel">
-              <div className="ph"><h2>Needs attention</h2>{attention.length ? <button className="link" onClick={() => gotoJobs({ due: "week_or_overdue" })}>See all</button> : null}</div>
+              <div className="ph"><h2>Needs attention</h2><span className="note">Your jobs: overdue, due this week or high priority</span></div>
               {attention.length ? (
                 <ul className="list">{attention.map((j) => (
-                  <li key={j.id}><div style={{ minWidth: 0 }}><div className="t">{clientName(j.client_id)}</div><div className="s">{svcLabel(j.service)} · {j.period} · {personName(j.assignee_id) || "Unassigned"}</div></div>
+                  <li key={j.id}><div style={{ minWidth: 0 }}><div className="t">{clientName(j.client_id)}</div><div className="s">{svcLabel(j.service)} · {j.period}{j.priority === "high" ? <> · <span style={{ color: "var(--danger)", fontWeight: 600 }}>High priority</span></> : null}</div></div>
                     <div className="row"><Due j={j} /><button onClick={() => setModal({ kind: "job", job: j })}>Open</button></div></li>
                 ))}</ul>
-              ) : <div className="empty"><strong>Nothing overdue or due this week.</strong>Jobs due in the next 7 days show here.</div>}
+              ) : <div className="empty"><strong>Nothing needs your attention.</strong>Your jobs that are overdue, due in the next 7 days or marked high priority show here.</div>}
             </div>
             {svcs.length ? (
               <div className="panel"><div className="ph"><h2>Open work by service</h2></div>
