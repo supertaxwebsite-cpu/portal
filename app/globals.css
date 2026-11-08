@@ -309,3 +309,9 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .reminder small{color:var(--muted)}
 .reminder .row{justify-content:flex-end}
 .myjobs .meetrow .pill{margin-right:4px}
+
+/* Possible duplicate client warning */
+.dupwarn{background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--fg)}
+.dupwarn strong{color:var(--warn)}
+.dupwarn ul{margin:6px 0;padding-left:18px}
+.dupwarn li{margin:3px 0}

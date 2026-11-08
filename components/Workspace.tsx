@@ -12,6 +12,7 @@ import UpdateBanner from "./UpdateBanner";
 import { MeetingsView, MeetingModal, MeetingReminders, involves, type Meeting } from "./Meetings";
 import type { MeetingDraft } from "@/lib/quickMeeting";
 import Bell, { type Notice } from "./Bell";
+import { similarClients, type Similar } from "@/lib/dupes";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
@@ -511,7 +512,7 @@ export default function Workspace({ me }: { me: Profile }) {
       <>
         <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and manager, and switch access off." : "You and the team members allocated to you."}</p></div>
           <div className="row">{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
-        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th>Can delete</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
+        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
           <tbody>{sorted.map((p) => { const oj = openJobs.filter((j) => j.assignee_id === p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
             <tr key={p.id}><td className="client">{p.full_name}{p.id === me.id ? " (you)" : ""}{p.title ? <div className="note">{p.title}</div> : null}</td>
               <td>{p.email}</td>
@@ -519,8 +520,8 @@ export default function Workspace({ me }: { me: Profile }) {
               {isMaster ? <td>{p.role === "staff" ? personName(p.reports_to ?? null) || <span className="note">Not allocated</span> : null}</td> : null}
               <td>{p.role !== "staff" ? <span className="note">Always</span>
                 : (isMaster || p.reports_to === me.id) && p.active
-                  ? <button type="button" aria-pressed={!!p.can_delete} className={p.can_delete ? "primary" : undefined} title={p.can_delete ? "Click to take delete access away" : "Click to let them delete clients and jobs"}
-                      onClick={async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete` : `${p.full_name} can now delete clients and jobs`); }}>{p.can_delete ? "Yes" : "No"}</button>
+                  ? <button type="button" aria-pressed={!!p.can_delete} className={p.can_delete ? "primary" : undefined} title={p.can_delete ? "Click to take delete access away" : "Click to let them delete client notes and job comments"}
+                      onClick={async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete notes` : `${p.full_name} can now delete notes and comments`); }}>{p.can_delete ? "Yes" : "No"}</button>
                   : p.can_delete ? "Yes" : "No"}</td>
               <td className="mono" style={{ textAlign: "right" }}>{oj.length}</td><td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : undefined }}>{od}</td>
               <td style={{ textAlign: "right" }}>{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
@@ -567,9 +568,9 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
-      {modal?.kind === "client" ? <ClientModal client={modal.client} team={team} canDelete={canDelete} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
+      {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
       {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
@@ -647,8 +648,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -666,9 +667,10 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
   const [quick, setQuick] = useState<{ name: string; entity: string; abn: string } | null>(null);
   const [added, setAdded] = useState<Client[]>([]);
   const allClients = useMemo(() => [...clients, ...added.filter((a) => !clients.some((c) => c.id === a.id))].sort((a, b) => a.name.localeCompare(b.name)), [clients, added]);
+  const [quickDupes, setQuickDupes] = useState<Similar[] | null>(null);
   async function addQuickClient() {
     if (!quick?.name.trim()) return;
-    if (allClients.some((c) => c.name.trim().toLowerCase() === quick.name.trim().toLowerCase())) { say("A client with this name already exists. Search for it above.", true); return; }
+    if (!quickDupes) { const found = similarClients(quick.name, quick.abn, allClients); if (found.length) { setQuickDupes(found); return; } }
     setBusy(true);
     const { data, error } = await supabase.from("clients").insert({ name: quick.name.trim(), entity: quick.entity, abn: quick.abn.trim(), services: SVC[v.service] && v.service !== "other" ? [v.service] : [] }).select().single();
     setBusy(false);
@@ -676,7 +678,7 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
     const c = data as Client;
     setAdded((x) => [...x, c]);
     setV((cur) => ({ ...cur, client_id: c.id, assignee_id: cur.assignee_id || c.manager_id || "" }));
-    setQuick(null);
+    setQuick(null); setQuickDupes(null);
     say(`${c.name} added`);
   }
   // Period choices depend on the service (and the client's BAS / payroll settings).
@@ -751,11 +753,15 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
         {quick ? <div className="full quickclient">
           <strong>New client</strong>
           <div className="qrow">
-            <label className="f">Name<input id="qc-name" autoFocus value={quick.name} onChange={(e) => setQuick({ ...quick, name: e.target.value })} placeholder="e.g. Sahej Logistics Pty Ltd" /></label>
+            <label className="f">Name<input id="qc-name" autoFocus value={quick.name} onChange={(e) => { setQuick({ ...quick, name: e.target.value }); setQuickDupes(null); }} placeholder="e.g. Sahej Logistics Pty Ltd" /></label>
             <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => setQuick({ ...quick, entity: e.target.value })}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
-            <label className="f">ABN<input id="qc-abn" value={quick.abn} onChange={(e) => setQuick({ ...quick, abn: e.target.value })} placeholder="Optional" inputMode="numeric" /></label>
+            <label className="f">ABN<input id="qc-abn" value={quick.abn} onChange={(e) => { setQuick({ ...quick, abn: e.target.value }); setQuickDupes(null); }} placeholder="Optional" inputMode="numeric" /></label>
           </div>
-          <div className="row"><button type="button" className="primary" disabled={busy || !quick.name.trim()} onClick={addQuickClient}>Add client</button><button type="button" onClick={() => setQuick(null)}>Cancel</button>
+          {quickDupes?.length ? <div className="dupwarn" role="alert">
+            <strong>This client may already exist</strong>
+            <ul>{quickDupes.map((d) => <li key={d.client.id}>{d.client.name} <span className="pill warn">{d.why}</span> <button type="button" className="link" onClick={() => { setV((cur) => ({ ...cur, client_id: d.client.id, assignee_id: cur.assignee_id || (d.client as Client).manager_id || "" })); setQuick(null); setQuickDupes(null); }}>Use this one</button></li>)}</ul>
+          </div> : null}
+          <div className="row"><button type="button" className="primary" disabled={busy || !quick.name.trim()} onClick={addQuickClient}>{quickDupes?.length ? "Yes, add anyway" : "Add client"}</button><button type="button" onClick={() => { setQuick(null); setQuickDupes(null); }}>Cancel</button>
             <span className="note">You can add contact details later from the client page.</span></div>
         </div> : null}
         <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
@@ -787,7 +793,7 @@ function JobModal({ job, presetClient, clients, team, canDelete, locked: staffLo
         {job ? <div className="full hint">Last changed {fmtDate(job.updated_at)}{job.updated_by ? ` by ${personName(job.updated_by)}` : ""}{logged ? <> · <button type="button" className="link" onClick={() => setTab("history")}>{fmtHours(logged)} logged, see history</button></> : null}</div> : null}
       </div>
       <footer>
-        {job && canDelete && !readOnly ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}
+        {job && canDeleteJob ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}
         <div className="row"><button type="button" onClick={onClose}>{readOnly ? "Close" : "Cancel"}</button>{readOnly ? null : <button type="submit" className="primary" disabled={busy}>{job ? "Save changes" : "Create job"}</button>}</div>
       </footer>
     </form></Overlay>
@@ -860,8 +866,8 @@ function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, s
   );
 }
 
-function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, confirm, onDeleted }: {
-  client?: Client; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
+function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, onClose, confirm, onDeleted }: {
+  client?: Client; clients: Client[]; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
 }) {
   const [v, setV] = useState({
     name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
@@ -870,9 +876,16 @@ function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, c
   });
   const hasPayroll = v.services.includes("payroll");
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setV({ ...v, [k]: e.target.value });
+  const [dupes, setDupes] = useState<Similar[] | null>(null);
+  const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setV({ ...v, [k]: e.target.value }); if (k === "name" || k === "abn") setDupes(null); };
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Possible duplicate? Show it and only save once they confirm.
+    const changed = !client || client.name.trim() !== v.name.trim() || (client.abn ?? "").trim() !== v.abn.trim();
+    if (changed && !dupes) {
+      const found = similarClients(v.name, v.abn, clients, client?.id);
+      if (found.length) { setDupes(found); return; }
+    }
     setBusy(true);
     if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
     const { payroll_freq, payroll_anchor, ...base } = v;
@@ -889,6 +902,11 @@ function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, c
       <header><h2>{client ? "Edit client" : "Add client"}</h2><button type="button" onClick={onClose}>Close</button></header>
       <div className="body">
         <label className="f full">Client name<input id="c-name" required value={v.name} onChange={set("name")} placeholder="e.g. Harbourside Plumbing Pty Ltd" /></label>
+        {dupes?.length ? <div className="full dupwarn" role="alert">
+          <strong>This client may already exist</strong>
+          <ul>{dupes.map((d) => <li key={d.client.id}>{d.client.name}{d.client.abn ? <span className="note"> · ABN {d.client.abn}</span> : null} <span className="pill warn">{d.why}</span></li>)}</ul>
+          <span className="note">Check it isn&apos;t the same client. If it&apos;s a different one, click {client ? "Save anyway" : "Yes, add anyway"}.</span>
+        </div> : null}
         <label className="f">Entity type<select id="c-entity" value={v.entity} onChange={set("entity")}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
         <label className="f">ABN<input id="c-abn" inputMode="numeric" value={v.abn} onChange={set("abn")} placeholder="11 digits" /></label>
         <label className="f">Contact person<input id="c-contact" value={v.contact} onChange={set("contact")} /></label>
@@ -909,7 +927,7 @@ function ClientModal({ client, team, canDelete, jobs, supabase, save, onClose, c
       <footer>
         {client && canDelete ? <button type="button" className="danger" onClick={() => confirm({ title: `Delete ${client.name}?`, text: `This removes the client and their ${n} job${n === 1 ? "" : "s"} for everyone. This cannot be undone.`, yes: "Delete client",
           run: async () => { const ok = await save(() => supabase.from("clients").delete().eq("id", client.id), "Client deleted"); if (ok) onDeleted(); return ok; } })}>Delete client</button> : <span />}
-        <div className="row"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy}>{client ? "Save changes" : "Add client"}</button></div>
+        <div className="row"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy}>{dupes?.length ? (client ? "Save anyway" : "Yes, add anyway") : client ? "Save changes" : "Add client"}</button></div>
       </footer>
     </form></Overlay>
   );

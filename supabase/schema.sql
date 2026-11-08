@@ -1130,3 +1130,22 @@ do $$ begin
     begin alter publication supabase_realtime add table public.notifications; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ============================================================
+-- Only master admins can delete clients and jobs.
+-- (Delete access given to staff now covers notes and comments only.)
+-- ============================================================
+create or replace function public.is_master() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and active and role = 'master');
+$$;
+revoke all on function public.is_master() from public, anon;
+grant execute on function public.is_master() to authenticated;
+drop policy if exists "managers delete clients" on public.clients;
+drop policy if exists "master deletes clients" on public.clients;
+create policy "master deletes clients" on public.clients
+  for delete to authenticated using (public.is_master());
+drop policy if exists "managers delete jobs" on public.jobs;
+drop policy if exists "master deletes jobs" on public.jobs;
+create policy "master deletes jobs" on public.jobs
+  for delete to authenticated using (public.is_master());
