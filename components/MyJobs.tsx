@@ -7,6 +7,13 @@ import { dateOf, isLink, timeOf, type Meeting } from "./Meetings";
 export const fmtHours = (h: number) => { const m = Math.max(1, Math.round(h * 60)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 const elapsed = (from: string, now: number) => { const m = Math.max(0, Math.floor((now - new Date(from).getTime()) / 60000)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
 
+function Due({ date }: { date: string | null }) {
+  if (!date) return <span className="duechip none">No due date</span>;
+  const d = daysFrom(date);
+  const when = d < 0 ? `${-d} day${d === -1 ? "" : "s"} overdue` : d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`;
+  return <span className={`duechip ${d < 0 ? "over" : d <= 7 ? "soon" : ""}`} title={`Due ${fmtDate(date)}`}><b>Due {fmtDate(date)}</b><span>{when}</span></span>;
+}
+
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
 export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
@@ -35,23 +42,25 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
     <div className="panel myjobs">
       <div className="ph"><h2>My jobs</h2>{jobs.length ? <button className="link" onClick={onSeeAll}>See all {jobs.length}</button> : null}</div>
       {meetings.length ? <ul className="list">{meetings.map((m) => { const at = new Date(m.starts_at).getTime(); const nowOn = at <= now && now < at + m.duration_min * 60000; return (
-        <li key={m.id} className={`meetrow${nowOn ? " running" : ""}`}><div style={{ minWidth: 0 }}>
+        <li key={m.id} className={`meetrow${nowOn ? " running" : ""}`}><span className="num">{meetings.indexOf(m) + 1}</span><div style={{ minWidth: 0 }}>
           <div className="t"><span className="pill accent">Meeting</span><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpenMeeting?.(m)}>{m.title}</button></div>
           <div className="s">{nowOn ? "Now" : at + m.duration_min * 60000 < now ? <span className="danger">Was {dateOf(m.starts_at)}</span> : dateOf(m.starts_at)} · {timeOf(m.starts_at)} · {m.duration_min} min{m.location && !isLink(m.location) ? ` · ${m.location}` : ""}</div></div>
           <div className="row actions">{isLink(m.location) ? <a className="btnlink" href={m.location} target="_blank" rel="noreferrer">Join</a> : null}
             {m.owner_id === myId ? <button onClick={() => onMeetingDone?.(m)}>Done</button> : null}</div></li>); })}</ul> : null}
       {!jobs.length && meetings.length ? null : !jobs.length ? <div className="empty"><strong>No open jobs assigned to you.</strong>Jobs assigned to you show here, ready to start.</div> : (
-        <ul className="list">{shown.map((j) => {
+        <ul className="list">{shown.map((j, i) => {
           const on = running?.job_id === j.id;
           const d = j.due_date ? daysFrom(j.due_date) : null;
           const canSubmit = j.status !== "review" && j.status !== "to_lodge";
           const away = j.assignee_id !== myId; // I sent it for an internal query
           const incoming = !away && j.status === "internal_query" && !!j.query_from;
           return (
-            <li key={j.id} className={on ? "running" : away ? "away" : ""}>
+            <li key={j.id} className={on ? "running" : away ? "away" : d !== null && d < 0 ? "overdue" : ""}>
+              <span className="num">{meetings.length + i + 1}</span>
               <div style={{ minWidth: 0 }}>
                 <div className="t"><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpen(j)}>{clientName(j.client_id)}</button></div>
-                <div className="s">{svcLabel(j.service)} · {j.period}{j.due_date ? <> · <span className={d! < 0 ? "danger" : d! <= 7 ? "warn" : ""}>{d! < 0 ? `${-d!}d overdue` : `due ${fmtDate(j.due_date)}`}</span></> : null}</div>
+                <div className="s">{svcLabel(j.service)} · {j.period}{j.priority === "high" ? <> · <span className="danger">High priority</span></> : null}</div>
+                <div className="duerow"><Due date={j.due_date} /></div>
                 {incoming ? <div className="s"><span className="pill danger">Internal query from {personName(j.query_from ?? null)}</span></div> : null}
               </div>
               {away ? <div className="row actions"><span className="pill danger">With {personName(j.assignee_id)} for internal query</span></div> : <div className="row actions">

@@ -218,8 +218,21 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .statuschip{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);text-align:left}
 .statuschip strong{font-size:18px}
 .statuschip:disabled{opacity:.55;cursor:default}
-.myjobs .list li{grid-template-columns:minmax(0,1fr)}
-@media (min-width:720px){.myjobs .list li{grid-template-columns:minmax(0,1fr) auto}}
+.myjobs .list{display:flex;flex-direction:column;gap:8px;padding:4px 12px 10px}
+.myjobs .list li{grid-template-columns:28px minmax(0,1fr);align-items:start;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:10px 12px;background:var(--surface)}
+.myjobs .list li:last-child{border-bottom:1px solid var(--line)}
+.myjobs .list li .actions{grid-column:2}
+@media (min-width:720px){.myjobs .list li{grid-template-columns:28px minmax(0,1fr) auto;align-items:center}.myjobs .list li .actions{grid-column:auto}}
+.myjobs .list li.meetrow{border-left-color:var(--brand-blue)}
+.myjobs .list li.overdue{border-left-color:var(--danger)}
+.myjobs .num{display:grid;place-items:center;width:24px;height:24px;border-radius:999px;background:var(--surface-2);color:var(--fg);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.myjobs .duerow{margin-top:6px}
+.duechip{display:inline-flex;align-items:baseline;gap:6px;padding:2px 8px;border-radius:6px;background:var(--surface-2);font-size:12px;color:var(--fg)}
+.duechip b{font-weight:600}
+.duechip span{color:var(--muted)}
+.duechip.soon{background:var(--warn-soft)}.duechip.soon b,.duechip.soon span{color:var(--warn)}
+.duechip.over{background:var(--danger-soft)}.duechip.over b,.duechip.over span{color:var(--danger)}
+.duechip.none{color:var(--muted)}
 .myjobs .actions{justify-content:flex-end}
 .myjobs .actions button,.myjobs .actions select{padding:5px 10px;font-size:13px}
 .myjobs li.running{background:var(--accent-soft)}
