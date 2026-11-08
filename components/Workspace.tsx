@@ -12,6 +12,7 @@ import UpdateBanner from "./UpdateBanner";
 import { MeetingsView, MeetingModal, MeetingReminders, involves, type Meeting } from "./Meetings";
 import type { MeetingDraft } from "@/lib/quickMeeting";
 import Bell, { type Notice } from "./Bell";
+import PayrollView from "./Payroll";
 import { similarClients, type Similar } from "@/lib/dupes";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
@@ -20,13 +21,13 @@ import JobHistory, { type JobSummary } from "./JobHistory";
 import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
-type View = "overview" | "jobs" | "clients" | "timesheet" | "team" | "meetings";
-const VIEWS: View[] = ["overview", "jobs", "clients", "timesheet", "team", "meetings"];
+type View = "overview" | "jobs" | "payroll" | "clients" | "timesheet" | "team" | "meetings";
+const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "timesheet", "team", "meetings"];
 interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string }
 const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "" };
 
 type Modal =
-  | { kind: "job"; job?: Job; clientId?: string }
+  | { kind: "job"; job?: Job; clientId?: string; service?: string }
   | { kind: "bulk" }
   | { kind: "client"; client?: Client }
   | { kind: "member"; member?: Profile }
@@ -216,6 +217,12 @@ export default function Workspace({ me }: { me: Profile }) {
     const rev = myReviewer(j);
     await save(() => supabase.from("jobs").update({ status: "review", reviewer_id: rev }).eq("id", j.id),
       rev && rev !== me.id ? `Sent to ${personName(rev)} for review` : "Marked ready for review");
+  }
+
+  async function payrollStep(j: Job, step: "super" | "stp" | "undo_super") {
+    if (step === "stp" && running?.job_id === j.id && !(await stopJob())) return;
+    await save(() => supabase.rpc("payroll_step", { p_job: j.id, p_step: step }),
+      step === "super" ? `Super confirmed for ${clientName(j.client_id)}` : step === "stp" ? `STP lodged. ${clientName(j.client_id)} pay run finished` : "Super tick taken back");
   }
 
   function exportCsv(list: Job[]) {
@@ -575,6 +582,8 @@ export default function Workspace({ me }: { me: Profile }) {
     <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
+      {view === "payroll" ? <PayrollView jobs={jobs} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
+        onStart={startJob} onStop={stopJob} onSubmit={submitForReview} onStep={payrollStep} onOpen={(j) => setModal({ kind: "job", job: j })} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
@@ -582,7 +591,7 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -619,7 +628,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
 /* ---------- layout ---------- */
 function Shell({ me, view, go, live, showTeam, bell, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
@@ -662,14 +671,14 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, presetService, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; presetService?: string; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
   const preset = presetClient ? clients.find((c) => c.id === presetClient) : undefined;
   const [v, setV] = useState({
-    client_id: job?.client_id ?? presetClient ?? "", service: job?.service ?? "bas", period: job?.period ?? "", due_date: job?.due_date ?? "",
+    client_id: job?.client_id ?? presetClient ?? "", service: job?.service ?? presetService ?? "bas", period: job?.period ?? "", due_date: job?.due_date ?? "",
     priority: job?.priority ?? "normal", assignee_id: job?.assignee_id ?? preset?.manager_id ?? "", reviewer_id: job?.reviewer_id ?? "",
     status: job?.status ?? "not_started", lodged_on: job?.lodged_on ?? "", notes: job?.notes ?? "",
   });

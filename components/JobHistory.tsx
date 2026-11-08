@@ -80,6 +80,8 @@ export default function JobHistory({ jobId, readOnly, meId, canDelete, supabase,
       case "assignee": return <>assigned it to <b>{personName(a.to_value) || "nobody"}</b>{a.from_value ? <span className="muted"> (was {personName(a.from_value)})</span> : null}</>;
       case "reviewer": return <>set the reviewer to <b>{personName(a.to_value) || "nobody"}</b></>;
       case "due": return <>changed the due date to <b>{a.to_value ? fmtDate(a.to_value) : "none"}</b>{a.from_value ? <span className="muted"> (was {fmtDate(a.from_value)})</span> : null}</>;
+      case "super": return /back/.test(a.body) ? <>took back the <b>super paid</b> tick</> : <>confirmed <b>super has been paid</b></>;
+      case "stp": return <>lodged <b>STP</b> and finished the pay run</>;
       default: return null;
     }
   };

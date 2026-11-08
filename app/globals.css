@@ -328,3 +328,38 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .dupwarn strong{color:var(--warn)}
 .dupwarn ul{margin:6px 0;padding-left:18px}
 .dupwarn li{margin:3px 0}
+
+/* Payroll board */
+.paysum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.paystat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;border-top:4px solid var(--line)}
+.paystat .lbl{font-size:13px;color:var(--muted);font-weight:600}
+.paystat .val{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.paystat.s0{border-top-color:var(--brand-blue)}.paystat.s1{border-top-color:var(--brand-orange)}.paystat.s2{border-top-color:#7c5cd6}
+.payscope{margin-bottom:12px;gap:8px}
+.payscope .chip{cursor:pointer}
+.paygroup{margin-bottom:14px}
+.paygroup .ph h2{display:flex;align-items:center;gap:8px}
+.paygroup .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
+.paygroup .dot.danger{background:var(--danger)}.paygroup .dot.accent{background:var(--brand-orange)}.paygroup .dot.ok{background:#1f9d55}
+.paylist{list-style:none;margin:0;padding:4px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.payrow{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px 12px;align-items:start;border:1px solid var(--line);border-left:4px solid var(--brand-blue);border-radius:10px;padding:10px 12px;background:var(--surface)}
+.payrow.st1{border-left-color:var(--brand-orange)}.payrow.st2{border-left-color:#7c5cd6}.payrow.st3{border-left-color:#1f9d55;opacity:.85}
+.payrow.running{background:var(--accent-soft)}
+.payrow .num{display:grid;place-items:center;width:24px;height:24px;border-radius:999px;background:var(--surface-2);font-size:12px;font-weight:700}
+.payrow .t .link{color:var(--fg);font-weight:600}
+.payrow .s{font-size:12.5px;color:var(--muted)}
+.payrow .duerow{margin-top:6px}
+.paysteps,.payact{grid-column:2}
+@media (min-width:900px){.payrow{grid-template-columns:28px minmax(0,1fr) auto auto;align-items:center}.paysteps,.payact{grid-column:auto}}
+.paysteps{list-style:none;margin:0;padding:0;display:flex;gap:4px;align-items:center}
+.paysteps li{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);padding:3px 8px 3px 4px;border-radius:999px;background:var(--surface-2);white-space:nowrap}
+.paysteps li i{font-style:normal;display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--line);color:var(--fg);font-size:11px;font-weight:700}
+.paysteps li.done{color:#1f7a45;background:color-mix(in srgb,#1f9d55 14%,transparent)}
+.paysteps li.done i{background:#1f9d55;color:#fff}
+.paysteps li.now{color:var(--fg);font-weight:600;box-shadow:inset 0 0 0 1.5px var(--brand-orange)}
+.paysteps li.now i{background:var(--brand-orange);color:#1a1205}
+.payact{justify-content:flex-end;gap:8px}
+.payact button{padding:5px 10px;font-size:13px}
+.payact .timer{color:var(--accent);font-weight:700}
+.payact .okline{color:#1f7a45}
+@media (max-width:600px){.paysum{grid-template-columns:1fr 1fr 1fr;gap:6px}.paystat{padding:8px}.paystat .val{font-size:22px}.paystat .note{display:none}.paysteps li span{display:none}.paysteps li{padding:3px}}

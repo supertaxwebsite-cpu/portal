@@ -1176,3 +1176,68 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.job_hours(uuid[]) from public, anon;
 grant execute on function public.job_hours(uuid[]) to authenticated;
+
+-- ============================================================
+-- Payroll sign-off: the preparer submits the pay run, then a team leader or master admin
+-- confirms super has been paid, then lodges STP (which marks the job lodged).
+-- ============================================================
+alter table public.jobs add column if not exists super_done_at timestamptz;
+alter table public.jobs add column if not exists super_done_by uuid references public.profiles (id) on delete set null;
+alter table public.jobs add column if not exists stp_done_at timestamptz;
+alter table public.jobs add column if not exists stp_done_by uuid references public.profiles (id) on delete set null;
+
+alter table public.job_activity drop constraint if exists job_activity_kind_check;
+alter table public.job_activity add constraint job_activity_kind_check
+  check (kind in ('created', 'status', 'assignee', 'reviewer', 'due', 'comment', 'super', 'stp'));
+
+-- The sign-off columns change only through payroll_step() below.
+create or replace function public.guard_payroll_steps() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or current_setting('supertax.payroll_step', true) = 'on' then return new; end if;
+  if (new.super_done_at, new.super_done_by, new.stp_done_at, new.stp_done_by)
+     is distinct from (old.super_done_at, old.super_done_by, old.stp_done_at, old.stp_done_by) then
+    raise exception 'Use the payroll buttons to confirm super and STP' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_payroll_steps() from public, anon, authenticated;
+drop trigger if exists jobs_payroll_guard on public.jobs;
+create trigger jobs_payroll_guard before update on public.jobs
+  for each row execute function public.guard_payroll_steps();
+
+-- p_step: 'super' (confirm super paid), 'stp' (STP lodged: job becomes lodged), 'undo_super' (take the super tick back).
+create or replace function public.payroll_step(p_job uuid, p_step text) returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); r public.app_role := public.my_role();
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.service <> 'payroll' then raise exception 'This is not a payroll job'; end if;
+  if r is distinct from 'master' and r is distinct from 'manager' and j.reviewer_id is distinct from me then
+    raise exception 'Only a team leader or master admin can sign off payroll' using errcode = '42501';
+  end if;
+  if j.status in ('lodged', 'done') then raise exception 'This pay run is already finished'; end if;
+  perform set_config('supertax.payroll_step', 'on', true);
+  if p_step = 'super' then
+    if j.super_done_at is not null then return; end if;
+    update public.jobs set super_done_at = now(), super_done_by = me,
+      status = case when status in ('not_started', 'in_progress', 'waiting') then 'review' else status end
+      where id = p_job;
+    insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'super', 'Super confirmed as processed');
+  elsif p_step = 'undo_super' then
+    update public.jobs set super_done_at = null, super_done_by = null where id = p_job;
+    insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'super', 'Super tick taken back');
+  elsif p_step = 'stp' then
+    if j.super_done_at is null then raise exception 'Confirm super first, then lodge STP'; end if;
+    update public.jobs set stp_done_at = now(), stp_done_by = me, status = 'lodged',
+      lodged_on = coalesce(lodged_on, (now() at time zone 'Australia/Sydney')::date)
+      where id = p_job;
+    insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'stp', 'STP lodged');
+  else
+    raise exception 'Unknown payroll step';
+  end if;
+end $$;
+revoke all on function public.payroll_step(uuid, text) from public, anon;
+grant execute on function public.payroll_step(uuid, text) to authenticated;

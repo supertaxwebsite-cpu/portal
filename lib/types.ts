@@ -53,6 +53,10 @@ export interface Job {
   notes: string;
   lodged_on: string | null;
   query_from?: string | null;
+  super_done_at?: string | null;
+  super_done_by?: string | null;
+  stp_done_at?: string | null;
+  stp_done_by?: string | null;
   updated_at: string;
   updated_by: string | null;
 }
