@@ -94,7 +94,7 @@ export function periodLabel(service: string, p: PeriodInput): string {
   return p.text.trim();
 }
 
-export const roleLabel = (r: string) => (r === "master" ? "Master admin" : r === "manager" ? "Manager" : "Staff");
+export const roleLabel = (r: string) => (r === "master" ? "Master admin" : r === "manager" ? "Team leader" : "Staff");
 
 /** Work the portal will create automatically later (shown as "Projected work"). */
 export interface Projected { key: string; label: string; detail: string; appears: string; clients: string[] }

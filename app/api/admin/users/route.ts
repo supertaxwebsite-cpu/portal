@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireMaster, tempPassword } from "@/lib/auth";
+import { setTeam } from "@/lib/team";
 
 /** Master admin adds a team member. Returns a temporary password to hand over;
  *  they must choose their own password at first sign-in. */
@@ -27,10 +28,22 @@ export async function POST(req: Request) {
     const msg = /already/i.test(error?.message ?? "") ? "Someone with that email already has an account." : error?.message ?? "Could not add them.";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
-  const { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...(reportsTo ? { reports_to: reportsTo } : {}) });
+  const perms: Record<string, boolean> = {};
+  if (role === "staff" && typeof body.canDelete === "boolean") perms.can_delete = body.canDelete;
+  if (role !== "master" && body.canSeeWorkload === true) perms.can_see_workload = true;
+  let { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) });
+  if (pErr && /can_see_workload/.test(pErr.message)) {
+    // Database update for the workload permission not run yet: add them without it.
+    delete perms.can_see_workload;
+    ({ error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) }));
+  }
   if (pErr) {
     await admin.auth.admin.deleteUser(data.user.id);
     return NextResponse.json({ error: pErr.message }, { status: 500 });
+  }
+  if (role === "manager") {
+    const err = await setTeam(admin, data.user.id, body.team);
+    if (err) return NextResponse.json({ ok: true, tempPassword: password, warning: err });
   }
   return NextResponse.json({ ok: true, tempPassword: password });
 }

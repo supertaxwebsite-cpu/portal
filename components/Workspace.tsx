@@ -77,6 +77,8 @@ export default function Workspace({ me }: { me: Profile }) {
   const canSeeTeam = canManage;
   /** Team workload and Working now: master admins, plus anyone a master admin has allowed. */
   const canSeeWorkload = isMaster || !!me.can_see_workload;
+  /** Team leaders without that permission still see their own team's workload and running jobs. */
+  const seesOwnTeam = !canSeeWorkload && me.role === "manager";
   const canDelete = canManage || !!me.can_delete;
 
   const say = useCallback((msg: string, err = false) => {
@@ -99,7 +101,7 @@ export default function Workspace({ me }: { me: Profile }) {
       setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
       const { data: mt } = await supabase.from("meetings").select("*").gte("starts_at", new Date(Date.now() - 120 * 864e5).toISOString()).order("starts_at");
       setMeetings((mt as Meeting[] | null) ?? []);
-      if (canSeeWorkload) {
+      if (canSeeWorkload || seesOwnTeam) {
         // Everyone this person can see (managers: their own staff) who has a job running, plus time logged on those jobs.
         const { data: tr } = await supabase.from("job_timers").select("*").is("ended_at", null).order("started_at");
         const list = ((tr as JobTimer[] | null) ?? []).filter((x) => x.job_id);
@@ -117,7 +119,7 @@ export default function Workspace({ me }: { me: Profile }) {
     } catch (e) {
       setLoadError((e as Error).message);
     }
-  }, [supabase, me.id, canSeeWorkload]);
+  }, [supabase, me.id, canSeeWorkload, seesOwnTeam]);
 
   // Initial load + live refresh when anyone changes something.
   useEffect(() => {
@@ -276,9 +278,10 @@ export default function Workspace({ me }: { me: Profile }) {
       .sort((a, b) => Number(b.priority === "high") - Number(a.priority === "high") || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
     const svcs = SERVICES.filter((s) => openJobs.some((j) => j.service === s.id));
     const cols = STATUSES.filter((s) => s.open);
-    const rows = team.map((p) => ({ id: p.id, name: p.full_name, title: p.title, js: openJobs.filter((j) => j.assignee_id === p.id) }));
+    const myTeam = new Set([me.id, ...profiles.filter((p) => p.reports_to === me.id).map((p) => p.id)]);
+    const rows = team.filter((p) => !seesOwnTeam || myTeam.has(p.id)).map((p) => ({ id: p.id, name: p.full_name, title: p.title, js: openJobs.filter((j) => j.assignee_id === p.id) }));
     const un = openJobs.filter((j) => !j.assignee_id || !profileById.get(j.assignee_id)?.active);
-    if (un.length) rows.push({ id: "__none", name: "Unassigned", title: "", js: un });
+    if (un.length && !seesOwnTeam) rows.push({ id: "__none", name: "Unassigned", title: "", js: un });
     const max = Math.max(1, ...rows.map((r) => r.js.length));
     const projected = projectedWork(clients);
     const Tile = ({ lbl, n, cls, f }: { lbl: string; n: number; cls?: string; f: Partial<JobFilter> }) => (
@@ -343,9 +346,9 @@ export default function Workspace({ me }: { me: Profile }) {
             ) : null}
           </div>
           <div className="section">
-            {canSeeWorkload ? <TeamRunning timers={teamRunning} jobHours={jobHours} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} personName={personName}
+            {canSeeWorkload || seesOwnTeam ? <TeamRunning timers={teamRunning} jobHours={jobHours} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} personName={personName}
               onOpen={(j) => setModal({ kind: "job", job: j })} /> : null}
-            {canSeeWorkload ? <div className="panel"><div className="ph"><h2>Team workload</h2><span className="note">Open jobs · <span style={{ color: "var(--danger)" }}>overdue</span></span></div>
+            {canSeeWorkload || seesOwnTeam ? <div className="panel"><div className="ph"><h2>{seesOwnTeam ? "My team's workload" : "Team workload"}</h2><span className="note">Open jobs · <span style={{ color: "var(--danger)" }}>overdue</span></span></div>
               <div style={{ overflowX: "auto", marginTop: 8 }}><table className="workload"><tbody>{rows.map((r) => { const od = r.js.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; const n = r.js.length; return (
                 <tr key={r.id}><td style={{ width: "40%" }}><button className="link" style={{ color: "var(--fg)" }} onClick={() => gotoJobs({ assignee: r.id })}>{r.name}</button>{r.title ? <div className="note">{r.title}</div> : null}</td>
                   <td><div className="bar" title={`${n} open, ${od} overdue`}><i className="d" style={{ width: `${(od / max) * 100}%` }} /><i className="o" style={{ width: `${((n - od) / max) * 100}%` }} /></div></td>
@@ -518,7 +521,7 @@ export default function Workspace({ me }: { me: Profile }) {
       <>
         <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and manager, and switch access off." : "You and the team members allocated to you."}</p></div>
           <div className="row">{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
-        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th title="Can see Team workload and Working now on the Overview">Sees workload</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
+        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Team leader</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th title="Can see Team workload and Working now on the Overview">Sees workload</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
           <tbody>{sorted.map((p) => { const oj = openJobs.filter((j) => j.assignee_id === p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
             <tr key={p.id}><td className="client">{p.full_name}{p.id === me.id ? " (you)" : ""}{p.title ? <div className="note">{p.title}</div> : null}</td>
               <td>{p.email}</td>
@@ -539,7 +542,7 @@ export default function Workspace({ me }: { me: Profile }) {
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Ask for team members to be allocated to you.</p> : null}
         <div className="panel" style={{ padding: 16, marginTop: 16 }}>
           <h2>What each role can do</h2>
-          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> add and update clients and jobs. <strong>Managers</strong> can also delete clients and jobs, see their own team here, and give their staff delete access with the Can delete button. The <strong>Master admin</strong> sees everyone, can give any staff member delete access, adds people, changes roles, resets passwords and switches access off.</p>
+          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> work on the jobs assigned to them and add and update clients and jobs. <strong>Team leaders</strong> also see their own team members here, with their timesheets, what they&apos;re working on now and their workload, and can book meetings. The <strong>Master admin</strong> sees everyone, adds people, sets roles and permissions (Manage), and is the only one who can delete clients and jobs. Use the <strong>Sees workload</strong> and <strong>Can delete notes</strong> buttons, or Manage, to give extra permissions to one person.</p>
         </div>
       </>
     );
@@ -583,7 +586,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
-      {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
+      {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} staff={profiles.filter((p) => p.active && p.role === "staff")} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
         <Overlay onClose={close}><div className="modal"><header><h2>Give {modal.name} their sign-in</h2><button type="button" onClick={close}>Close</button></header>
           <div className="body"><div className="full stack">
@@ -944,22 +947,25 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
   );
 }
 
-function MemberModal({ member, managers, adminCall, onClose, onTemp, confirm, say }: {
-  member?: Profile; managers: Profile[]; adminCall: (url: string, method: string, body?: unknown) => Promise<{ tempPassword?: string } | null>; onClose: () => void;
+function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, confirm, say }: {
+  member?: Profile; managers: Profile[]; staff: Profile[]; adminCall: (url: string, method: string, body?: unknown) => Promise<{ tempPassword?: string } | null>; onClose: () => void;
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload });
+  const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
+  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     if (member) {
-      const r = await adminCall(`/api/admin/users/${member.id}`, "PATCH", { fullName: v.fullName, title: v.title, role: v.role, reportsTo: v.role === "staff" ? v.reportsTo || null : null });
+      const r = await adminCall(`/api/admin/users/${member.id}`, "PATCH", { fullName: v.fullName, title: v.title, role: v.role, reportsTo: v.role === "staff" ? v.reportsTo || null : null, ...extra() });
       setBusy(false);
       if (r) { say("Saved"); onClose(); }
     } else {
-      const r = await adminCall("/api/admin/users", "POST", v);
+      const r = await adminCall("/api/admin/users", "POST", { ...v, ...extra() });
       setBusy(false);
       if (r?.tempPassword) onTemp({ name: v.fullName, email: v.email.trim().toLowerCase(), password: r.tempPassword });
     }
@@ -971,10 +977,23 @@ function MemberModal({ member, managers, adminCall, onClose, onTemp, confirm, sa
         <label className="f">Name<input id="u-name" required value={v.fullName} onChange={set("fullName")} /></label>
         <label className="f">Email{member ? <input id="u-email" value={v.email} disabled /> : <input id="u-email" type="email" required value={v.email} onChange={set("email")} />}</label>
         <label className="f">Job title<input id="u-title" value={v.title} onChange={set("title")} placeholder="e.g. Senior accountant" /></label>
-        <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Manager</option><option value="master">Master admin (full control)</option></select></label>
+        <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Team leader (manager)</option><option value="master">Master admin (full control)</option></select></label>
         {v.role === "staff" ? (
-          <label className="f">Reports to (manager)<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No manager</option>{managers.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></label>
+          <label className="f">Team leader<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No team leader</option>{managers.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></label>
         ) : null}
+        <p className="full hint" style={{ margin: 0 }}>{v.role === "staff" ? "Staff see and work on the jobs assigned to them, add and update clients and jobs, and fill in their timesheet."
+          : v.role === "manager" ? "A team leader sees their team members here, their timesheets and attendance, what they are working on right now, and their workload. They can assign jobs and book meetings."
+          : "A master admin can do everything: add people, change roles and permissions, delete clients and jobs, and see the whole practice."}</p>
+        {v.role === "manager" ? <div className="f full"><span>Their team members</span>
+          {staff.filter((s) => s.id !== member?.id).length ? <div className="row" style={{ marginTop: 6 }}>{staff.filter((s) => s.id !== member?.id).map((s) => { const on = teamIds.includes(s.id); const other = !on && s.reports_to && s.reports_to !== member?.id ? managers.find((m) => m.id === s.reports_to)?.full_name : ""; return (
+            <label key={s.id} className={`chip ${on ? "on" : ""}`} title={other ? `Currently in ${other}'s team. Ticking moves them.` : undefined}><input type="checkbox" checked={on} onChange={() => setTeamIds(on ? teamIds.filter((x) => x !== s.id) : [...teamIds, s.id])} />{s.full_name}{other ? <span className="note"> ({other})</span> : null}</label>); })}</div>
+            : <span className="note" style={{ marginTop: 4 }}>No staff yet. Add staff members, then choose them here (or pick this team leader under &quot;Team leader&quot; on their form).</span>}
+        </div> : null}
+        {v.role !== "master" ? <div className="f full permbox"><span>Permissions</span>
+          <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? " (not just their own team)" : ""}</label>
+          {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label> : null}
+          <span className="note">Only master admins can delete clients and jobs.</span>
+        </div> : null}
         {!member ? <p className="full hint" style={{ margin: 0 }}>You&apos;ll get a temporary password to give them. They choose their own the first time they sign in.</p> : null}
         {member ? (
           <div className="full row" style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
