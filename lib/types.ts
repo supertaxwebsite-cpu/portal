@@ -10,6 +10,7 @@ export interface Profile {
   must_change_password: boolean;
   reports_to?: string | null;
   can_delete?: boolean;
+  can_see_workload?: boolean;
   created_at: string;
 }
 

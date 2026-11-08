@@ -75,6 +75,8 @@ export default function Workspace({ me }: { me: Profile }) {
   const isMaster = me.role === "master";
   const canManage = me.role === "master" || me.role === "manager";
   const canSeeTeam = canManage;
+  /** Team workload and Working now: master admins, plus anyone a master admin has allowed. */
+  const canSeeWorkload = isMaster || !!me.can_see_workload;
   const canDelete = canManage || !!me.can_delete;
 
   const say = useCallback((msg: string, err = false) => {
@@ -97,7 +99,7 @@ export default function Workspace({ me }: { me: Profile }) {
       setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
       const { data: mt } = await supabase.from("meetings").select("*").gte("starts_at", new Date(Date.now() - 120 * 864e5).toISOString()).order("starts_at");
       setMeetings((mt as Meeting[] | null) ?? []);
-      if (me.role === "master" || me.role === "manager") {
+      if (canSeeWorkload) {
         // Everyone this person can see (managers: their own staff) who has a job running, plus time logged on those jobs.
         const { data: tr } = await supabase.from("job_timers").select("*").is("ended_at", null).order("started_at");
         const list = ((tr as JobTimer[] | null) ?? []).filter((x) => x.job_id);
@@ -105,7 +107,8 @@ export default function Workspace({ me }: { me: Profile }) {
         const ids = [...new Set(list.map((x) => x.job_id as string))];
         const hrs: Record<string, number> = {};
         if (ids.length) {
-          const { data: te } = await supabase.from("timesheet_entries").select("job_id,hours").in("job_id", ids);
+          const { data: jh, error: jhErr } = await supabase.rpc("job_hours", { p_jobs: ids });
+          const te = jhErr ? (await supabase.from("timesheet_entries").select("job_id,hours").in("job_id", ids)).data : jh;
           for (const e of (te as { job_id: string; hours: number }[] | null) ?? []) hrs[e.job_id] = (hrs[e.job_id] ?? 0) + Number(e.hours);
         }
         setJobHours(hrs);
@@ -114,7 +117,7 @@ export default function Workspace({ me }: { me: Profile }) {
     } catch (e) {
       setLoadError((e as Error).message);
     }
-  }, [supabase, me.id, me.role]);
+  }, [supabase, me.id, canSeeWorkload]);
 
   // Initial load + live refresh when anyone changes something.
   useEffect(() => {
@@ -292,7 +295,7 @@ export default function Workspace({ me }: { me: Profile }) {
               <li><button className="link" onClick={() => setModal({ kind: "client" })}>Add your clients</button> and tick the services you do for each.</li>
               <li><button className="link" onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button>, such as every quarterly BAS for Q2 FY{String(currentFY()).slice(2)}, in one step.</li>
             </ol></div>
-            <div className="side"><strong>Signed in as {roleLabel(me.role)}</strong><span className="note">{isMaster ? "Only you can add team members, change roles and switch access off." : canManage ? "Managers can also delete clients and jobs." : "You can add and update clients and jobs."}</span></div>
+            <div className="side"><strong>Signed in as {roleLabel(me.role)}</strong><span className="note">{isMaster ? "Only you can add team members, change roles and switch access off." : canManage ? "Only master admins can delete clients and jobs." : "You can add and update clients and jobs."}</span></div>
           </div>
         ) : null}
         <div className="tiles">
@@ -337,13 +340,13 @@ export default function Workspace({ me }: { me: Profile }) {
             ) : null}
           </div>
           <div className="section">
-            {canManage ? <TeamRunning timers={teamRunning} jobHours={jobHours} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} personName={personName}
+            {canSeeWorkload ? <TeamRunning timers={teamRunning} jobHours={jobHours} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} personName={personName}
               onOpen={(j) => setModal({ kind: "job", job: j })} /> : null}
-            <div className="panel"><div className="ph"><h2>Team workload</h2><span className="note">Open jobs · <span style={{ color: "var(--danger)" }}>overdue</span></span></div>
+            {canSeeWorkload ? <div className="panel"><div className="ph"><h2>Team workload</h2><span className="note">Open jobs · <span style={{ color: "var(--danger)" }}>overdue</span></span></div>
               <div style={{ overflowX: "auto", marginTop: 8 }}><table className="workload"><tbody>{rows.map((r) => { const od = r.js.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; const n = r.js.length; return (
                 <tr key={r.id}><td style={{ width: "40%" }}><button className="link" style={{ color: "var(--fg)" }} onClick={() => gotoJobs({ assignee: r.id })}>{r.name}</button>{r.title ? <div className="note">{r.title}</div> : null}</td>
                   <td><div className="bar" title={`${n} open, ${od} overdue`}><i className="d" style={{ width: `${(od / max) * 100}%` }} /><i className="o" style={{ width: `${((n - od) / max) * 100}%` }} /></div></td>
-                  <td className="mono" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{n}{od ? <> · <span style={{ color: "var(--danger)" }}>{od}</span></> : null}</td></tr>); })}</tbody></table></div></div>
+                  <td className="mono" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{n}{od ? <> · <span style={{ color: "var(--danger)" }}>{od}</span></> : null}</td></tr>); })}</tbody></table></div></div> : null}
             {projected.length ? (
               <div className="panel"><div className="ph"><h2>Projected work</h2><span className="note">Created automatically when the period ends</span></div>
                 <ul className="list">{projected.map((p) => (
@@ -512,7 +515,7 @@ export default function Workspace({ me }: { me: Profile }) {
       <>
         <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and manager, and switch access off." : "You and the team members allocated to you."}</p></div>
           <div className="row">{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
-        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
+        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Reports to</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th title="Can see Team workload and Working now on the Overview">Sees workload</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
           <tbody>{sorted.map((p) => { const oj = openJobs.filter((j) => j.assignee_id === p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
             <tr key={p.id}><td className="client">{p.full_name}{p.id === me.id ? " (you)" : ""}{p.title ? <div className="note">{p.title}</div> : null}</td>
               <td>{p.email}</td>
@@ -523,6 +526,11 @@ export default function Workspace({ me }: { me: Profile }) {
                   ? <button type="button" aria-pressed={!!p.can_delete} className={p.can_delete ? "primary" : undefined} title={p.can_delete ? "Click to take delete access away" : "Click to let them delete client notes and job comments"}
                       onClick={async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete notes` : `${p.full_name} can now delete notes and comments`); }}>{p.can_delete ? "Yes" : "No"}</button>
                   : p.can_delete ? "Yes" : "No"}</td>
+              <td>{p.role === "master" ? <span className="note">Always</span>
+                : isMaster && p.active
+                  ? <button type="button" aria-pressed={!!p.can_see_workload} className={p.can_see_workload ? "primary" : undefined} title={p.can_see_workload ? "Click to hide Team workload and Working now from them" : "Click to let them see Team workload and Working now"}
+                      onClick={async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); }}>{p.can_see_workload ? "Yes" : "No"}</button>
+                  : p.can_see_workload ? "Yes" : "No"}</td>
               <td className="mono" style={{ textAlign: "right" }}>{oj.length}</td><td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : undefined }}>{od}</td>
               <td style={{ textAlign: "right" }}>{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Ask for team members to be allocated to you.</p> : null}

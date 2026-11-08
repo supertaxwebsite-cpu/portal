@@ -1149,3 +1149,30 @@ drop policy if exists "managers delete jobs" on public.jobs;
 drop policy if exists "master deletes jobs" on public.jobs;
 create policy "master deletes jobs" on public.jobs
   for delete to authenticated using (public.is_master());
+
+-- ============================================================
+-- Team workload / Working now: master admins always; anyone else only if a master admin allows it.
+-- ============================================================
+alter table public.profiles add column if not exists can_see_workload boolean not null default false;
+
+create or replace function public.can_see_workload() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and active and (role = 'master' or can_see_workload));
+$$;
+revoke all on function public.can_see_workload() from public, anon;
+grant execute on function public.can_see_workload() to authenticated;
+
+-- People allowed to see Working now can see everyone's running job timers.
+drop policy if exists "workload viewers read timers" on public.job_timers;
+create policy "workload viewers read timers" on public.job_timers
+  for select to authenticated using (ended_at is null and public.can_see_workload());
+
+-- Total hours logged on the given jobs (for Working now), without exposing anyone's timesheet.
+create or replace function public.job_hours(p_jobs uuid[]) returns table (job_id uuid, hours numeric)
+language sql stable security definer set search_path = public as $$
+  select e.job_id, sum(e.hours)::numeric from public.timesheet_entries e
+  where public.can_see_workload() and e.job_id = any (p_jobs)
+  group by e.job_id;
+$$;
+revoke all on function public.job_hours(uuid[]) from public, anon;
+grant execute on function public.job_hours(uuid[]) to authenticated;
