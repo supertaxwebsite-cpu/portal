@@ -1462,3 +1462,24 @@ begin
   return new;
 end $$;
 revoke all on function public.notify_job() from public, anon, authenticated;
+
+-- ============================================================
+-- Staff can't change a job's status until the job has been started.
+-- (Team leaders and master admins can, e.g. for admin work.)
+-- ============================================================
+create or replace function public.guard_status_needs_start() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status is distinct from old.status
+     and auth.uid() is not null and public.my_role() = 'staff'
+     and current_setting('supertax.job_handover', true) is distinct from 'on'
+     and current_setting('supertax.payroll_step', true) is distinct from 'on'
+     and not public.job_was_started(new.id) then
+    raise exception 'Start the job first: press Start on it in My jobs, then you can change its status' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_status_needs_start() from public, anon, authenticated;
+drop trigger if exists jobs_status_needs_start on public.jobs;
+create trigger jobs_status_needs_start before update on public.jobs
+  for each row execute function public.guard_status_needs_start();

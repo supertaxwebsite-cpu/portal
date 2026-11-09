@@ -229,6 +229,8 @@ export default function Workspace({ me }: { me: Profile }) {
     const notes = note.trim() ? `${j.notes ? `${j.notes}\n` : ""}Review (${stamp}, ${me.full_name}): ${note.trim()}` : j.notes;
     await save(() => supabase.from("jobs").update({ status: "in_progress", notes }).eq("id", j.id), `Sent back to ${personName(j.assignee_id) || "the preparer"}`);
   }
+  /** Staff can't change a job's status until it has been started. */
+  const staffNotStarted = (j: Job) => me.role === "staff" && !wasStarted(j);
   const wasStarted = (j: Job) => !started || started.has(j.id) || running?.job_id === j.id;
   async function submitForReview(j: Job) {
     if (!wasStarted(j)) { say("Start the job first: press Start, do the work, then submit it for review.", true); return; }
@@ -273,7 +275,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // Lodged and completed jobs are read-only for everyone except master admins.
   const closedFor = (j: Job) => !isOpen(j.status) && !isMaster;
   const StatusSelect = ({ j }: { j: Job }) => (
-    <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : undefined} onChange={(e) => setStatus(j, e.target.value as StatusId)}>
+    <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j) || staffNotStarted(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : staffNotStarted(j) ? "Press Start on this job first, then you can change its status" : undefined} onChange={(e) => setStatus(j, e.target.value as StatusId)}>
       {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
     </select>
   );
@@ -347,7 +349,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <MyJobs jobs={openJobs.filter((j) => j.status !== "sent_for_sign" && (j.status === "review"
                 ? j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id) // review tasks belong to the reviewer
                 : j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query")))}
-              onApprove={approveReview} onSendBack={sendBackReview} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
+              onApprove={approveReview} onSendBack={sendBackReview} isStaff={me.role === "staff"} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}
               onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })}
@@ -615,7 +617,7 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && staffNotStarted(modal.job)} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -695,8 +697,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, presetService, isStaff, leaderId, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusLocked, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -836,7 +838,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, clients
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked} value={v.reviewer_id} onChange={set("reviewer_id")}>{opts("No reviewer")}</select></label>
-        <label className="f">Status<select id="m-status" disabled={readOnly} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
+        <label className="f">Status<select id="m-status" disabled={readOnly || statusLocked} title={statusLocked ? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>
         <label className="f full">Notes<textarea id="m-notes" readOnly={readOnly} placeholder="Records outstanding, queries for the client, lodgment receipt number…" value={v.notes} onChange={set("notes")} /></label>
         {job ? <div className="full hint">Last changed {fmtDate(job.updated_at)}{job.updated_by ? ` by ${personName(job.updated_by)}` : ""}{logged ? <> · <button type="button" className="link" onClick={() => setTab("history")}>{fmtHours(logged)} logged, see history</button></> : null}</div> : null}
