@@ -219,10 +219,10 @@ export default function Workspace({ me }: { me: Profile }) {
     if (running?.job_id === j.id && !isOpen(status) && !(await stopJob())) return;
     await setStatus(j, status);
   }
-  /** Reviewer: approve (ready to lodge) or send back to the preparer with a note. */
+  /** Reviewer: approve (ready for signing) or send back to the preparer with a note. */
   async function approveReview(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
-    await save(() => supabase.from("jobs").update({ status: "sent_for_sign" }).eq("id", j.id), "Approved and moved to Sent for sign. It's in your My jobs until the client signs");
+    await save(() => supabase.from("jobs").update({ status: "to_lodge" }).eq("id", j.id), "Approved. It's in your My jobs as Ready for signing");
   }
   async function sendBackReview(j: Job) {
     const note = window.prompt(`What does ${personName(j.assignee_id) || "the preparer"} need to fix? (optional)`, "");
@@ -236,10 +236,18 @@ export default function Workspace({ me }: { me: Profile }) {
   const staffNotStarted = (j: Job) => me.role === "staff" && !wasStarted(j);
   /** What belongs in My jobs: my own work, reviews waiting for me, and jobs I approved that wait for the client's signature. */
   const myJobFilter = (j: Job) => {
-    if (j.status === "sent_for_sign") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id;
+    // Ready for signing: the approver sends it to the client.
+    if (j.status === "to_lodge") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id;
+    // Sent for sign: out of the list until it's 2+ days unsigned, then back so they chase the client.
+    if (j.status === "sent_for_sign") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id
+      && !!j.sign_sent_at && Date.now() - new Date(j.sign_sent_at).getTime() >= 2 * 864e5;
     if (j.status === "review") return j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id);
     return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query");
   };
+  async function markSentForSign(j: Job) {
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    await save(() => supabase.from("jobs").update({ status: "sent_for_sign" }).eq("id", j.id), "Moved to Sent for sign. You'll get a reminder if the client hasn't signed in 2 days");
+  }
   async function markSigned(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
     await save(() => supabase.from("jobs").update({ status: "lodged", lodged_on: j.lodged_on ?? todayISO() }).eq("id", j.id), `${clientName(j.client_id)} signed. Job marked lodged`);
@@ -349,7 +357,7 @@ export default function Workspace({ me }: { me: Profile }) {
           <Tile lbl="Overdue" n={overdue.length} cls={overdue.length ? "danger" : ""} f={{ due: "overdue" }} />
           <Tile lbl="Due in the next 7 days" n={week.length} cls={week.length ? "warn" : ""} f={{ due: "week" }} />
           <Tile lbl="Waiting on client" n={waiting.length} f={{ status: "waiting" }} />
-          <Tile lbl="Ready for review or lodgment" n={review.length} f={{ status: "review_any" }} />
+          <Tile lbl="Ready for review or signing" n={review.length} f={{ status: "review_any" }} />
           <Tile lbl="Lodged this month" n={lodged.length} f={{ status: "lodged" }} />
         </div>
         <div className="panel" style={{ padding: "12px 14px", marginBottom: 16 }}>
@@ -360,7 +368,7 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="grid2">
           <div className="section">
             <MyJobs jobs={openJobs.filter(myJobFilter)}
-              onSigned={markSigned}
+              onSigned={markSigned} onSentForSign={markSentForSign}
               onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={me.role === "staff"} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}
@@ -453,7 +461,7 @@ export default function Workspace({ me }: { me: Profile }) {
           <input type="search" id="jf-q" placeholder="Search client, period or notes" aria-label="Search jobs" value={jf.q} onChange={set("q")} />
           <select id="jf-service" aria-label="Service" value={jf.service} onChange={set("service")}><option value="">All services</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
-            <option value="open">All open jobs</option><option value="review_any">Ready for review or lodgment</option>
+            <option value="open">All open jobs</option><option value="review_any">Ready for review or signing</option>
             {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             <option value="">Everything</option>
           </select>

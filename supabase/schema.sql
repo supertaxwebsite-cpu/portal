@@ -1555,3 +1555,27 @@ do $$ begin
     perform cron.schedule('supertax-sign-reminders', '0 * * * *', 'select public.remind_unsigned()');
   end if;
 end $$;
+
+-- ============================================================
+-- Approve -> "Ready for signing" (status to_lodge), owned by the approver.
+-- They send it to the client -> "Sent for sign"; the 2-day reminder clock starts then.
+-- ============================================================
+create or replace function public.stamp_sent_for_sign() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status in ('to_lodge', 'sent_for_sign') then
+    if tg_op = 'INSERT' or old.status not in ('to_lodge', 'sent_for_sign') or new.sign_owner is null then
+      new.sign_owner := coalesce(auth.uid(), new.reviewer_id, new.assignee_id);
+    end if;
+    if new.status = 'sent_for_sign' and (tg_op = 'INSERT' or old.status is distinct from 'sent_for_sign') then
+      new.sign_sent_at := now();
+      new.sign_reminded_at := null;
+    elsif new.status = 'to_lodge' then
+      new.sign_sent_at := null; new.sign_reminded_at := null;
+    end if;
+  else
+    new.sign_sent_at := null; new.sign_owner := null; new.sign_reminded_at := null;
+  end if;
+  return new;
+end $$;
+update public.jobs set sign_owner = coalesce(reviewer_id, assignee_id) where status = 'to_lodge' and sign_owner is null;

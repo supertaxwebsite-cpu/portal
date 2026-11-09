@@ -29,7 +29,7 @@ export const STATUSES: Status[] = [
   { id: "internal_query", label: "Internal query", cls: "danger", open: true },
   { id: "in_progress", label: "In progress", cls: "info", open: true },
   { id: "review", label: "Ready for review", cls: "accent", open: true },
-  { id: "to_lodge", label: "Ready to lodge", cls: "accent", open: true },
+  { id: "to_lodge", label: "Ready for signing", cls: "accent", open: true },
   { id: "sent_for_sign", label: "Sent for sign", cls: "warn", open: true },
   { id: "lodged", label: "Lodged", cls: "ok", open: false },
   { id: "done", label: "Completed", cls: "ok", open: false }, // change requests and admin work, never lodged
