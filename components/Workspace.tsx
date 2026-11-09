@@ -85,6 +85,44 @@ export default function Workspace({ me }: { me: Profile }) {
   // Which columns the Clients list shows; remembered on this computer.
   const [ccols, setCcolsState] = useState<string[]>(DEFAULT_CLIENT_COLS);
   useEffect(() => { try { const s = JSON.parse(localStorage.getItem("pd-client-cols") ?? "null"); if (Array.isArray(s)) setCcolsState(s.filter((x) => CLIENT_COLS.some((c) => c.id === x))); } catch { /* ignore */ } }, []);
+  // Columns menu closes on a click outside it or Esc; wide tables can be dragged sideways with the mouse.
+  useEffect(() => {
+    const closeMenus = (e: Event) => {
+      document.querySelectorAll<HTMLDetailsElement>("details.colpick[open]").forEach((d) => {
+        if (e.type === "keydown" ? (e as KeyboardEvent).key === "Escape" : !d.contains(e.target as Node)) d.open = false;
+      });
+    };
+    let drag: { el: HTMLElement; x: number; left: number; moved: boolean } | null = null;
+    const down = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>(".dragscroll");
+      if (!el || e.button !== 0 || el.scrollWidth <= el.clientWidth) return;
+      if ((e.target as HTMLElement).closest("input, select, textarea")) return;
+      drag = { el, x: e.clientX, left: el.scrollLeft, moved: false };
+    };
+    const move = (e: MouseEvent) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x;
+      if (!drag.moved && Math.abs(dx) < 5) return;
+      drag.moved = true; drag.el.classList.add("dragging");
+      drag.el.scrollLeft = drag.left - dx; e.preventDefault();
+    };
+    const up = () => {
+      if (drag?.moved) {
+        const el = drag.el; el.classList.remove("dragging");
+        // Don't treat the end of a drag as a click on a client name.
+        const stop = (ev: Event) => { ev.stopPropagation(); ev.preventDefault(); };
+        el.addEventListener("click", stop, { capture: true, once: true });
+        setTimeout(() => el.removeEventListener("click", stop, { capture: true }), 0);
+      }
+      drag = null;
+    };
+    document.addEventListener("mousedown", closeMenus); document.addEventListener("keydown", closeMenus);
+    document.addEventListener("mousedown", down); document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+    return () => {
+      document.removeEventListener("mousedown", closeMenus); document.removeEventListener("keydown", closeMenus);
+      document.removeEventListener("mousedown", down); document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up);
+    };
+  }, []);
   const setCcols = (c: string[]) => { setCcolsState(c); try { localStorage.setItem("pd-client-cols", JSON.stringify(c)); } catch { /* ignore */ } };
   const [clientId, setClientId] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
@@ -552,7 +590,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <label key={x} className={`chip${on ? " on" : ""}`}><input type="checkbox" checked={on} onChange={() => setCentity(on ? centity.filter((y) => y !== x) : [...centity, x])} /> {x === "SMSF" ? "Super fund (SMSF)" : x}</label>); })}
           {centity.length ? <button type="button" className="link" onClick={() => setCentity([])}>Show all</button> : <span className="note">All types shown. Tick to narrow down.</span>}
         </div>
-        <div className="tablebox">
+        <div className="tablebox dragscroll" id="clients-table">
           {!list.length ? <div className="empty"><strong>{clients.length ? "No clients match." : "No clients yet."}</strong>{clients.length ? "Try another search." : "Add your first client, then tick the services you do for them."}</div> : (
             <>
               <table className="clienttable"><thead><tr><th>Client</th>{CLIENT_COLS.filter((col) => show(col.id)).map((col) => <th key={col.id} style={col.id === "open" ? { textAlign: "right" } : undefined}>{col.label}</th>)}</tr></thead>
@@ -568,7 +606,10 @@ export default function Workspace({ me }: { me: Profile }) {
                     {show("services") ? <td><span className="clip w-svc" title={c.services.map(svcLabel).join(", ")}>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</span></td> : null}
                     {show("manager") ? <td className="nowrap">{personName(c.manager_id)}</td> : null}
                     {show("open") ? <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td> : null}</tr>); })}</tbody></table>
-              <div className="count">{list.length} client{list.length === 1 ? "" : "s"}</div>
+              <div className="count row" style={{ justifyContent: "space-between" }}><span>{list.length} client{list.length === 1 ? "" : "s"}</span>
+                {ccols.length > 6 ? <span className="scrollhint">Drag the table sideways to see more columns
+                  <button type="button" aria-label="Scroll left" onClick={() => document.getElementById("clients-table")?.scrollBy({ left: -400, behavior: "smooth" })}>◀</button>
+                  <button type="button" aria-label="Scroll right" onClick={() => document.getElementById("clients-table")?.scrollBy({ left: 400, behavior: "smooth" })}>▶</button></span> : null}</div>
             </>
           )}
         </div>

@@ -414,3 +414,12 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .clienttable td .tag{margin:1px 4px 1px 0}
 main.wrap.wide{max-width:1640px}
 .clienttable tbody tr:hover td:first-child{background:color-mix(in srgb,var(--surface-2) 55%,var(--surface))}
+.dragscroll{cursor:grab}
+.dragscroll.dragging{cursor:grabbing;user-select:none}
+.dragscroll.dragging *{cursor:grabbing}
+.dragscroll::-webkit-scrollbar{height:10px}
+.dragscroll::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 45%,transparent);border-radius:6px}
+.dragscroll::-webkit-scrollbar-track{background:var(--surface-2)}
+.scrollhint{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.dragscroll .count{position:sticky;left:0}
+.scrollhint button{padding:2px 9px;font-size:12px;line-height:1.4}
