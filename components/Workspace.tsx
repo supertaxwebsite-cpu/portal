@@ -555,18 +555,18 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="tablebox">
           {!list.length ? <div className="empty"><strong>{clients.length ? "No clients match." : "No clients yet."}</strong>{clients.length ? "Try another search." : "Add your first client, then tick the services you do for them."}</div> : (
             <>
-              <table><thead><tr><th>Client</th>{CLIENT_COLS.filter((col) => show(col.id)).map((col) => <th key={col.id} style={col.id === "open" ? { textAlign: "right" } : undefined}>{col.label}</th>)}</tr></thead>
+              <table className="clienttable"><thead><tr><th>Client</th>{CLIENT_COLS.filter((col) => show(col.id)).map((col) => <th key={col.id} style={col.id === "open" ? { textAlign: "right" } : undefined}>{col.label}</th>)}</tr></thead>
                 <tbody>{list.map((c) => { const oj = openBy.get(c.id) ?? []; const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
-                  <tr key={c.id}><td className="client"><button className="link" onClick={() => openClient(c.id)}>{c.name}</button>{c.contact && !show("contact") ? <div className="note">{c.contact}</div> : null}</td>
+                  <tr key={c.id}><td className="client"><button className="link clip" title={c.name} onClick={() => openClient(c.id)}>{c.name}</button>{c.contact && !show("contact") ? <div className="note clip" title={c.contact}>{c.contact}</div> : null}</td>
                     {show("practice") ? <td>{practiceOf(c)}</td> : null}
                     {show("entity") ? <td>{c.entity}</td> : null}
                     {show("abn") ? <td className="mono nowrap">{c.abn}</td> : null}
-                    {show("contact") ? <td>{c.contact}</td> : null}
-                    {show("email") ? <td className="wrapany">{c.email}</td> : null}
+                    {show("contact") ? <td><span className="clip w-contact" title={c.contact}>{c.contact}</span></td> : null}
+                    {show("email") ? <td><span className="clip w-email" title={c.email}>{c.email ? <a href={`mailto:${c.email}`}>{c.email}</a> : null}</span></td> : null}
                     {show("phone") ? <td className="mono nowrap">{c.phone}</td> : null}
-                    {show("address") ? <td>{c.address}</td> : null}
-                    {show("services") ? <td>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</td> : null}
-                    {show("manager") ? <td>{personName(c.manager_id)}</td> : null}
+                    {show("address") ? <td><span className="clip w-address" title={c.address ?? ""}>{c.address}</span></td> : null}
+                    {show("services") ? <td><span className="clip w-svc" title={c.services.map(svcLabel).join(", ")}>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</span></td> : null}
+                    {show("manager") ? <td className="nowrap">{personName(c.manager_id)}</td> : null}
                     {show("open") ? <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td> : null}</tr>); })}</tbody></table>
               <div className="count">{list.length} client{list.length === 1 ? "" : "s"}</div>
             </>
@@ -672,7 +672,7 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   return (
-    <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
+    <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
       {view === "payroll" ? <PayrollView jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
@@ -720,7 +720,7 @@ export default function Workspace({ me }: { me: Profile }) {
 }
 
 /* ---------- layout ---------- */
-function Shell({ me, view, go, live, showTeam, bell, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; children: React.ReactNode }) {
+function Shell({ me, view, go, live, showTeam, bell, wide, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; wide?: boolean; children: React.ReactNode }) {
   const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
   return (
     <>
@@ -732,7 +732,7 @@ function Shell({ me, view, go, live, showTeam, bell, children }: { me: Profile; 
       </div></header>
       <IdleSignOut />
       <UpdateBanner />
-      <main className="wrap">
+      <main className={`wrap${wide ? " wide" : ""}`}>
         {children}
         <p className="note" style={{ marginTop: 28 }}><span className={`live${live ? "" : " off"}`}>{live ? "Live: changes by your team appear automatically" : "Connecting to live updates…"}</span></p>
       </main>

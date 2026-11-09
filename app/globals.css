@@ -396,3 +396,21 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .colpick .colmenu label{display:flex;gap:8px;align-items:center;white-space:nowrap;cursor:pointer}
 .clientcount{white-space:nowrap;color:var(--muted);align-self:center;margin-left:auto}
 .clientcount strong{color:var(--fg)}
+/* Clients list: compact single-line rows; long text is cut with … and shown in full on hover. */
+.clienttable{width:100%;font-size:13.5px}
+.clienttable th,.clienttable td{white-space:nowrap;vertical-align:middle;padding-left:10px;padding-right:10px}
+.clienttable th:first-child,.clienttable td:first-child{padding-left:14px}
+.clienttable .clip{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clienttable td.client .clip{max-width:220px}
+.clienttable .w-contact{max-width:130px}
+.clienttable .w-email{max-width:190px}
+.clienttable .w-address{max-width:200px}
+.clienttable .w-svc{max-width:200px}
+.clienttable td:first-child{position:sticky;left:0;z-index:1;background:var(--surface);box-shadow:1px 0 0 var(--line)}
+.clienttable th:first-child{position:sticky;left:0;z-index:2;box-shadow:1px 0 0 var(--line)}
+.clienttable td.mono{font-size:12.5px}
+.clienttable .w-email a{color:inherit;text-decoration:none}
+.clienttable .w-email a:hover{color:var(--accent);text-decoration:underline}
+.clienttable td .tag{margin:1px 4px 1px 0}
+main.wrap.wide{max-width:1640px}
+.clienttable tbody tr:hover td:first-child{background:color-mix(in srgb,var(--surface-2) 55%,var(--surface))}
