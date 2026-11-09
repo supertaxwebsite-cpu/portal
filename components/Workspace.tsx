@@ -407,7 +407,7 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead">
-          <div><h1>Jobs</h1><p>Every piece of client work, with its period, due date, owner and status.</p></div>
+          <div><h1>Jobs</h1><p>{me.role === "staff" ? "Your jobs and unassigned jobs. Open an unassigned job and click Take this job to start on it." : "Every piece of client work, with its period, due date, owner and status."}</p></div>
           <div className="row"><button onClick={() => exportCsv(list)}>Export CSV</button><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
         </div>
         <div className="toolbar">
@@ -817,7 +817,8 @@ function JobModal({ job, presetClient, presetService, clients, team, canDelete, 
       </div>
       <footer>
         {job && canDeleteJob ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}
-        <div className="row"><button type="button" onClick={onClose}>{readOnly ? "Close" : "Cancel"}</button>{readOnly ? null : <button type="submit" className="primary" disabled={busy}>{job ? "Save changes" : "Create job"}</button>}</div>
+        <div className="row">{job && staffLock && !job.assignee_id && !readOnly ? <button type="button" disabled={busy} onClick={async () => { if (await save(() => supabase.from("jobs").update({ assignee_id: meId }).eq("id", job.id), "The job is yours. It's in My jobs now")) onClose(); }}>Take this job</button> : null}
+          <button type="button" onClick={onClose}>{readOnly ? "Close" : "Cancel"}</button>{readOnly ? null : <button type="submit" className="primary" disabled={busy}>{job ? "Save changes" : "Create job"}</button>}</div>
       </footer>
     </form></Overlay>
   );

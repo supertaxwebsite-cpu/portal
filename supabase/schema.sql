@@ -1307,3 +1307,61 @@ begin
   return n1 + n2;
 end $$;
 revoke all on function public.generate_bas_jobs() from public, anon;
+
+-- ============================================================
+-- Staff see only their own jobs (assigned, reviewing, sent for a query, or logged time on)
+-- plus unassigned jobs. Team leaders and master admins see every job.
+-- A staff member may take an unassigned job for themselves.
+-- ============================================================
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() is distinct from 'staff'
+    or j.assignee_id is null
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+  );
+$$;
+revoke all on function public.can_see_job(public.jobs) from public, anon;
+grant execute on function public.can_see_job(public.jobs) to authenticated;
+
+drop policy if exists "members read jobs" on public.jobs;
+create policy "members read jobs" on public.jobs
+  for select to authenticated using (public.can_see_job(jobs));
+
+-- Job history follows the job.
+drop policy if exists "members read job activity" on public.job_activity;
+create policy "members read job activity" on public.job_activity
+  for select to authenticated using (exists (select 1 from public.jobs j where j.id = job_id));
+
+create or replace function public.guard_job_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.my_role() is distinct from 'staff'
+     or current_setting('supertax.job_handover', true) = 'on' then return new; end if;
+  new.query_from := old.query_from;
+  if new.status = 'lodged' and old.lodged_on is null then
+    new.lodged_on := (now() at time zone 'Australia/Sydney')::date;
+  else
+    new.lodged_on := old.lodged_on;
+  end if;
+  if new.reviewer_id is distinct from old.reviewer_id
+     and not (old.reviewer_id is null and new.reviewer_id is not distinct from (select reports_to from public.profiles where id = auth.uid())) then
+    raise exception 'Only your manager can change the reviewer of a job' using errcode = '42501';
+  end if;
+  -- Taking an unassigned job for yourself is allowed.
+  if old.assignee_id is null and new.assignee_id = auth.uid() then
+    if (new.client_id, new.service, new.period, new.due_date, new.priority)
+       is distinct from (old.client_id, old.service, old.period, old.due_date, old.priority) then
+      raise exception 'Only your manager can change the client, service, period, due date or priority of a job' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if (new.client_id, new.service, new.period, new.due_date, new.priority, new.assignee_id)
+     is distinct from (old.client_id, old.service, old.period, old.due_date, old.priority, old.assignee_id) then
+    raise exception 'Only your manager can change the client, service, period, due date, priority or assignee of a job' using errcode = '42501';
+  end if;
+  return new;
+end $$;
