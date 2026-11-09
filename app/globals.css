@@ -423,3 +423,6 @@ main.wrap.wide{max-width:1640px}
 .scrollhint{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
 .dragscroll .count{position:sticky;left:0}
 .scrollhint button{padding:2px 9px;font-size:12px;line-height:1.4}
+.multipick summary{font-weight:400;min-width:150px;max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.multipick summary.on{border-color:var(--accent);background:var(--accent-soft)}
+.multipick .colmenu{left:0;right:auto;max-height:340px;overflow-y:auto}

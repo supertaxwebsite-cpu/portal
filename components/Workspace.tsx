@@ -25,6 +25,22 @@ type View = "overview" | "jobs" | "payroll" | "clients" | "timesheet" | "team" |
 /** Statuses where nothing more needs doing: kept out of the unassigned list. */
 const FINISHED = new Set(["done", "sent_for_sign", "lodged"]);
 const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "timesheet", "team", "meetings"];
+/** A dropdown of tick boxes: pick one or several values (stored comma-separated; empty means all). */
+function MultiPick({ id, all, value, options, onChange }: { id: string; all: string; value: string; options: { v: string; l: string; short?: string }[]; onChange: (v: string) => void }) {
+  const picked = value ? value.split(",") : [];
+  const names = options.filter((o) => picked.includes(o.v)).map((o) => o.short ?? o.l);
+  const label = !names.length ? all : names.length <= 2 ? names.join(", ") : `${names.length} selected`;
+  return (
+    <details className="colpick multipick" id={id}>
+      <summary className={picked.length ? "on" : undefined} title={names.join(", ") || all}>{label}</summary>
+      <div className="colmenu">
+        {options.map((o) => <label key={o.v}><input type="checkbox" checked={picked.includes(o.v)} onChange={(e) => onChange((e.target.checked ? options.map((x) => x.v).filter((x) => x === o.v || picked.includes(x)) : picked.filter((x) => x !== o.v)).join(","))} /> {o.l}</label>)}
+        {picked.length ? <button type="button" className="link" onClick={() => onChange("")}>Clear ({all.toLowerCase()})</button> : null}
+      </div>
+    </details>
+  );
+}
+
 /** Columns the Clients list can show. */
 const CLIENT_COLS = [
   { id: "practice", label: "Practice" }, { id: "entity", label: "Entity" }, { id: "abn", label: "ABN" },
@@ -485,7 +501,8 @@ export default function Workspace({ me }: { me: Profile }) {
     const f = jf, q = f.q.trim().toLowerCase();
     const base = f.status === "closed" ? jobs.filter((j) => !isOpen(j.status)) : f.status === "" || (ST[f.status] && !ST[f.status].open) ? jobs : openJobs;
     return base.filter((j) => {
-      if (f.service && j.service !== f.service) return false;
+      const has = (list: string, v: string | undefined | null) => !list || list.split(",").includes(v ?? "");
+      if (!has(f.service, j.service)) return false;
       if (f.status === "review_any" && !(j.status === "review" || j.status === "to_lodge")) return false;
       if (ST[f.status] && j.status !== f.status) return false;
       if (f.client && j.client_id !== f.client) return false;
@@ -505,12 +522,12 @@ export default function Workspace({ me }: { me: Profile }) {
           if (f.due === "month" && (d < 0 || d > 30)) return false;
         }
       }
-      if (f.practice && practiceOf(clientById.get(j.client_id)) !== f.practice) return false;
-      if (f.entity && clientById.get(j.client_id)?.entity !== f.entity) return false;
+      if (!has(f.practice, practiceOf(clientById.get(j.client_id)))) return false;
+      if (!has(f.entity, clientById.get(j.client_id)?.entity)) return false;
       if (f.fy || f.quarter) {
         const pf = periodFY(j.period);
-        if (f.fy && !pf.fys.includes(Number(f.fy))) return false;
-        if (f.quarter && pf.q !== Number(f.quarter)) return false;
+        if (f.fy && !pf.fys.some((y) => f.fy.split(",").includes(String(y)))) return false;
+        if (f.quarter && !has(f.quarter, pf.q ? String(pf.q) : "")) return false;
       }
       if (q) {
         const hay = [clientById.get(j.client_id)?.name, j.period, j.notes, svcLabel(j.service), profileById.get(j.assignee_id ?? "")?.full_name].join(" ").toLowerCase();
@@ -531,11 +548,11 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="toolbar">
           <input type="search" id="jf-q" style={{ minWidth: 240 }} placeholder="Search client, period or notes" aria-label="Search jobs" value={jf.q} onChange={set("q")} />
-          <select id="jf-service" aria-label="Service" value={jf.service} onChange={set("service")}><option value="">All services</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
-          <select id="jf-fy" aria-label="Financial year" value={jf.fy} onChange={set("fy")}><option value="">Any financial year</option>{jobFYs.map((y) => <option key={y} value={y}>FY{y} (Jul {y - 1} – Jun {y})</option>)}</select>
-          <select id="jf-quarter" aria-label="Quarter" value={jf.quarter} onChange={set("quarter")} title="Quarter applies to BAS, IAS and other quarterly or monthly work"><option value="">Any quarter</option>{[1, 2, 3, 4].map((q) => <option key={q} value={q}>Q{q} ({["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})</option>)}</select>
-          <select id="jf-entity" aria-label="Entity type" value={jf.entity} onChange={set("entity")}><option value="">All entity types</option>{ENTITIES.map((x) => <option key={x} value={x}>{x === "SMSF" ? "Super fund (SMSF)" : x}</option>)}</select>
-          <select id="jf-practice" aria-label="Practice" value={jf.practice} onChange={set("practice")}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+          <MultiPick id="jf-service" all="All services" value={jf.service} onChange={(v) => setJf({ ...jf, service: v })} options={SERVICES.map((s) => ({ v: s.id, l: s.label }))} />
+          <MultiPick id="jf-fy" all="Any financial year" value={jf.fy} onChange={(v) => setJf({ ...jf, fy: v })} options={jobFYs.map((y) => ({ v: String(y), l: `FY${y} (Jul ${y - 1} – Jun ${y})`, short: `FY${y}` }))} />
+          <MultiPick id="jf-quarter" all="Any quarter" value={jf.quarter} onChange={(v) => setJf({ ...jf, quarter: v })} options={[1, 2, 3, 4].map((q) => ({ v: String(q), l: `Q${q} (${["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})`, short: `Q${q}` }))} />
+          <MultiPick id="jf-entity" all="All entity types" value={jf.entity} onChange={(v) => setJf({ ...jf, entity: v })} options={ENTITIES.map((x) => ({ v: x, l: x === "SMSF" ? "Super fund (SMSF)" : x }))} />
+          <MultiPick id="jf-practice" all="All practices" value={jf.practice} onChange={(v) => setJf({ ...jf, practice: v })} options={PRACTICES.map((p) => ({ v: p, l: p }))} />
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
             <option value="open">All open jobs</option><option value="review_any">Ready for review or signing</option>
             {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
