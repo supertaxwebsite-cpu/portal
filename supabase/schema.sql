@@ -1608,3 +1608,85 @@ revoke all on function public.guard_staff_submitted() from public, anon, authent
 drop trigger if exists jobs_staff_submitted on public.jobs;
 create trigger jobs_staff_submitted before update on public.jobs
   for each row execute function public.guard_staff_submitted();
+
+-- ============================================================
+-- New status "Query with client": a question has gone to the client.
+-- The job leaves My jobs; if there's no answer after 2 days, the person who owns it
+-- gets a bell reminder to follow up (then every 2 days). Same pattern as Sent for sign.
+-- ============================================================
+alter table public.jobs drop constraint if exists jobs_status_check;
+alter table public.jobs add constraint jobs_status_check
+  check (status in ('not_started', 'waiting', 'internal_query', 'client_query', 'in_progress', 'review', 'to_lodge', 'sent_for_sign', 'lodged', 'done'));
+
+create or replace function public.stamp_sent_for_sign() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'client_query' then
+    if tg_op = 'INSERT' or old.status is distinct from 'client_query' then
+      new.sign_owner := coalesce(new.assignee_id, auth.uid());
+      new.sign_sent_at := now();
+      new.sign_reminded_at := null;
+    end if;
+  elsif new.status in ('to_lodge', 'sent_for_sign') then
+    if tg_op = 'INSERT' or old.status not in ('to_lodge', 'sent_for_sign') or new.sign_owner is null then
+      new.sign_owner := coalesce(auth.uid(), new.reviewer_id, new.assignee_id);
+    end if;
+    if new.status = 'sent_for_sign' and (tg_op = 'INSERT' or old.status is distinct from 'sent_for_sign') then
+      new.sign_sent_at := now();
+      new.sign_reminded_at := null;
+    elsif new.status = 'to_lodge' then
+      new.sign_sent_at := null; new.sign_reminded_at := null;
+    end if;
+  else
+    new.sign_sent_at := null; new.sign_owner := null; new.sign_reminded_at := null;
+  end if;
+  return new;
+end $$;
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned', 'sign_reminder', 'client_query_reminder'));
+
+create or replace function public.remind_unsigned() returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  with due as (
+    update public.jobs j set sign_reminded_at = now()
+    where j.status in ('sent_for_sign', 'client_query') and j.sign_owner is not null
+      and j.sign_sent_at <= now() - interval '2 days'
+      and (j.sign_reminded_at is null or j.sign_reminded_at <= now() - interval '2 days')
+    returning j.id, j.status, j.sign_owner, j.service, j.client_id, j.period
+  )
+  insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+  select d.sign_owner, null, case when d.status = 'client_query' then 'client_query_reminder' else 'sign_reminder' end,
+         d.id, d.service, coalesce(c.name, '') || ' · ' || d.period
+  from due d left join public.clients c on c.id = d.client_id;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
+-- Pressing Start on a job that was waiting on the client puts it back in progress.
+create or replace function public.start_job(p_job uuid) returns public.job_timers
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; t public.job_timers;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from auth.uid()
+     and not (j.status = 'review' and j.reviewer_id = auth.uid()) then
+    raise exception 'You can only start jobs assigned to you or waiting for your review';
+  end if;
+  if j.status in ('lodged', 'done') then raise exception 'This job is already finished'; end if;
+  select * into t from public.job_timers where user_id = auth.uid() and ended_at is null;
+  if found then
+    if t.job_id = p_job then return t; end if;
+    perform public.end_job_timer(auth.uid());
+  end if;
+  insert into public.job_timers (user_id, job_id) values (auth.uid(), p_job) returning * into t;
+  if j.status in ('not_started', 'waiting', 'client_query') then
+    update public.jobs set status = 'in_progress' where id = p_job;
+  end if;
+  return t;
+end $$;

@@ -198,7 +198,9 @@ export default function Workspace({ me }: { me: Profile }) {
     if (status === "internal_query" && j.status !== "internal_query") { setModal({ kind: "query", job: j, mode: "send" }); return; }
     const upd: Partial<Job> = { status };
     if (status === "lodged" && !j.lodged_on) upd.lodged_on = todayISO();
-    await save(() => supabase.from("jobs").update(upd).eq("id", j.id), `Marked ${ST[status].label.toLowerCase()}`);
+    await save(() => supabase.from("jobs").update(upd).eq("id", j.id), status === "client_query"
+      ? "Marked query with client. It leaves My jobs, and you'll get a reminder if there's no reply in 2 days"
+      : `Marked ${ST[status].label.toLowerCase()}`);
   }
 
   /** My jobs: start/stop the job timer (time goes to the timesheet), change status, submit for review. */
@@ -217,7 +219,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const myReviewer = (j: Job) => j.reviewer_id ?? me.reports_to ?? null;
   async function myStatus(j: Job, status: StatusId) {
     if (me.role === "staff" && status === "review") { await submitForReview(j); return; }
-    if (running?.job_id === j.id && !isOpen(status) && !(await stopJob())) return;
+    if (running?.job_id === j.id && (!isOpen(status) || status === "client_query") && !(await stopJob())) return;
     await setStatus(j, status);
   }
   /** Reviewer: approve (ready for signing) or send back to the preparer with a note. */
@@ -244,12 +246,19 @@ export default function Workspace({ me }: { me: Profile }) {
     // Sent for sign: out of the list until it's 2+ days unsigned, then back so they chase the client.
     if (j.status === "sent_for_sign") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id
       && !!j.sign_sent_at && Date.now() - new Date(j.sign_sent_at).getTime() >= 2 * 864e5;
+    // Query with client: out of the list until 2+ days without a reply, then back so they follow up.
+    if (j.status === "client_query") return (j.sign_owner ?? j.assignee_id) === me.id
+      && (!j.sign_sent_at || Date.now() - new Date(j.sign_sent_at).getTime() >= 2 * 864e5);
     if (j.status === "review") return j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id);
     return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query");
   };
   async function markSentForSign(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
     await save(() => supabase.from("jobs").update({ status: "sent_for_sign" }).eq("id", j.id), "Moved to Sent for sign. You'll get a reminder if the client hasn't signed in 2 days");
+  }
+  /** Query with client: chased them again, so hide it for another 2 days. */
+  async function followedUp(j: Job) {
+    await save(() => supabase.from("jobs").update({ sign_sent_at: new Date().toISOString(), sign_reminded_at: null }).eq("id", j.id), "Got it. It comes back in 2 days if the client still hasn't replied");
   }
   async function markSigned(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
@@ -325,7 +334,7 @@ export default function Workspace({ me }: { me: Profile }) {
     const month = todayISO().slice(0, 7);
     const lodged = jobs.filter((j) => (j.lodged_on ?? "").startsWith(month));
     // Needs attention is personal: my own jobs that are overdue, due within 7 days, or high priority.
-    const attention = openJobs.filter((j) => j.assignee_id === me.id && j.status !== "sent_for_sign"
+    const attention = openJobs.filter((j) => j.assignee_id === me.id && j.status !== "sent_for_sign" && j.status !== "client_query"
       && ((j.due_date && daysFrom(j.due_date) <= 7) || j.priority === "high"))
       .sort((a, b) => Number(b.priority === "high") - Number(a.priority === "high") || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
     const svcs = SERVICES.filter((s) => openJobs.some((j) => j.service === s.id));
@@ -371,7 +380,7 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="grid2">
           <div className="section">
             <MyJobs jobs={openJobs.filter(myJobFilter)}
-              onSigned={markSigned} onSentForSign={markSentForSign}
+              onSigned={markSigned} onSentForSign={markSentForSign} onFollowedUp={followedUp}
               onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={me.role === "staff"} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}

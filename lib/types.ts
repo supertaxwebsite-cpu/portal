@@ -60,12 +60,13 @@ export interface Job {
   stp_done_at?: string | null;
   stp_done_by?: string | null;
   sign_sent_at?: string | null;
+  sign_reminded_at?: string | null;
   sign_owner?: string | null;
   updated_at: string;
   updated_by: string | null;
 }
 
-export type StatusId = "not_started" | "waiting" | "internal_query" | "in_progress" | "review" | "to_lodge" | "sent_for_sign" | "lodged" | "done";
+export type StatusId = "not_started" | "waiting" | "internal_query" | "client_query" | "in_progress" | "review" | "to_lodge" | "sent_for_sign" | "lodged" | "done";
 
 export interface Attendance {
   id: string;

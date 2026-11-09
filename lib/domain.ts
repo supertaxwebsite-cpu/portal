@@ -27,6 +27,7 @@ export const STATUSES: Status[] = [
   { id: "not_started", label: "Not started", cls: "none", open: true },
   { id: "waiting", label: "Waiting on client", cls: "warn", open: true },
   { id: "internal_query", label: "Internal query", cls: "danger", open: true },
+  { id: "client_query", label: "Query with client", cls: "warn", open: true }, // question sent to the client; leaves My jobs, reminder after 2 days
   { id: "in_progress", label: "In progress", cls: "info", open: true },
   { id: "review", label: "Ready for review", cls: "accent", open: true },
   { id: "to_lodge", label: "Ready for signing", cls: "accent", open: true },
