@@ -15,7 +15,7 @@ function Due({ date }: { date: string | null }) {
 }
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, onAnswer, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
   meetings?: Meeting[];
   onOpenMeeting?: (m: Meeting) => void;
@@ -31,6 +31,10 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
   onStop: () => void;
   onStatus: (j: Job, s: StatusId) => void;
   onSubmit: (j: Job) => void;
+  wasStarted?: (j: Job) => boolean;
+  onApprove?: (j: Job) => void;
+  onSendBack?: (j: Job) => void;
+  onPayroll?: () => void;
   onOpen: (j: Job) => void;
   onSeeAll: () => void;
 }) {
@@ -54,17 +58,27 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
           const canSubmit = j.status !== "review" && j.status !== "to_lodge";
           const away = j.assignee_id !== myId; // I sent it for an internal query
           const incoming = !away && j.status === "internal_query" && !!j.query_from;
+          const reviewing = j.status === "review" && (j.reviewer_id === myId || (!j.reviewer_id && j.assignee_id === myId));
           return (
-            <li key={j.id} className={on ? "running" : away ? "away" : d !== null && d < 0 ? "overdue" : ""}>
+            <li key={j.id} className={`${on ? "running" : away ? "away" : d !== null && d < 0 ? "overdue" : ""}${reviewing ? " reviewtask" : ""}`}>
               <span className="num">{meetings.length + i + 1}</span>
               <div style={{ minWidth: 0 }}>
-                <div className="t jobtask"><button className="link" onClick={() => onOpen(j)}>{svcLabel(j.service)} <span className="per">{j.period}</span></button>{j.priority === "high" ? <span className="pill danger">High priority</span> : null}</div>
-                <div className="jobclient">{clientName(j.client_id)}</div>
+                <div className="t jobtask">{reviewing ? <span className="pill accent">Review</span> : null}<button className="link" onClick={() => onOpen(j)}>{svcLabel(j.service)} <span className="per">{j.period}</span></button>{j.priority === "high" ? <span className="pill danger">High priority</span> : null}</div>
+                <div className="jobclient">{clientName(j.client_id)}{reviewing && j.assignee_id && j.assignee_id !== myId ? <span className="prep"> · Prepared by {personName(j.assignee_id)}</span> : null}</div>
                 {j.notes?.trim() ? <div className="jobnote" title={j.notes}>{j.notes.trim().split("\n")[0]}</div> : null}
                 <div className="duerow"><Due date={j.due_date} /></div>
                 {incoming ? <div className="s"><span className="pill danger">Internal query from {personName(j.query_from ?? null)}</span></div> : null}
               </div>
-              {away ? <div className="row actions"><span className="pill danger">With {personName(j.assignee_id)} for internal query</span></div> : <div className="row actions">
+              {reviewing ? <div className="row actions">
+                {on ? <>
+                  <span className="timer mono">● {elapsed(running!.started_at, now)}</span>
+                  <button disabled={busy} onClick={onStop}>Stop</button>
+                </> : <button disabled={busy} onClick={() => onStart(j)}>Start review</button>}
+                {j.service === "payroll" ? <button className="primary" onClick={() => onPayroll?.()}>Sign off in Payroll</button> : <>
+                  <button disabled={busy} onClick={() => onSendBack?.(j)}>Send back</button>
+                  <button className="primary" disabled={busy} onClick={() => onApprove?.(j)}>Approve</button>
+                </>}
+              </div> : away ? <div className="row actions"><span className="pill danger">With {personName(j.assignee_id)} for internal query</span></div> : <div className="row actions">
                 {on ? <>
                   <span className="timer mono" title={`Started ${new Date(running!.started_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}>● {elapsed(running!.started_at, now)}</span>
                   <button disabled={busy} onClick={onStop}>Stop</button>
@@ -73,7 +87,9 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                 <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
                   {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
-                {canSubmit ? <button disabled={busy} onClick={() => onSubmit(j)} title={reviewerName ? `Send to ${reviewerName} for review` : "Mark ready for review"}>Submit for review</button> : null}
+                {canSubmit ? (wasStarted && !wasStarted(j)
+                  ? <button disabled title="Press Start first. A job can only be submitted once it has been started.">Submit for review</button>
+                  : <button disabled={busy} onClick={() => onSubmit(j)} title={reviewerName ? `Send to ${reviewerName} for review` : "Mark ready for review"}>Submit for review</button>) : null}
                 </>}
               </div>}
             </li>);

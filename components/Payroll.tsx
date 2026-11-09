@@ -15,11 +15,11 @@ export function payStage(j: Job) {
 }
 const STAGE = ["Processing", "Super to confirm", "STP to lodge", "Finished"];
 
-export default function PayrollView({ jobs, clients, meId, canSignOff, clientName, personName, running, busy, onStart, onStop, onSubmit, onStep, onOpen, onNew }: {
+export default function PayrollView({ jobs, clients, meId, canSignOff, clientName, personName, running, busy, onStart, onStop, onSubmit, wasStarted, onStep, onOpen, onNew }: {
   jobs: Job[]; clients: Client[]; meId: string; canSignOff: boolean;
   clientName: (id: string) => string; personName: (id: string | null) => string;
   running: JobTimer | null; busy: boolean;
-  onStart: (j: Job) => void; onStop: () => void; onSubmit: (j: Job) => void;
+  onStart: (j: Job) => void; onStop: () => void; onSubmit: (j: Job) => void; wasStarted?: (j: Job) => boolean;
   onStep: (j: Job, step: "super" | "stp" | "undo_super") => void; onOpen: (j: Job) => void; onNew: () => void;
 }) {
   const [scope, setScope] = useState<"mine" | "signoff" | "all">(canSignOff ? "all" : "mine");
@@ -89,7 +89,7 @@ export default function PayrollView({ jobs, clients, meId, canSignOff, clientNam
                   {st === 0 && prep ? <>
                     {on ? <><span className="timer mono">● {elapsed(running!.started_at, now)}</span><button disabled={busy} onClick={onStop}>Stop</button></>
                       : <button disabled={busy} onClick={() => onStart(j)}>Start</button>}
-                    <button className="primary" disabled={busy} onClick={() => onSubmit(j)}>Processed, send for sign-off</button>
+                    <button className="primary" disabled={busy || (!!wasStarted && !wasStarted(j))} title={wasStarted && !wasStarted(j) ? "Press Start first" : undefined} onClick={() => onSubmit(j)}>Processed, send for sign-off</button>
                   </> : null}
                   {st === 0 && !prep ? <span className="note">Waiting for {personName(j.assignee_id) || "someone to process it"}</span> : null}
                   {st === 1 ? signer ? <button className="primary" disabled={busy} onClick={() => onStep(j, "super")}>Confirm super paid</button> : <span className="note">Waiting for super sign-off</span> : null}

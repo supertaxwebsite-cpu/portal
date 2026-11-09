@@ -1365,3 +1365,100 @@ begin
   end if;
   return new;
 end $$;
+
+-- ============================================================
+-- A job can't be submitted for review until someone has started it
+-- (pressed Start, or logged time against it).
+-- ============================================================
+create or replace function public.job_was_started(p_job uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.job_timers t where t.job_id = p_job)
+      or exists (select 1 from public.timesheet_entries e where e.job_id = p_job);
+$$;
+revoke all on function public.job_was_started(uuid) from public, anon, authenticated;
+
+create or replace function public.guard_review_needs_start() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'review' and old.status is distinct from 'review'
+     and current_setting('supertax.payroll_step', true) is distinct from 'on'
+     and not public.job_was_started(new.id) then
+    raise exception 'Start the job first: press Start on it in My jobs, then submit it for review' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_review_needs_start() from public, anon, authenticated;
+drop trigger if exists jobs_review_needs_start on public.jobs;
+create trigger jobs_review_needs_start before update on public.jobs
+  for each row execute function public.guard_review_needs_start();
+
+-- Which jobs have been started (ids only), so the portal can grey out Submit for review.
+create or replace function public.started_jobs() returns setof uuid
+language sql stable security definer set search_path = public as $$
+  select distinct job_id from public.job_timers where job_id is not null and public.is_active_member()
+  union
+  select distinct job_id from public.timesheet_entries where job_id is not null and public.is_active_member();
+$$;
+revoke all on function public.started_jobs() from public, anon;
+grant execute on function public.started_jobs() to authenticated;
+
+-- ============================================================
+-- Review as a task: the reviewer can start the timer on a job waiting for their review,
+-- and the preparer is told when it is approved or sent back.
+-- ============================================================
+create or replace function public.start_job(p_job uuid) returns public.job_timers
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; t public.job_timers;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from auth.uid()
+     and not (j.status = 'review' and j.reviewer_id = auth.uid()) then
+    raise exception 'You can only start jobs assigned to you or waiting for your review';
+  end if;
+  if j.status in ('lodged', 'done') then raise exception 'This job is already finished'; end if;
+  select * into t from public.job_timers where user_id = auth.uid() and ended_at is null;
+  if found then
+    if t.job_id = p_job then return t; end if;
+    perform public.end_job_timer(auth.uid());
+  end if;
+  insert into public.job_timers (user_id, job_id) values (auth.uid(), p_job) returning * into t;
+  if j.status in ('not_started', 'waiting') then
+    update public.jobs set status = 'in_progress' where id = p_job;
+  end if;
+  return t;
+end $$;
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned'));
+
+create or replace function public.notify_job() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); what text; k text;
+begin
+  select c.name || ' · ' || new.period into what from public.clients c where c.id = new.client_id;
+  if new.assignee_id is not null and new.assignee_id is distinct from me
+     and (tg_op = 'INSERT' or new.assignee_id is distinct from old.assignee_id) then
+    k := case
+      when new.status = 'internal_query' and (tg_op = 'INSERT' or old.status is distinct from 'internal_query') then 'internal_query'
+      when tg_op = 'UPDATE' and old.status = 'internal_query' and new.status is distinct from 'internal_query' then 'query_answered'
+      else 'job_assigned' end;
+    insert into public.notifications (user_id, actor_id, kind, job_id, service, body) values (new.assignee_id, me, k, new.id, new.service, coalesce(what, ''));
+  end if;
+  if tg_op = 'UPDATE' and new.status = 'review' and old.status is distinct from 'review'
+     and new.reviewer_id is not null and new.reviewer_id is distinct from me and new.reviewer_id is distinct from new.assignee_id then
+    insert into public.notifications (user_id, actor_id, kind, job_id, service, body) values (new.reviewer_id, me, 'review', new.id, new.service, coalesce(what, ''));
+  end if;
+  -- Review finished: tell the preparer.
+  if tg_op = 'UPDATE' and old.status = 'review' and new.status is distinct from 'review'
+     and new.assignee_id is not null and new.assignee_id is distinct from me
+     and new.assignee_id is not distinct from old.assignee_id
+     and new.status in ('to_lodge', 'sent_for_sign', 'lodged', 'done', 'in_progress', 'not_started', 'waiting') then
+    insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+    values (new.assignee_id, me, case when new.status in ('in_progress', 'not_started', 'waiting') then 'review_returned' else 'review_approved' end, new.id, new.service, coalesce(what, ''));
+  end if;
+  return new;
+end $$;
+revoke all on function public.notify_job() from public, anon, authenticated;

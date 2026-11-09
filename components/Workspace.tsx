@@ -59,6 +59,8 @@ export default function Workspace({ me }: { me: Profile }) {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [timerBusy, setTimerBusy] = useState(false);
   const [teamRunning, setTeamRunning] = useState<JobTimer[]>([]);
+  /** Jobs someone has started (pressed Start or logged time). null = not known yet / database not updated. */
+  const [started, setStarted] = useState<Set<string> | null>(null);
   const [jobHours, setJobHours] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -100,6 +102,8 @@ export default function Workspace({ me }: { me: Profile }) {
       ]);
       const { data: t } = await supabase.from("job_timers").select("*").eq("user_id", me.id).is("ended_at", null).limit(1);
       setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
+      const { data: sj, error: sjErr } = await supabase.rpc("started_jobs");
+      setStarted(sjErr ? null : new Set(((sj as (string | { started_jobs: string })[] | null) ?? []).map((x) => (typeof x === "string" ? x : x.started_jobs))));
       const { data: mt } = await supabase.from("meetings").select("*").gte("starts_at", new Date(Date.now() - 120 * 864e5).toISOString()).order("starts_at");
       setMeetings((mt as Meeting[] | null) ?? []);
       if (canSeeWorkload || seesOwnTeam) {
@@ -212,7 +216,22 @@ export default function Workspace({ me }: { me: Profile }) {
     if (running?.job_id === j.id && !isOpen(status) && !(await stopJob())) return;
     await setStatus(j, status);
   }
+  /** Reviewer: approve (ready to lodge) or send back to the preparer with a note. */
+  async function approveReview(j: Job) {
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    await save(() => supabase.from("jobs").update({ status: "to_lodge" }).eq("id", j.id), `Approved. ${personName(j.assignee_id) || "The preparer"} can lodge it now`);
+  }
+  async function sendBackReview(j: Job) {
+    const note = window.prompt(`What does ${personName(j.assignee_id) || "the preparer"} need to fix? (optional)`, "");
+    if (note === null) return;
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    const stamp = new Date().toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+    const notes = note.trim() ? `${j.notes ? `${j.notes}\n` : ""}Review (${stamp}, ${me.full_name}): ${note.trim()}` : j.notes;
+    await save(() => supabase.from("jobs").update({ status: "in_progress", notes }).eq("id", j.id), `Sent back to ${personName(j.assignee_id) || "the preparer"}`);
+  }
+  const wasStarted = (j: Job) => !started || started.has(j.id) || running?.job_id === j.id;
   async function submitForReview(j: Job) {
+    if (!wasStarted(j)) { say("Start the job first: press Start, do the work, then submit it for review.", true); return; }
     if (running?.job_id === j.id && !(await stopJob())) return;
     const rev = myReviewer(j);
     await save(() => supabase.from("jobs").update({ status: "review", reviewer_id: rev }).eq("id", j.id),
@@ -325,13 +344,16 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="grid2">
           <div className="section">
-            <MyJobs jobs={openJobs.filter((j) => j.status !== "sent_for_sign" && (j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query")))} myId={me.id} personName={personName}
+            <MyJobs jobs={openJobs.filter((j) => j.status !== "sent_for_sign" && (j.status === "review"
+                ? j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id) // review tasks belong to the reviewer
+                : j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query")))}
+              onApprove={approveReview} onSendBack={sendBackReview} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}
               onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })}
               onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")} running={running} clientName={clientName} busy={timerBusy}
               reviewerName={me.reports_to ? personName(me.reports_to) : ""}
-              onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview}
+              onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} wasStarted={wasStarted}
               onOpen={(j) => setModal({ kind: "job", job: j })} onSeeAll={() => gotoJobs({ assignee: me.id })} />
             <div className="panel">
               <div className="ph"><h2>Needs attention</h2><span className="note">Your jobs: overdue, due this week or high priority</span></div>
@@ -585,7 +607,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
       {view === "payroll" ? <PayrollView jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
-        onStart={startJob} onStop={stopJob} onSubmit={submitForReview} onStep={payrollStep} onOpen={(j) => setModal({ kind: "job", job: j })} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
+        onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => setModal({ kind: "job", job: j })} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
