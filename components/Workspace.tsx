@@ -421,7 +421,9 @@ export default function Workspace({ me }: { me: Profile }) {
           <select id="jf-due" aria-label="Due" value={jf.due} onChange={set("due")}>
             {[["", "Any due date"], ["overdue", "Overdue"], ["week", "Due in 7 days"], ["week_or_overdue", "Overdue or due in 7 days"], ["month", "Due in 30 days"], ["nodate", "No due date"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
-          <select id="jf-assignee" aria-label="Assigned to" value={jf.assignee} onChange={set("assignee")}><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>
+          <select id="jf-assignee" aria-label="Assigned to" value={jf.assignee} onChange={set("assignee")}>{me.role === "staff"
+            ? <><option value="">Mine and unassigned</option><option value="__none">Unassigned</option></>
+            : <><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>}</select>
           <ClientPicker id="jf-client" clients={clients} value={jf.client} emptyLabel="All clients" onChange={(id) => setJf({ ...jf, client: id })} style={{ minWidth: 200 }} />
           <button onClick={() => setJf(NO_FILTER)}>Clear</button>
         </div>
@@ -591,8 +593,8 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
-      {modal?.kind === "bulk" ? <BulkModal clients={clients} team={team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
       {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} staff={profiles.filter((p) => p.active && p.role === "staff")} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
@@ -671,8 +673,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, presetService, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; presetService?: string; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, presetService, isStaff, leaderId, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -758,7 +760,9 @@ function JobModal({ job, presetClient, presetService, clients, team, canDelete, 
     if (ok && query) onQuery({ ...job, ...row } as Job);
     else if (ok) onClose();
   }
-  const opts = (blank: string) => <><option value="">{blank}</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>;
+  // Staff only see themselves (and whoever is already on this job, or their team leader), not the whole team.
+  const pick = isStaff ? team.filter((p) => p.id === meId || p.id === v.assignee_id || p.id === v.reviewer_id || p.id === leaderId) : team;
+  const opts = (blank: string) => <><option value="">{blank}</option>{pick.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>;
   return (
     <Overlay onClose={onClose}><form className={`modal ${job ? "wide" : ""}`} onSubmit={submit}>
       <header><h2>{readOnly ? "Job (read-only)" : job ? "Edit job" : "New job"}</h2><button type="button" onClick={onClose}>Close</button></header>
