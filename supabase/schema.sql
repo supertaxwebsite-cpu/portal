@@ -1483,3 +1483,16 @@ revoke all on function public.guard_status_needs_start() from public, anon, auth
 drop trigger if exists jobs_status_needs_start on public.jobs;
 create trigger jobs_status_needs_start before update on public.jobs
   for each row execute function public.guard_status_needs_start();
+
+-- Staff don't see unassigned jobs that are finished (Completed, Sent for sign, Lodged).
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() is distinct from 'staff'
+    or (j.assignee_id is null and j.status not in ('done', 'sent_for_sign', 'lodged'))
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+  );
+$$;

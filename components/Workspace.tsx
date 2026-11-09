@@ -22,6 +22,8 @@ import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "payroll" | "clients" | "timesheet" | "team" | "meetings";
+/** Statuses where nothing more needs doing: kept out of the unassigned list. */
+const FINISHED = new Set(["done", "sent_for_sign", "lodged"]);
 const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "timesheet", "team", "meetings"];
 interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string }
 const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "" };
@@ -308,7 +310,7 @@ export default function Workspace({ me }: { me: Profile }) {
     const cols = STATUSES.filter((s) => s.open);
     const myTeam = new Set([me.id, ...profiles.filter((p) => p.reports_to === me.id).map((p) => p.id)]);
     const rows = team.filter((p) => !seesOwnTeam || myTeam.has(p.id)).map((p) => ({ id: p.id, name: p.full_name, title: p.title, js: openJobs.filter((j) => j.assignee_id === p.id) }));
-    const un = openJobs.filter((j) => !j.assignee_id || !profileById.get(j.assignee_id)?.active);
+    const un = openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active));
     if (un.length && !seesOwnTeam) rows.push({ id: "__none", name: "Unassigned", title: "", js: un });
     const max = Math.max(1, ...rows.map((r) => r.js.length));
     const projected = projectedWork(clients);
@@ -404,7 +406,10 @@ export default function Workspace({ me }: { me: Profile }) {
       if (f.status === "review_any" && !(j.status === "review" || j.status === "to_lodge")) return false;
       if (ST[f.status] && j.status !== f.status) return false;
       if (f.client && j.client_id !== f.client) return false;
-      if (f.assignee === "__none") { if (j.assignee_id && profileById.get(j.assignee_id)?.active) return false; }
+      if (f.assignee === "__none") {
+        if (j.assignee_id && profileById.get(j.assignee_id)?.active) return false;
+        if (FINISHED.has(j.status)) return false; // nothing left to do on these
+      }
       else if (f.assignee && j.assignee_id !== f.assignee) return false;
       if (f.due) {
         if (f.due === "nodate") { if (j.due_date) return false; }
