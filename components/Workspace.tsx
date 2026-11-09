@@ -527,7 +527,7 @@ export default function Workspace({ me }: { me: Profile }) {
       if (f.fy || f.quarter) {
         const pf = periodFY(j.period);
         if (f.fy && !pf.fys.some((y) => f.fy.split(",").includes(String(y)))) return false;
-        if (f.quarter && !has(f.quarter, pf.q ? String(pf.q) : "")) return false;
+        if (f.quarter && !has(f.quarter, pf.q ? String(pf.q) : "A")) return false;
       }
       if (q) {
         const hay = [clientById.get(j.client_id)?.name, j.period, j.notes, svcLabel(j.service), profileById.get(j.assignee_id ?? "")?.full_name].join(" ").toLowerCase();
@@ -550,7 +550,7 @@ export default function Workspace({ me }: { me: Profile }) {
           <input type="search" id="jf-q" style={{ minWidth: 240 }} placeholder="Search client, period or notes" aria-label="Search jobs" value={jf.q} onChange={set("q")} />
           <MultiPick id="jf-service" all="All services" value={jf.service} onChange={(v) => setJf({ ...jf, service: v })} options={SERVICES.map((s) => ({ v: s.id, l: s.label }))} />
           <MultiPick id="jf-fy" all="Any financial year" value={jf.fy} onChange={(v) => setJf({ ...jf, fy: v })} options={jobFYs.map((y) => ({ v: String(y), l: `FY${y} (Jul ${y - 1} – Jun ${y})`, short: `FY${y}` }))} />
-          <MultiPick id="jf-quarter" all="Any quarter" value={jf.quarter} onChange={(v) => setJf({ ...jf, quarter: v })} options={[1, 2, 3, 4].map((q) => ({ v: String(q), l: `Q${q} (${["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})`, short: `Q${q}` }))} />
+          <MultiPick id="jf-quarter" all="Any quarter or yearly" value={jf.quarter} onChange={(v) => setJf({ ...jf, quarter: v })} options={[...[1, 2, 3, 4].map((q) => ({ v: String(q), l: `Q${q} (${["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})`, short: `Q${q}` })), { v: "A", l: "Yearly (tax returns, annual GST, FBT…)", short: "Yearly" }]} />
           <MultiPick id="jf-entity" all="All entity types" value={jf.entity} onChange={(v) => setJf({ ...jf, entity: v })} options={ENTITIES.map((x) => ({ v: x, l: x === "SMSF" ? "Super fund (SMSF)" : x }))} />
           <MultiPick id="jf-practice" all="All practices" value={jf.practice} onChange={(v) => setJf({ ...jf, practice: v })} options={PRACTICES.map((p) => ({ v: p, l: p }))} />
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
