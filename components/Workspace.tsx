@@ -94,6 +94,8 @@ export default function Workspace({ me }: { me: Profile }) {
   const [live, setLive] = useState(false);
   const [view, setView] = useState<View>("overview");
   const [jf, setJf] = useState<JobFilter>(NO_FILTER);
+  // Jobs list sort: click a column heading; click again to reverse.
+  const [jsort, setJsort] = useState<{ k: string; dir: 1 | -1 }>({ k: "due", dir: 1 });
   const [cq, setCq] = useState("");
   const [cservice, setCservice] = useState("");
   const [centity, setCentity] = useState<string[]>([]);
@@ -540,7 +542,25 @@ export default function Workspace({ me }: { me: Profile }) {
 
   function JobsView() {
     const set = (k: keyof JobFilter) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setJf({ ...jf, [k]: e.target.value });
-    const list = filteredJobs, shown = list.slice(0, 500);
+    const sortVal = (j: Job): string => {
+      switch (jsort.k) {
+        case "client": return clientName(j.client_id).toLowerCase();
+        case "service": return svcLabel(j.service).toLowerCase();
+        case "period": { const pf = periodFY(j.period); return `${pf.fys[0] ?? 0}-${pf.q ?? 9}-${j.period}`; }
+        case "assigned": return (personName(j.assignee_id) || "\uffff").toLowerCase();
+        case "status": return String(STATUSES.findIndex((s) => s.id === j.status)).padStart(2, "0");
+        default: return j.due_date ?? "9999";
+      }
+    };
+    const list = jsort.k === "due" && jsort.dir === 1 ? filteredJobs
+      : [...filteredJobs].sort((a, b) => sortVal(a).localeCompare(sortVal(b), undefined, { numeric: true }) * jsort.dir || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
+    const shown = list.slice(0, 500);
+    const filtered = JSON.stringify(jf) !== JSON.stringify(NO_FILTER);
+    const H = ({ k, children }: { k: string; children: React.ReactNode }) => (
+      <th aria-sort={jsort.k === k ? (jsort.dir === 1 ? "ascending" : "descending") : undefined}>
+        <button type="button" className={`sorth${jsort.k === k ? " on" : ""}`} onClick={() => setJsort(jsort.k === k ? { k, dir: jsort.dir === 1 ? -1 : 1 } : { k, dir: 1 })}>
+          {children}<span className="arrow">{jsort.k === k ? (jsort.dir === 1 ? "▲" : "▼") : "↕"}</span></button></th>
+    );
     return (
       <>
         <div className="pagehead">
@@ -567,13 +587,14 @@ export default function Workspace({ me }: { me: Profile }) {
             : <><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>}</select>
           <ClientPicker id="jf-client" clients={clients} value={jf.client} emptyLabel="All clients" onChange={(id) => setJf({ ...jf, client: id })} style={{ minWidth: 200 }} />
           <button onClick={() => setJf(NO_FILTER)}>Clear</button>
+          <span className="clientcount"><strong>{list.length.toLocaleString()}</strong> {filtered ? "matching " : ""}job{list.length === 1 ? "" : "s"}</span>
         </div>
         <div className="tablebox">
           {!list.length ? (
             <div className="empty"><strong>{jobs.length ? "No jobs match these filters." : "No jobs yet."}</strong>{jobs.length ? "Clear a filter to see more." : "Use New job for one-off work, or Create jobs for a period to set up a whole quarter of BAS at once."}</div>
           ) : (
             <>
-              <table><thead><tr><th>Client</th><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
+              <table><thead><tr><H k="client">Client</H><H k="service">Service</H><H k="period">Period</H><H k="due">Due</H><H k="assigned">Assigned</H><H k="status">Status</H><th></th></tr></thead>
                 <tbody>{shown.map((j) => (
                   <tr key={j.id}>
                     <td className="client"><button className="link" onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button>{j.priority === "high" ? <span className="prio" title="High priority">!</span> : null}<div className="note">{practiceOf(clientById.get(j.client_id))}</div></td>

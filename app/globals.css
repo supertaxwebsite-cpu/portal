@@ -426,3 +426,7 @@ main.wrap.wide{max-width:1640px}
 .multipick summary{font-weight:400;min-width:150px;max-width:230px;overflow:hidden;text-overflow:ellipsis}
 .multipick summary.on{border-color:var(--accent);background:var(--accent-soft)}
 .multipick .colmenu{left:0;right:auto;max-height:340px;overflow-y:auto}
+.sorth{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit}
+.sorth .arrow{opacity:.35;font-size:9px}
+.sorth.on,.sorth:hover{color:var(--fg)}
+.sorth.on .arrow{opacity:1;color:var(--accent)}
