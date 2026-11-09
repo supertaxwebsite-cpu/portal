@@ -561,12 +561,12 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead">
-          <div><button className="link" onClick={() => setClientId(null)}>← All clients</button><h1 style={{ marginTop: 6 }}>{c.name}</h1><p>{practiceOf(c)} · {c.entity}{c.abn ? <> · ABN <span className="mono">{c.abn}</span></> : null}</p></div>
+          <div><button className="link" onClick={() => setClientId(null)}>← All clients</button><h1 style={{ marginTop: 6 }}>{c.name}</h1><p>{c.entity}{c.abn ? <> · ABN <span className="mono">{c.abn}</span></> : null}</p></div>
           <div className="row"><button onClick={() => setModal({ kind: "client", client: c })}>Edit client</button><button className="primary" onClick={() => setModal({ kind: "job", clientId: c.id })}>New job for this client</button></div>
         </div>
         <div className="detail">
           <div className="panel"><dl className="kv">
-            <dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Email</dt><dd>{c.email || "—"}</dd><dt>Phone</dt><dd className="mono">{c.phone || "—"}</dd>
+            <dt>Practice</dt><dd>{practiceOf(c)}</dd><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Email</dt><dd>{c.email || "—"}</dd><dt>Phone</dt><dd className="mono">{c.phone || "—"}</dd>
             <dt>Manager</dt><dd>{personName(c.manager_id) || "—"}</dd>
             <dt>Services</dt><dd>{c.services.length ? c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>) : "—"}</dd>
             {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, jobs created automatically` : "No automatic jobs"}</dd></> : null}
