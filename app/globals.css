@@ -378,3 +378,5 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .myjobs .list li.reviewtask{border-left-color:var(--brand-orange)}
 .myjobs .jobtask .pill.accent{font-size:11px}
 .myjobs .jobclient .prep{font-weight:500}
+.myjobs .jobclient .clientlink{color:var(--muted);font-weight:600;font-size:13px;text-align:left;padding:0}
+.myjobs .jobclient .clientlink:hover{color:var(--accent);text-decoration:underline}

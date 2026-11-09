@@ -15,7 +15,7 @@ function Due({ date }: { date: string | null }) {
 }
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onAnswer, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
   meetings?: Meeting[];
   onOpenMeeting?: (m: Meeting) => void;
@@ -36,6 +36,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
   onSendBack?: (j: Job) => void;
   onPayroll?: () => void;
   isStaff?: boolean;
+  onOpenClient?: (id: string) => void;
   onOpen: (j: Job) => void;
   onSeeAll: () => void;
 }) {
@@ -65,7 +66,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
               <span className="num">{meetings.length + i + 1}</span>
               <div style={{ minWidth: 0 }}>
                 <div className="t jobtask">{reviewing ? <span className="pill accent">Review</span> : null}<button className="link" onClick={() => onOpen(j)}>{svcLabel(j.service)} <span className="per">{j.period}</span></button>{j.priority === "high" ? <span className="pill danger">High priority</span> : null}</div>
-                <div className="jobclient">{clientName(j.client_id)}{reviewing && j.assignee_id && j.assignee_id !== myId ? <span className="prep"> · Prepared by {personName(j.assignee_id)}</span> : null}</div>
+                <div className="jobclient">{onOpenClient ? <button className="link clientlink" title="Open client profile" onClick={() => onOpenClient(j.client_id)}>{clientName(j.client_id)}</button> : clientName(j.client_id)}{reviewing && j.assignee_id && j.assignee_id !== myId ? <span className="prep"> · Prepared by {personName(j.assignee_id)}</span> : null}</div>
                 {j.notes?.trim() ? <div className="jobnote" title={j.notes}>{j.notes.trim().split("\n")[0]}</div> : null}
                 <div className="duerow"><Due date={j.due_date} /></div>
                 {incoming ? <div className="s"><span className="pill danger">Internal query from {personName(j.query_from ?? null)}</span></div> : null}
