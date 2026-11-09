@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import { periodOptions, clientUpcoming,
-  ENTITIES, PRACTICES, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
+  ENTITIES, PRACTICES, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
@@ -34,8 +34,8 @@ const CLIENT_COLS = [
 ];
 const DEFAULT_CLIENT_COLS = ["practice", "entity", "abn", "services", "manager", "open"];
 
-interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string; practice: string }
-const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", practice: "" };
+interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string; practice: string; entity: string; fy: string; quarter: string }
+const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", practice: "", entity: "", fy: "", quarter: "" };
 
 type Modal =
   | { kind: "job"; job?: Job; clientId?: string; service?: string }
@@ -480,6 +480,7 @@ export default function Workspace({ me }: { me: Profile }) {
     );
   }
 
+  const jobFYs = useMemo(() => [...new Set(jobs.flatMap((j) => periodFY(j.period).fys))].filter((y) => y > 2000 && y < 2100).sort((a, b) => b - a), [jobs]);
   const filteredJobs = useMemo(() => {
     const f = jf, q = f.q.trim().toLowerCase();
     const base = f.status === "closed" ? jobs.filter((j) => !isOpen(j.status)) : f.status === "" || (ST[f.status] && !ST[f.status].open) ? jobs : openJobs;
@@ -505,6 +506,12 @@ export default function Workspace({ me }: { me: Profile }) {
         }
       }
       if (f.practice && practiceOf(clientById.get(j.client_id)) !== f.practice) return false;
+      if (f.entity && clientById.get(j.client_id)?.entity !== f.entity) return false;
+      if (f.fy || f.quarter) {
+        const pf = periodFY(j.period);
+        if (f.fy && !pf.fys.includes(Number(f.fy))) return false;
+        if (f.quarter && pf.q !== Number(f.quarter)) return false;
+      }
       if (q) {
         const hay = [clientById.get(j.client_id)?.name, j.period, j.notes, svcLabel(j.service), profileById.get(j.assignee_id ?? "")?.full_name].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -523,9 +530,12 @@ export default function Workspace({ me }: { me: Profile }) {
           <div className="row"><button onClick={() => exportCsv(list)}>Export CSV</button><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
         </div>
         <div className="toolbar">
-          <input type="search" id="jf-q" placeholder="Search client, period or notes" aria-label="Search jobs" value={jf.q} onChange={set("q")} />
-          <select id="jf-practice" aria-label="Practice" value={jf.practice} onChange={set("practice")}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+          <input type="search" id="jf-q" style={{ minWidth: 240 }} placeholder="Search client, period or notes" aria-label="Search jobs" value={jf.q} onChange={set("q")} />
           <select id="jf-service" aria-label="Service" value={jf.service} onChange={set("service")}><option value="">All services</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
+          <select id="jf-fy" aria-label="Financial year" value={jf.fy} onChange={set("fy")}><option value="">Any financial year</option>{jobFYs.map((y) => <option key={y} value={y}>FY{y} (Jul {y - 1} – Jun {y})</option>)}</select>
+          <select id="jf-quarter" aria-label="Quarter" value={jf.quarter} onChange={set("quarter")} title="Quarter applies to BAS, IAS and other quarterly or monthly work"><option value="">Any quarter</option>{[1, 2, 3, 4].map((q) => <option key={q} value={q}>Q{q} ({["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})</option>)}</select>
+          <select id="jf-entity" aria-label="Entity type" value={jf.entity} onChange={set("entity")}><option value="">All entity types</option>{ENTITIES.map((x) => <option key={x} value={x}>{x === "SMSF" ? "Super fund (SMSF)" : x}</option>)}</select>
+          <select id="jf-practice" aria-label="Practice" value={jf.practice} onChange={set("practice")}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
             <option value="open">All open jobs</option><option value="review_any">Ready for review or signing</option>
             {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}

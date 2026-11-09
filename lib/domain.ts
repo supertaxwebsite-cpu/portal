@@ -262,3 +262,18 @@ export const SUBMITTED_LOCK_MSG = "Submitted for review. Only the reviewer can c
 export const PRACTICES = ["Supertax", "Titantax", "Workpaper", "Monarch Accounting"] as const;
 export const DEFAULT_PRACTICE = "Supertax";
 export const practiceOf = (c?: { practice?: string | null } | null) => c?.practice || DEFAULT_PRACTICE;
+
+/** Which financial year(s) and BAS quarter a job's period label belongs to (FY2027 = Jul 2026 – Jun 2027). */
+export function periodFY(period: string): { fys: number[]; q: number | null } {
+  const p = (period ?? "").trim();
+  const mon = (m: string) => MONTHS.findIndex((x) => x.toLowerCase() === m.slice(0, 3).toLowerCase()) + 1;
+  let m = p.match(/^Q([1-4])\s*FY\s*(\d{2,4})/i);
+  if (m) { const y = Number(m[2]); return { fys: [y < 100 ? 2000 + y : y], q: Number(m[1]) }; }
+  // A month, e.g. "Sep 2026" or "Pay 9 Nov 2026": Jul–Sep is Q1 of the next FY.
+  m = p.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\b/i);
+  if (m && !/FY/i.test(p)) { const mm = mon(m[1]), y = Number(m[2]); return { fys: [mm >= 7 ? y + 1 : y], q: mm >= 7 ? (mm <= 9 ? 1 : 2) : (mm <= 3 ? 3 : 4) }; }
+  const fys = new Set<number>();
+  for (const x of p.matchAll(/FY\s*(\d{2,4})\b/gi)) { const y = Number(x[1]); fys.add(y < 100 ? 2000 + y : y); }
+  if (!fys.size) for (const x of p.matchAll(/\b(20\d{2})\b/g)) fys.add(Number(x[1]));
+  return { fys: [...fys], q: null };
+}
