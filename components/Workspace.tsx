@@ -100,6 +100,27 @@ export default function Workspace({ me }: { me: Profile }) {
   const [cservice, setCservice] = useState("");
   const [centity, setCentity] = useState<string[]>([]);
   const [cpractice, setCpractice] = useState("");
+  // Filters and sort on the Jobs and Clients lists are remembered on this computer
+  // (across page reloads and visits) until Clear is pressed.
+  const [filtersReady, setFiltersReady] = useState(false);
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("pd-list-filters") ?? "null");
+      if (s && typeof s === "object") {
+        if (s.jf && typeof s.jf === "object") setJf({ ...NO_FILTER, ...s.jf });
+        if (s.jsort && typeof s.jsort.k === "string" && (s.jsort.dir === 1 || s.jsort.dir === -1)) setJsort(s.jsort);
+        if (typeof s.cq === "string") setCq(s.cq);
+        if (typeof s.cservice === "string") setCservice(s.cservice);
+        if (Array.isArray(s.centity)) setCentity(s.centity.filter((x: unknown) => typeof x === "string"));
+        if (typeof s.cpractice === "string") setCpractice(s.cpractice);
+      }
+    } catch { /* ignore */ }
+    setFiltersReady(true);
+  }, []);
+  useEffect(() => {
+    if (!filtersReady) return;
+    try { localStorage.setItem("pd-list-filters", JSON.stringify({ jf, jsort, cq, cservice, centity, cpractice })); } catch { /* ignore */ }
+  }, [filtersReady, jf, jsort, cq, cservice, centity, cpractice]);
   // Which columns the Clients list shows; remembered on this computer.
   const [ccols, setCcolsState] = useState<string[]>(DEFAULT_CLIENT_COLS);
   useEffect(() => { try { const s = JSON.parse(localStorage.getItem("pd-client-cols") ?? "null"); if (Array.isArray(s)) setCcolsState(s.filter((x) => CLIENT_COLS.some((c) => c.id === x))); } catch { /* ignore */ } }, []);
@@ -586,7 +607,7 @@ export default function Workspace({ me }: { me: Profile }) {
             ? <><option value="">Mine and unassigned</option><option value="__none">Unassigned</option></>
             : <><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>}</select>
           <ClientPicker id="jf-client" clients={clients} value={jf.client} emptyLabel="All clients" onChange={(id) => setJf({ ...jf, client: id })} style={{ minWidth: 200 }} />
-          <button onClick={() => setJf(NO_FILTER)}>Clear</button>
+          <button onClick={() => { setJf(NO_FILTER); setJsort({ k: "due", dir: 1 }); }}>Clear</button>
           <span className="clientcount"><strong>{list.length.toLocaleString()}</strong> {filtered ? "matching " : ""}job{list.length === 1 ? "" : "s"}</span>
         </div>
         <div className="tablebox">
@@ -631,6 +652,7 @@ export default function Workspace({ me }: { me: Profile }) {
             {CLIENT_COLS.map((col) => <label key={col.id}><input type="checkbox" checked={show(col.id)} onChange={(e) => setCcols(e.target.checked ? CLIENT_COLS.map((x) => x.id).filter((x) => x === col.id || ccols.includes(x)) : ccols.filter((x) => x !== col.id))} /> {col.label}</label>)}
             <button type="button" className="link" onClick={() => setCcols(DEFAULT_CLIENT_COLS)}>Reset to default</button>
           </div></details>
+          {filtered ? <button onClick={() => { setCq(""); setCpractice(""); setCservice(""); setCentity([]); }}>Clear</button> : null}
           <span className="clientcount"><strong>{list.length.toLocaleString()}</strong> {filtered ? `of ${clients.length.toLocaleString()} ` : ""}client{list.length === 1 ? "" : "s"}</span>
         </div>
         <div className="toolbar entity-filter" role="group" aria-label="Show entity types" style={{ borderRadius: 0, borderTop: "1px solid var(--line)", gap: 6 }}>
