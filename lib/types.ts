@@ -59,6 +59,8 @@ export interface Job {
   super_done_by?: string | null;
   stp_done_at?: string | null;
   stp_done_by?: string | null;
+  sign_sent_at?: string | null;
+  sign_owner?: string | null;
   updated_at: string;
   updated_by: string | null;
 }

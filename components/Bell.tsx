@@ -5,7 +5,7 @@ import { svcLabel } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
 export interface Notice {
-  id: string; user_id: string; actor_id: string | null; kind: "job_assigned" | "internal_query" | "query_answered" | "review" | "meeting" | "review_approved" | "review_returned";
+  id: string; user_id: string; actor_id: string | null; kind: "job_assigned" | "internal_query" | "query_answered" | "review" | "meeting" | "review_approved" | "review_returned" | "sign_reminder";
   job_id: string | null; meeting_id: string | null; service: string; body: string; read_at: string | null; created_at: string;
 }
 
@@ -17,6 +17,7 @@ const WHAT: Record<Notice["kind"], string> = {
   meeting: "invited you to a meeting",
   review_approved: "approved your job",
   review_returned: "sent a job back to you with changes",
+  sign_reminder: "reminder: the client still hasn't signed. Contact them for the signature",
 };
 
 function ago(s: string) {

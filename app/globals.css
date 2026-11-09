@@ -380,3 +380,7 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .myjobs .jobclient .prep{font-weight:500}
 .myjobs .jobclient .clientlink{color:var(--muted);font-weight:600;font-size:13px;text-align:left;padding:0}
 .myjobs .jobclient .clientlink:hover{color:var(--accent);text-decoration:underline}
+.myjobs .list li.signtask{border-left-color:var(--warn)}
+.myjobs .list li.signtask.chase{border-left-color:var(--danger)}
+.myjobs .signnote{font-size:12.5px;color:var(--warn);margin-top:4px;font-weight:500}
+.myjobs .signnote.chase{color:var(--danger);font-weight:600}

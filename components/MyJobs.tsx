@@ -15,7 +15,7 @@ function Due({ date }: { date: string | null }) {
 }
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onAnswer, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
   meetings?: Meeting[];
   onOpenMeeting?: (m: Meeting) => void;
@@ -37,6 +37,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
   onPayroll?: () => void;
   isStaff?: boolean;
   onOpenClient?: (id: string) => void;
+  onSigned?: (j: Job) => void;
   onOpen: (j: Job) => void;
   onSeeAll: () => void;
 }) {
@@ -60,18 +61,23 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
           const canSubmit = j.status !== "review" && j.status !== "to_lodge";
           const away = j.assignee_id !== myId; // I sent it for an internal query
           const incoming = !away && j.status === "internal_query" && !!j.query_from;
+          const signing = j.status === "sent_for_sign";
+          const signDays = signing && j.sign_sent_at ? Math.floor((now - new Date(j.sign_sent_at).getTime()) / 864e5) : 0;
           const reviewing = j.status === "review" && (j.reviewer_id === myId || (!j.reviewer_id && j.assignee_id === myId));
           return (
-            <li key={j.id} className={`${on ? "running" : away ? "away" : d !== null && d < 0 ? "overdue" : ""}${reviewing ? " reviewtask" : ""}`}>
+            <li key={j.id} className={`${signing ? (signDays >= 2 ? "signtask chase " : "signtask ") : ""}${on ? "running" : away ? "away" : d !== null && d < 0 ? "overdue" : ""}${reviewing ? " reviewtask" : ""}`}>
               <span className="num">{meetings.length + i + 1}</span>
               <div style={{ minWidth: 0 }}>
-                <div className="t jobtask">{reviewing ? <span className="pill accent">Review</span> : null}<button className="link" onClick={() => onOpen(j)}>{svcLabel(j.service)} <span className="per">{j.period}</span></button>{j.priority === "high" ? <span className="pill danger">High priority</span> : null}</div>
+                <div className="t jobtask">{reviewing ? <span className="pill accent">Review</span> : null}{signing ? <span className="pill warn">Sent for sign</span> : null}<button className="link" onClick={() => onOpen(j)}>{svcLabel(j.service)} <span className="per">{j.period}</span></button>{j.priority === "high" ? <span className="pill danger">High priority</span> : null}</div>
                 <div className="jobclient">{onOpenClient ? <button className="link clientlink" title="Open client profile" onClick={() => onOpenClient(j.client_id)}>{clientName(j.client_id)}</button> : clientName(j.client_id)}{reviewing && j.assignee_id && j.assignee_id !== myId ? <span className="prep"> · Prepared by {personName(j.assignee_id)}</span> : null}</div>
                 {j.notes?.trim() ? <div className="jobnote" title={j.notes}>{j.notes.trim().split("\n")[0]}</div> : null}
+                {signing ? <div className={`signnote${signDays >= 2 ? " chase" : ""}`}>{signDays >= 2 ? `Sent ${signDays} days ago. Contact the client and ask them to sign.` : signDays === 1 ? "Sent yesterday. Waiting for the client's signature." : "Sent today. Waiting for the client's signature."}</div> : null}
                 <div className="duerow"><Due date={j.due_date} /></div>
                 {incoming ? <div className="s"><span className="pill danger">Internal query from {personName(j.query_from ?? null)}</span></div> : null}
               </div>
-              {reviewing ? <div className="row actions">
+              {signing ? <div className="row actions">
+                <button className="primary" disabled={busy} onClick={() => onSigned?.(j)}>Client signed, mark lodged</button>
+              </div> : reviewing ? <div className="row actions">
                 {on ? <>
                   <span className="timer mono">● {elapsed(running!.started_at, now)}</span>
                   <button disabled={busy} onClick={onStop}>Stop</button>

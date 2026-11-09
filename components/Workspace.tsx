@@ -131,6 +131,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // Initial load + live refresh when anyone changes something.
   useEffect(() => {
     // Make sure today's automatic payroll and BAS jobs exist (does nothing if they already do).
+    supabase.rpc("remind_unsigned").then(() => null, () => null);
     supabase.rpc("generate_recurring_jobs").then(({ error }) => (error ? supabase.rpc("generate_payroll_jobs") : null)).then(() => load(), () => load());
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => { clearTimeout(timer); timer = setTimeout(load, 300); };
@@ -221,7 +222,7 @@ export default function Workspace({ me }: { me: Profile }) {
   /** Reviewer: approve (ready to lodge) or send back to the preparer with a note. */
   async function approveReview(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
-    await save(() => supabase.from("jobs").update({ status: "to_lodge" }).eq("id", j.id), `Approved. ${personName(j.assignee_id) || "The preparer"} can lodge it now`);
+    await save(() => supabase.from("jobs").update({ status: "sent_for_sign" }).eq("id", j.id), "Approved and moved to Sent for sign. It's in your My jobs until the client signs");
   }
   async function sendBackReview(j: Job) {
     const note = window.prompt(`What does ${personName(j.assignee_id) || "the preparer"} need to fix? (optional)`, "");
@@ -233,6 +234,16 @@ export default function Workspace({ me }: { me: Profile }) {
   }
   /** Staff can't change a job's status until it has been started. */
   const staffNotStarted = (j: Job) => me.role === "staff" && !wasStarted(j);
+  /** What belongs in My jobs: my own work, reviews waiting for me, and jobs I approved that wait for the client's signature. */
+  const myJobFilter = (j: Job) => {
+    if (j.status === "sent_for_sign") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id;
+    if (j.status === "review") return j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id);
+    return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query");
+  };
+  async function markSigned(j: Job) {
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    await save(() => supabase.from("jobs").update({ status: "lodged", lodged_on: j.lodged_on ?? todayISO() }).eq("id", j.id), `${clientName(j.client_id)} signed. Job marked lodged`);
+  }
   const wasStarted = (j: Job) => !started || started.has(j.id) || running?.job_id === j.id;
   async function submitForReview(j: Job) {
     if (!wasStarted(j)) { say("Start the job first: press Start, do the work, then submit it for review.", true); return; }
@@ -348,9 +359,8 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="grid2">
           <div className="section">
-            <MyJobs jobs={openJobs.filter((j) => j.status !== "sent_for_sign" && (j.status === "review"
-                ? j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id) // review tasks belong to the reviewer
-                : j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query")))}
+            <MyJobs jobs={openJobs.filter(myJobFilter)}
+              onSigned={markSigned}
               onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={me.role === "staff"} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}

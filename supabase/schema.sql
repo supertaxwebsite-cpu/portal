@@ -1496,3 +1496,62 @@ language sql stable security definer set search_path = public as $$
     or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
   );
 $$;
+
+-- ============================================================
+-- Sent for sign: the approver owns the job while the client signs.
+-- After 2 days still unsigned, they get a bell reminder to chase the client (then every 2 days).
+-- ============================================================
+alter table public.jobs add column if not exists sign_sent_at timestamptz;
+alter table public.jobs add column if not exists sign_owner uuid references public.profiles (id) on delete set null;
+alter table public.jobs add column if not exists sign_reminded_at timestamptz;
+
+create or replace function public.stamp_sent_for_sign() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'sent_for_sign' and (tg_op = 'INSERT' or old.status is distinct from 'sent_for_sign') then
+    new.sign_sent_at := now();
+    new.sign_owner := coalesce(auth.uid(), new.reviewer_id, new.assignee_id);
+    new.sign_reminded_at := null;
+  elsif new.status is distinct from 'sent_for_sign' then
+    new.sign_sent_at := null; new.sign_owner := null; new.sign_reminded_at := null;
+  end if;
+  return new;
+end $$;
+revoke all on function public.stamp_sent_for_sign() from public, anon, authenticated;
+drop trigger if exists jobs_sent_for_sign on public.jobs;
+create trigger jobs_sent_for_sign before insert or update on public.jobs
+  for each row execute function public.stamp_sent_for_sign();
+
+-- Jobs already waiting for a signature start their 2-day clock now.
+update public.jobs set sign_sent_at = coalesce(sign_sent_at, now()), sign_owner = coalesce(sign_owner, reviewer_id, assignee_id)
+where status = 'sent_for_sign' and sign_sent_at is null;
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned', 'sign_reminder'));
+
+create or replace function public.remind_unsigned() returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  with due as (
+    update public.jobs j set sign_reminded_at = now()
+    where j.status = 'sent_for_sign' and j.sign_owner is not null
+      and j.sign_sent_at <= now() - interval '2 days'
+      and (j.sign_reminded_at is null or j.sign_reminded_at <= now() - interval '2 days')
+    returning j.id, j.sign_owner, j.service, j.client_id, j.period
+  )
+  insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+  select d.sign_owner, null, 'sign_reminder', d.id, d.service, coalesce(c.name, '') || ' · ' || d.period
+  from due d left join public.clients c on c.id = d.client_id;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.remind_unsigned() from public, anon;
+grant execute on function public.remind_unsigned() to authenticated;
+
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('supertax-sign-reminders', '0 * * * *', 'select public.remind_unsigned()');
+  end if;
+end $$;
