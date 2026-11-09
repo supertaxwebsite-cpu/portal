@@ -25,6 +25,8 @@ export interface Person {
 export interface Client {
   id: string;
   name: string;
+  /** Which practice the client belongs to (Supertax, Titantax, Workpaper, Monarch Accounting). */
+  practice?: string | null;
   entity: string;
   abn: string;
   contact: string;

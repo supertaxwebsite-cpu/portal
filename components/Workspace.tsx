@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import { periodOptions, clientUpcoming,
-  ENTITIES, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
+  ENTITIES, PRACTICES, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
@@ -25,8 +25,8 @@ type View = "overview" | "jobs" | "payroll" | "clients" | "timesheet" | "team" |
 /** Statuses where nothing more needs doing: kept out of the unassigned list. */
 const FINISHED = new Set(["done", "sent_for_sign", "lodged"]);
 const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "timesheet", "team", "meetings"];
-interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string }
-const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "" };
+interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string; practice: string }
+const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", practice: "" };
 
 type Modal =
   | { kind: "job"; job?: Job; clientId?: string; service?: string }
@@ -72,6 +72,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [cq, setCq] = useState("");
   const [cservice, setCservice] = useState("");
   const [centity, setCentity] = useState<string[]>([]);
+  const [cpractice, setCpractice] = useState("");
   const [clientId, setClientId] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
@@ -452,6 +453,7 @@ export default function Workspace({ me }: { me: Profile }) {
           if (f.due === "month" && (d < 0 || d > 30)) return false;
         }
       }
+      if (f.practice && practiceOf(clientById.get(j.client_id)) !== f.practice) return false;
       if (q) {
         const hay = [clientById.get(j.client_id)?.name, j.period, j.notes, svcLabel(j.service), profileById.get(j.assignee_id ?? "")?.full_name].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -471,6 +473,7 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="toolbar">
           <input type="search" id="jf-q" placeholder="Search client, period or notes" aria-label="Search jobs" value={jf.q} onChange={set("q")} />
+          <select id="jf-practice" aria-label="Practice" value={jf.practice} onChange={set("practice")}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
           <select id="jf-service" aria-label="Service" value={jf.service} onChange={set("service")}><option value="">All services</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
             <option value="open">All open jobs</option><option value="review_any">Ready for review or signing</option>
@@ -494,7 +497,7 @@ export default function Workspace({ me }: { me: Profile }) {
               <table><thead><tr><th>Client</th><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
                 <tbody>{shown.map((j) => (
                   <tr key={j.id}>
-                    <td className="client"><button className="link" onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button>{j.priority === "high" ? <span className="prio" title="High priority">!</span> : null}</td>
+                    <td className="client"><button className="link" onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button>{j.priority === "high" ? <span className="prio" title="High priority">!</span> : null}<div className="note">{practiceOf(clientById.get(j.client_id))}</div></td>
                     <td>{svcLabel(j.service)}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
                     <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}{j.reviewer_id ? <div className="note">Review: {personName(j.reviewer_id)}</div> : null}</td>
                     <td><StatusSelect j={j} /></td>
@@ -510,7 +513,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
   function ClientsView() {
     const q = cq.trim().toLowerCase();
-    const list = clients.filter((c) => (!cservice || c.services.includes(cservice)) && (!centity.length || centity.includes(c.entity)) && (!q || [c.name, c.abn, c.contact, c.email].join(" ").toLowerCase().includes(q)));
+    const list = clients.filter((c) => (!cpractice || practiceOf(c) === cpractice) && (!cservice || c.services.includes(cservice)) && (!centity.length || centity.includes(c.entity)) && (!q || [c.name, c.abn, c.contact, c.email].join(" ").toLowerCase().includes(q)));
     const openBy = new Map<string, Job[]>();
     openJobs.forEach((j) => openBy.set(j.client_id, [...(openBy.get(j.client_id) ?? []), j]));
     return (
@@ -518,6 +521,7 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="pagehead"><div><h1>Clients</h1><p>Who you act for and which services you provide each of them.</p></div><div className="row">{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}<button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button></div></div>
         <div className="toolbar">
           <input type="search" id="cq" placeholder="Search name, ABN or contact" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
+          <select id="cpractice" aria-label="Practice" value={cpractice} onChange={(e) => setCpractice(e.target.value)}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
           <select id="cservice" aria-label="Service" value={cservice} onChange={(e) => setCservice(e.target.value)}><option value="">Any service</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
         </div>
         <div className="toolbar entity-filter" role="group" aria-label="Show entity types" style={{ borderRadius: 0, borderTop: "1px solid var(--line)", gap: 6 }}>
@@ -529,10 +533,10 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="tablebox">
           {!list.length ? <div className="empty"><strong>{clients.length ? "No clients match." : "No clients yet."}</strong>{clients.length ? "Try another search." : "Add your first client, then tick the services you do for them."}</div> : (
             <>
-              <table><thead><tr><th>Client</th><th>Entity</th><th>ABN</th><th>Services</th><th>Manager</th><th style={{ textAlign: "right" }}>Open jobs</th></tr></thead>
+              <table><thead><tr><th>Client</th><th>Practice</th><th>Entity</th><th>ABN</th><th>Services</th><th>Manager</th><th style={{ textAlign: "right" }}>Open jobs</th></tr></thead>
                 <tbody>{list.map((c) => { const oj = openBy.get(c.id) ?? []; const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
                   <tr key={c.id}><td className="client"><button className="link" onClick={() => openClient(c.id)}>{c.name}</button>{c.contact ? <div className="note">{c.contact}</div> : null}</td>
-                    <td>{c.entity}</td><td className="mono">{c.abn}</td>
+                    <td>{practiceOf(c)}</td><td>{c.entity}</td><td className="mono">{c.abn}</td>
                     <td>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</td>
                     <td>{personName(c.manager_id)}</td>
                     <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td></tr>); })}</tbody></table>
@@ -557,7 +561,7 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead">
-          <div><button className="link" onClick={() => setClientId(null)}>← All clients</button><h1 style={{ marginTop: 6 }}>{c.name}</h1><p>{c.entity}{c.abn ? <> · ABN <span className="mono">{c.abn}</span></> : null}</p></div>
+          <div><button className="link" onClick={() => setClientId(null)}>← All clients</button><h1 style={{ marginTop: 6 }}>{c.name}</h1><p>{practiceOf(c)} · {c.entity}{c.abn ? <> · ABN <span className="mono">{c.abn}</span></> : null}</p></div>
           <div className="row"><button onClick={() => setModal({ kind: "client", client: c })}>Edit client</button><button className="primary" onClick={() => setModal({ kind: "job", clientId: c.id })}>New job for this client</button></div>
         </div>
         <div className="detail">
@@ -748,7 +752,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
   const [sum, setSum] = useState<JobSummary | null>(null);
   const logged = sum?.hours ?? 0;
   // Add a new client without leaving the form.
-  const [quick, setQuick] = useState<{ name: string; entity: string; abn: string } | null>(null);
+  const [quick, setQuick] = useState<{ name: string; entity: string; abn: string; practice: string } | null>(null);
   const [added, setAdded] = useState<Client[]>([]);
   const allClients = useMemo(() => [...clients, ...added.filter((a) => !clients.some((c) => c.id === a.id))].sort((a, b) => a.name.localeCompare(b.name)), [clients, added]);
   const [quickDupes, setQuickDupes] = useState<Similar[] | null>(null);
@@ -756,7 +760,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
     if (!quick?.name.trim()) return;
     if (!quickDupes) { const found = similarClients(quick.name, quick.abn, allClients); if (found.length) { setQuickDupes(found); return; } }
     setBusy(true);
-    const { data, error } = await supabase.from("clients").insert({ name: quick.name.trim(), entity: quick.entity, abn: quick.abn.trim(), services: SVC[v.service] && v.service !== "other" ? [v.service] : [] }).select().single();
+    const { data, error } = await supabase.from("clients").insert({ ...(quick.practice !== DEFAULT_PRACTICE ? { practice: quick.practice } : {}), name: quick.name.trim(), entity: quick.entity, abn: quick.abn.trim(), services: SVC[v.service] && v.service !== "other" ? [v.service] : [] }).select().single();
     setBusy(false);
     if (error || !data) { say(`Client not added: ${error?.message ?? "try again"}`, true); return; }
     const c = data as Client;
@@ -835,10 +839,11 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
           : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
         <label className="f full"><span className="row" style={{ justifyContent: "space-between" }}>Client{v.client_id && onOpenClient ? <button type="button" className="link" style={{ fontSize: 13 }} onClick={() => onOpenClient(v.client_id)}>Open client profile →</button> : null}</span><ClientPicker id="m-client" required disabled={locked} clients={allClients} value={v.client_id} placeholder="Search client by name or ABN…"
           onChange={(id) => set("client_id")({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>)}
-          onCreate={job ? undefined : (name) => setQuick({ name, entity: "Company", abn: "" })} /></label>
+          onCreate={job ? undefined : (name) => setQuick({ name, entity: "Company", abn: "", practice: DEFAULT_PRACTICE })} /></label>
         {quick ? <div className="full quickclient">
           <strong>New client</strong>
           <div className="qrow">
+            <label className="f">Practice<select id="qc-practice" value={quick.practice} onChange={(e) => setQuick({ ...quick, practice: e.target.value })}>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
             <label className="f">Name<input id="qc-name" autoFocus value={quick.name} onChange={(e) => { setQuick({ ...quick, name: e.target.value }); setQuickDupes(null); }} placeholder="e.g. Sahej Logistics Pty Ltd" /></label>
             <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => setQuick({ ...quick, entity: e.target.value })}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
             <label className="f">ABN<input id="qc-abn" value={quick.abn} onChange={(e) => { setQuick({ ...quick, abn: e.target.value }); setQuickDupes(null); }} placeholder="Optional" inputMode="numeric" /></label>
@@ -957,7 +962,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
   client?: Client; clients: Client[]; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
 }) {
   const [v, setV] = useState({
-    name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
+    practice: practiceOf(client), name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
     email: client?.email ?? "", phone: client?.phone ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
     payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
@@ -976,14 +981,16 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
     }
     setBusy(true);
     if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
-    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, ...base } = v;
+    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, ...base } = v;
     // Default people for automatic jobs: only sent when set or changed, so saving works before that database update.
     const who: Record<string, string | null> = {};
     if (payroll_assignee || client?.payroll_assignee) who.payroll_assignee = hasPayroll ? payroll_assignee || null : null;
     if (bas_assignee || client?.bas_assignee) who.bas_assignee = v.services.includes("bas") ? bas_assignee || null : null;
     // Payroll fields are sent only when relevant, so saving works even before the payroll database update.
     const payroll = hasPayroll || client?.payroll_freq ? { payroll_freq: hasPayroll ? payroll_freq : "", payroll_anchor: hasPayroll && payroll_freq ? payroll_anchor || null : null } : {};
-    const row: Record<string, unknown> = { ...base, ...payroll, ...who, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
+    // Practice is sent when it isn't the default (or already stored), so saving works before that database update.
+    const prac = practice !== DEFAULT_PRACTICE || client?.practice ? { practice } : {};
+    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
     const ok = client ? await save(() => supabase.from("clients").update(row).eq("id", client.id), "Client saved") : await save(() => supabase.from("clients").insert(row), "Client added");
     setBusy(false);
     if (ok) onClose();
@@ -993,6 +1000,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
     <Overlay onClose={onClose}><form className="modal" onSubmit={submit}>
       <header><h2>{client ? "Edit client" : "Add client"}</h2><button type="button" onClick={onClose}>Close</button></header>
       <div className="body">
+        <label className="f full">Practice<select id="c-practice" value={v.practice} onChange={set("practice")}>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
         <label className="f full">Client name<input id="c-name" required value={v.name} onChange={set("name")} placeholder="e.g. Harbourside Plumbing Pty Ltd" /></label>
         {dupes?.length ? <div className="full dupwarn" role="alert">
           <strong>This client may already exist</strong>

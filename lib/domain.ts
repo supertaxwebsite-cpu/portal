@@ -257,3 +257,8 @@ export function staffSubmittedLock(j: { status: string; reviewer_id?: string | n
   return SUBMITTED_STATUSES.has(j.status) && j.reviewer_id !== meId && j.sign_owner !== meId;
 }
 export const SUBMITTED_LOCK_MSG = "Submitted for review. Only the reviewer can change the status now, unless they send it back to you.";
+
+/** The practices we manage clients for. Every client belongs to one. */
+export const PRACTICES = ["Supertax", "Titantax", "Workpaper", "Monarch Accounting"] as const;
+export const DEFAULT_PRACTICE = "Supertax";
+export const practiceOf = (c?: { practice?: string | null } | null) => c?.practice || DEFAULT_PRACTICE;

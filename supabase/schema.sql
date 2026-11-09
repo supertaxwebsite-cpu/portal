@@ -1690,3 +1690,12 @@ begin
   end if;
   return t;
 end $$;
+
+-- ============================================================
+-- Each client belongs to a practice: Supertax, Titantax, Workpaper or Monarch Accounting.
+-- Existing clients become Supertax.
+-- ============================================================
+alter table public.clients add column if not exists practice text not null default 'Supertax';
+alter table public.clients drop constraint if exists clients_practice_check;
+alter table public.clients add constraint clients_practice_check
+  check (practice in ('Supertax', 'Titantax', 'Workpaper', 'Monarch Accounting'));
