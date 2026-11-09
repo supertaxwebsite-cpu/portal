@@ -247,3 +247,12 @@ export function monthISO(label: string): string {
   const i = MONTHS.indexOf(mon);
   return i < 0 ? "" : `${yr}-${pad(i + 1)}`;
 }
+
+/** Once a job is submitted for review, staff can't move its status any more (unless it's sent back to them). */
+export const SUBMITTED_STATUSES = new Set(["review", "to_lodge", "sent_for_sign", "lodged", "done"]);
+/** Statuses staff can never pick themselves: only the reviewer / signer moves a job there. */
+export const STAFF_CANT_PICK = new Set(["to_lodge", "sent_for_sign", "lodged", "done"]);
+export function staffSubmittedLock(j: { status: string; reviewer_id?: string | null; sign_owner?: string | null }, meId: string) {
+  return SUBMITTED_STATUSES.has(j.status) && j.reviewer_id !== meId && j.sign_owner !== meId;
+}
+export const SUBMITTED_LOCK_MSG = "Submitted for review. Only the reviewer can change the status now, unless they send it back to you.";

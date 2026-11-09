@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Job, JobTimer, StatusId } from "@/lib/types";
-import { STATUSES, ST, daysFrom, fmtDate, svcLabel } from "@/lib/domain";
+import { STATUSES, ST, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, daysFrom, fmtDate, svcLabel } from "@/lib/domain";
 import { dateOf, isLink, timeOf, type Meeting } from "./Meetings";
 
 export const fmtHours = (h: number) => { const m = Math.max(1, Math.round(h * 60)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
@@ -97,8 +97,8 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button className="primary" disabled={busy} onClick={() => onStart(j)}>Start</button>}
                 {incoming ? <button disabled={busy} onClick={() => onAnswer(j)}>Send back</button> : <>
-                <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy || (isStaff && !!wasStarted && !wasStarted(j))} title={isStaff && wasStarted && !wasStarted(j) ? "Press Start first, then you can change the status" : undefined} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
-                  {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy || (isStaff && staffSubmittedLock(j, myId)) || (isStaff && !!wasStarted && !wasStarted(j))} title={isStaff && staffSubmittedLock(j, myId) ? SUBMITTED_LOCK_MSG : isStaff && wasStarted && !wasStarted(j) ? "Press Start first, then you can change the status" : undefined} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
+                  {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== j.status}>{s.label}</option>)}
                 </select>
                 {canSubmit ? (wasStarted && !wasStarted(j)
                   ? <button disabled title="Press Start first. A job can only be submitted once it has been started.">Submit for review</button>

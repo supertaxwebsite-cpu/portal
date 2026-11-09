@@ -1579,3 +1579,32 @@ begin
   return new;
 end $$;
 update public.jobs set sign_owner = coalesce(reviewer_id, assignee_id) where status = 'to_lodge' and sign_owner is null;
+
+-- ============================================================
+-- Once staff submit a job for review, they can't change its status any more
+-- (Ready for review, Ready for signing, Sent for sign, Lodged, Completed),
+-- unless the reviewer sends it back. Staff can't jump a job to those stages either.
+-- The job's own reviewer / signer is not blocked.
+-- ============================================================
+create or replace function public.guard_staff_submitted() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status is distinct from old.status
+     and auth.uid() is not null and public.my_role() = 'staff'
+     and current_setting('supertax.job_handover', true) is distinct from 'on'
+     and current_setting('supertax.payroll_step', true) is distinct from 'on'
+     and auth.uid() is distinct from old.reviewer_id
+     and auth.uid() is distinct from old.sign_owner then
+    if old.status in ('review', 'to_lodge', 'sent_for_sign', 'lodged', 'done') then
+      raise exception 'This job has been submitted for review. Only the reviewer can change its status now, unless they send it back to you' using errcode = '42501';
+    end if;
+    if new.status in ('to_lodge', 'sent_for_sign', 'lodged', 'done') then
+      raise exception 'Submit the job for review. The reviewer moves it on from there' using errcode = '42501';
+    end if;
+  end if;
+  return new;
+end $$;
+revoke all on function public.guard_staff_submitted() from public, anon, authenticated;
+drop trigger if exists jobs_staff_submitted on public.jobs;
+create trigger jobs_staff_submitted before update on public.jobs
+  for each row execute function public.guard_staff_submitted();
