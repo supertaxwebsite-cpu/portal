@@ -386,3 +386,13 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .myjobs .signnote.chase{color:var(--danger);font-weight:600}
 .myjobs .list li.readysign{border-left-color:#7c5cd6}
 .myjobs .signnote.ready{color:var(--muted);font-weight:500}
+.nowrap{white-space:nowrap}
+.wrapany{overflow-wrap:anywhere}
+.colpick{position:relative}
+.colpick summary{list-style:none;cursor:pointer;padding:9px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-weight:600;white-space:nowrap}
+.colpick summary::-webkit-details-marker{display:none}
+.colpick summary::after{content:" ▾";font-weight:400}
+.colpick .colmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:10px 14px;display:grid;gap:6px;min-width:200px}
+.colpick .colmenu label{display:flex;gap:8px;align-items:center;white-space:nowrap;cursor:pointer}
+.clientcount{white-space:nowrap;color:var(--muted);align-self:center;margin-left:auto}
+.clientcount strong{color:var(--fg)}

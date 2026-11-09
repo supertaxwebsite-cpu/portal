@@ -25,6 +25,15 @@ type View = "overview" | "jobs" | "payroll" | "clients" | "timesheet" | "team" |
 /** Statuses where nothing more needs doing: kept out of the unassigned list. */
 const FINISHED = new Set(["done", "sent_for_sign", "lodged"]);
 const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "timesheet", "team", "meetings"];
+/** Columns the Clients list can show. */
+const CLIENT_COLS = [
+  { id: "practice", label: "Practice" }, { id: "entity", label: "Entity" }, { id: "abn", label: "ABN" },
+  { id: "contact", label: "Contact person" }, { id: "email", label: "Email" }, { id: "phone", label: "Phone" },
+  { id: "address", label: "Address" }, { id: "services", label: "Services" }, { id: "manager", label: "Manager" },
+  { id: "open", label: "Open jobs" },
+];
+const DEFAULT_CLIENT_COLS = ["practice", "entity", "abn", "services", "manager", "open"];
+
 interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string; practice: string }
 const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", practice: "" };
 
@@ -73,6 +82,10 @@ export default function Workspace({ me }: { me: Profile }) {
   const [cservice, setCservice] = useState("");
   const [centity, setCentity] = useState<string[]>([]);
   const [cpractice, setCpractice] = useState("");
+  // Which columns the Clients list shows; remembered on this computer.
+  const [ccols, setCcolsState] = useState<string[]>(DEFAULT_CLIENT_COLS);
+  useEffect(() => { try { const s = JSON.parse(localStorage.getItem("pd-client-cols") ?? "null"); if (Array.isArray(s)) setCcolsState(s.filter((x) => CLIENT_COLS.some((c) => c.id === x))); } catch { /* ignore */ } }, []);
+  const setCcols = (c: string[]) => { setCcolsState(c); try { localStorage.setItem("pd-client-cols", JSON.stringify(c)); } catch { /* ignore */ } };
   const [clientId, setClientId] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
@@ -513,16 +526,25 @@ export default function Workspace({ me }: { me: Profile }) {
 
   function ClientsView() {
     const q = cq.trim().toLowerCase();
-    const list = clients.filter((c) => (!cpractice || practiceOf(c) === cpractice) && (!cservice || c.services.includes(cservice)) && (!centity.length || centity.includes(c.entity)) && (!q || [c.name, c.abn, c.contact, c.email].join(" ").toLowerCase().includes(q)));
+    const qd = q.replace(/\s+/g, "");
+    const list = clients.filter((c) => (!cpractice || practiceOf(c) === cpractice) && (!cservice || c.services.includes(cservice)) && (!centity.length || centity.includes(c.entity))
+      && (!q || [c.name, c.abn, c.contact, c.email, c.phone, c.address ?? ""].join(" ").toLowerCase().includes(q) || (qd.length >= 4 && /^\d+$/.test(qd) && [c.abn, c.phone].join(" ").replace(/\s+/g, "").includes(qd))));
+    const show = (id: string) => ccols.includes(id);
+    const filtered = !!(q || cpractice || cservice || centity.length);
     const openBy = new Map<string, Job[]>();
     openJobs.forEach((j) => openBy.set(j.client_id, [...(openBy.get(j.client_id) ?? []), j]));
     return (
       <>
         <div className="pagehead"><div><h1>Clients</h1><p>Who you act for and which services you provide each of them.</p></div><div className="row">{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}<button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button></div></div>
         <div className="toolbar">
-          <input type="search" id="cq" placeholder="Search name, ABN or contact" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
+          <input type="search" id="cq" placeholder="Search name, ABN, contact, email, phone or address" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
           <select id="cpractice" aria-label="Practice" value={cpractice} onChange={(e) => setCpractice(e.target.value)}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
           <select id="cservice" aria-label="Service" value={cservice} onChange={(e) => setCservice(e.target.value)}><option value="">Any service</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
+        <details className="colpick"><summary>Columns</summary><div className="colmenu">
+            {CLIENT_COLS.map((col) => <label key={col.id}><input type="checkbox" checked={show(col.id)} onChange={(e) => setCcols(e.target.checked ? CLIENT_COLS.map((x) => x.id).filter((x) => x === col.id || ccols.includes(x)) : ccols.filter((x) => x !== col.id))} /> {col.label}</label>)}
+            <button type="button" className="link" onClick={() => setCcols(DEFAULT_CLIENT_COLS)}>Reset to default</button>
+          </div></details>
+          <span className="clientcount"><strong>{list.length.toLocaleString()}</strong> {filtered ? `of ${clients.length.toLocaleString()} ` : ""}client{list.length === 1 ? "" : "s"}</span>
         </div>
         <div className="toolbar entity-filter" role="group" aria-label="Show entity types" style={{ borderRadius: 0, borderTop: "1px solid var(--line)", gap: 6 }}>
           <span className="note" style={{ marginRight: 4 }}>Show:</span>
@@ -533,13 +555,19 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="tablebox">
           {!list.length ? <div className="empty"><strong>{clients.length ? "No clients match." : "No clients yet."}</strong>{clients.length ? "Try another search." : "Add your first client, then tick the services you do for them."}</div> : (
             <>
-              <table><thead><tr><th>Client</th><th>Practice</th><th>Entity</th><th>ABN</th><th>Services</th><th>Manager</th><th style={{ textAlign: "right" }}>Open jobs</th></tr></thead>
+              <table><thead><tr><th>Client</th>{CLIENT_COLS.filter((col) => show(col.id)).map((col) => <th key={col.id} style={col.id === "open" ? { textAlign: "right" } : undefined}>{col.label}</th>)}</tr></thead>
                 <tbody>{list.map((c) => { const oj = openBy.get(c.id) ?? []; const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
-                  <tr key={c.id}><td className="client"><button className="link" onClick={() => openClient(c.id)}>{c.name}</button>{c.contact ? <div className="note">{c.contact}</div> : null}</td>
-                    <td>{practiceOf(c)}</td><td>{c.entity}</td><td className="mono">{c.abn}</td>
-                    <td>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</td>
-                    <td>{personName(c.manager_id)}</td>
-                    <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td></tr>); })}</tbody></table>
+                  <tr key={c.id}><td className="client"><button className="link" onClick={() => openClient(c.id)}>{c.name}</button>{c.contact && !show("contact") ? <div className="note">{c.contact}</div> : null}</td>
+                    {show("practice") ? <td>{practiceOf(c)}</td> : null}
+                    {show("entity") ? <td>{c.entity}</td> : null}
+                    {show("abn") ? <td className="mono nowrap">{c.abn}</td> : null}
+                    {show("contact") ? <td>{c.contact}</td> : null}
+                    {show("email") ? <td className="wrapany">{c.email}</td> : null}
+                    {show("phone") ? <td className="mono nowrap">{c.phone}</td> : null}
+                    {show("address") ? <td>{c.address}</td> : null}
+                    {show("services") ? <td>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</td> : null}
+                    {show("manager") ? <td>{personName(c.manager_id)}</td> : null}
+                    {show("open") ? <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td> : null}</tr>); })}</tbody></table>
               <div className="count">{list.length} client{list.length === 1 ? "" : "s"}</div>
             </>
           )}
