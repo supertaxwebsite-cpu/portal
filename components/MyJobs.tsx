@@ -58,8 +58,9 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
             <li key={j.id} className={on ? "running" : away ? "away" : d !== null && d < 0 ? "overdue" : ""}>
               <span className="num">{meetings.length + i + 1}</span>
               <div style={{ minWidth: 0 }}>
-                <div className="t"><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpen(j)}>{clientName(j.client_id)}</button></div>
-                <div className="s">{svcLabel(j.service)} · {j.period}{j.priority === "high" ? <> · <span className="danger">High priority</span></> : null}</div>
+                <div className="t jobtask"><button className="link" onClick={() => onOpen(j)}>{svcLabel(j.service)} <span className="per">{j.period}</span></button>{j.priority === "high" ? <span className="pill danger">High priority</span> : null}</div>
+                <div className="jobclient">{clientName(j.client_id)}</div>
+                {j.notes?.trim() ? <div className="jobnote" title={j.notes}>{j.notes.trim().split("\n")[0]}</div> : null}
                 <div className="duerow"><Due date={j.due_date} /></div>
                 {incoming ? <div className="s"><span className="pill danger">Internal query from {personName(j.query_from ?? null)}</span></div> : null}
               </div>
