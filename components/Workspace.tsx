@@ -566,7 +566,7 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         <div className="detail">
           <div className="panel"><dl className="kv">
-            <dt>Practice</dt><dd>{practiceOf(c)}</dd><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Email</dt><dd>{c.email || "—"}</dd><dt>Phone</dt><dd className="mono">{c.phone || "—"}</dd>
+            <dt>Practice</dt><dd>{practiceOf(c)}</dd><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Email</dt><dd>{c.email || "—"}</dd><dt>Phone</dt><dd className="mono">{c.phone || "—"}</dd><dt>Address</dt><dd>{c.address || "—"}</dd>
             <dt>Manager</dt><dd>{personName(c.manager_id) || "—"}</dd>
             <dt>Services</dt><dd>{c.services.length ? c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>) : "—"}</dd>
             {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, jobs created automatically` : "No automatic jobs"}</dd></> : null}
@@ -963,7 +963,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
 }) {
   const [v, setV] = useState({
     practice: practiceOf(client), name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
-    email: client?.email ?? "", phone: client?.phone ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
+    email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
     payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
   });
@@ -981,7 +981,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
     }
     setBusy(true);
     if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
-    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, ...base } = v;
+    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, address, ...base } = v;
     // Default people for automatic jobs: only sent when set or changed, so saving works before that database update.
     const who: Record<string, string | null> = {};
     if (payroll_assignee || client?.payroll_assignee) who.payroll_assignee = hasPayroll ? payroll_assignee || null : null;
@@ -990,7 +990,8 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
     const payroll = hasPayroll || client?.payroll_freq ? { payroll_freq: hasPayroll ? payroll_freq : "", payroll_anchor: hasPayroll && payroll_freq ? payroll_anchor || null : null } : {};
     // Practice is sent when it isn't the default (or already stored), so saving works before that database update.
     const prac = practice !== DEFAULT_PRACTICE || client?.practice ? { practice } : {};
-    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
+    const addr = address.trim() || client?.address ? { address: address.trim() } : {};
+    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, ...addr, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
     const ok = client ? await save(() => supabase.from("clients").update(row).eq("id", client.id), "Client saved") : await save(() => supabase.from("clients").insert(row), "Client added");
     setBusy(false);
     if (ok) onClose();
@@ -1013,6 +1014,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
         <label className="f">Manager<select id="c-manager" value={v.manager_id} onChange={set("manager_id")}><option value="">No manager</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
         <label className="f">Email<input id="c-email" type="email" value={v.email} onChange={set("email")} /></label>
         <label className="f">Phone<input id="c-phone" type="tel" value={v.phone} onChange={set("phone")} /></label>
+        <label className="f full">Address<input id="c-address" autoComplete="off" value={v.address} onChange={set("address")} placeholder="e.g. 12 George St, Parramatta NSW 2150" /></label>
         <div className="f full">Services you provide<div className="checks">{SERVICES.map((s) => (
           <label key={s.id}><input type="checkbox" checked={v.services.includes(s.id)} onChange={(e) => setV({ ...v, services: e.target.checked ? [...v.services, s.id] : v.services.filter((x) => x !== s.id) })} /> {s.label}</label>))}</div></div>
         <label className="f">BAS / IAS cycle<select id="c-basfreq" value={v.bas_freq} onChange={set("bas_freq")}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option></select></label>
@@ -1102,6 +1104,8 @@ function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
   clients: Client[]; people: Person[]; supabase: SB; onDone: (n: number) => void; onClose: () => void; say: (m: string, e?: boolean) => void;
 }) {
   const [file, setFile] = useState("");
+  const [practice, setPractice] = useState<string>(DEFAULT_PRACTICE);
+  const [table, setTable] = useState<unknown[][] | null>(null);
   const [check, setCheck] = useState<ImportCheck | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1117,7 +1121,8 @@ function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
         const { readSheet } = await import("read-excel-file/browser");
         table = await readSheet(f) as unknown[][];
       } else { setError("Choose a .csv or .xlsx file. If you have an older .xls file, open it in Excel and save it as .xlsx."); return; }
-      const r = checkImport(table, clients, people);
+      setTable(table);
+      const r = checkImport(table, clients, people, practice);
       if ("error" in r) setError(r.error); else setCheck(r);
     } catch (err) {
       setError(`Couldn't read that file: ${(err as Error).message}`);
@@ -1144,6 +1149,10 @@ function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
       <div className="body"><div className="full stack">
         <p style={{ margin: 0 }}>1. Download the template, fill in one client per row, and save it.</p>
         <div className="row"><a className="btn" href="/client-import-template.xlsx" download>Excel template</a><a className="btn" href="/client-import-template.csv" download>CSV template</a></div>
+        <label className="f" style={{ maxWidth: 320 }}>Practice for these clients<select id="import-practice" value={practice} onChange={(e) => {
+          setPractice(e.target.value);
+          if (table) { const r = checkImport(table, clients, people, e.target.value); if (!("error" in r)) setCheck(r); }
+        }}>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select><span className="note">A Practice column in the file, if you have one, wins over this.</span></label>
         <p style={{ margin: "8px 0 0" }}>2. Upload it. You&apos;ll see what will be added before anything is saved.</p>
         <input type="file" id="import-file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={pick} aria-label="Choose a CSV or Excel file" />
         {error ? <p className="pill danger" style={{ whiteSpace: "normal" }}>{error}</p> : null}
@@ -1154,8 +1163,8 @@ function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
             {check.warnings.length ? <div><strong>Will import, but check</strong><List items={check.warnings} cls="warn" /></div> : null}
             {check.skipped.length ? <div><strong>Skipped</strong><List items={check.skipped} cls="" /></div> : null}
             {check.ready.length ? (
-              <div className="tablebox solo" style={{ maxHeight: 260, overflowY: "auto" }}><table><thead><tr><th>Client</th><th>Entity</th><th>ABN</th><th>Services</th></tr></thead>
-                <tbody>{check.ready.slice(0, 200).map((r) => <tr key={r.line}><td className="client">{r.name}</td><td>{r.entity}</td><td className="mono">{r.abn}</td><td>{r.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>)}</td></tr>)}</tbody></table></div>
+              <div className="tablebox solo" style={{ maxHeight: 260, overflowY: "auto" }}><table><thead><tr><th>Client</th><th>Practice</th><th>Entity</th><th>ABN</th><th>Services</th></tr></thead>
+                <tbody>{check.ready.slice(0, 200).map((r) => <tr key={r.line}><td className="client">{r.name}{r.address ? <div className="note">{r.address}</div> : null}</td><td>{r.practice}</td><td>{r.entity}</td><td className="mono">{r.abn}</td><td>{r.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>)}</td></tr>)}</tbody></table></div>
             ) : null}
           </div>
         ) : null}

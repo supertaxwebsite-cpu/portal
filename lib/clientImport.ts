@@ -1,14 +1,16 @@
-import { ENTITIES, SERVICES } from "./domain";
+import { DEFAULT_PRACTICE, ENTITIES, PRACTICES, SERVICES } from "./domain";
 import type { Client, Person } from "./types";
 
 export interface ImportRow {
   line: number; // spreadsheet row number, for messages
+  practice: string;
   name: string;
   entity: string;
   abn: string;
   contact: string;
   email: string;
   phone: string;
+  address: string;
   manager_id: string | null;
   services: string[];
   bas_freq: "quarterly" | "monthly";
@@ -22,9 +24,15 @@ export interface ImportCheck {
   warnings: { line: number; name: string; reason: string }[];
 }
 
-type Field = "name" | "entity" | "abn" | "contact" | "email" | "phone" | "manager" | "services" | "bas" | "notes";
+type Field = "practice" | "address" | "street" | "suburb" | "state" | "postcode" | "name" | "entity" | "abn" | "contact" | "email" | "phone" | "manager" | "services" | "bas" | "notes";
 
 const HEADERS: Record<Field, string[]> = {
+  practice: ["practice", "practice name", "firm"],
+  address: ["address", "full address", "postal address", "business address", "street address"],
+  street: ["street", "address line 1", "address 1", "street address line"],
+  suburb: ["suburb", "city", "town", "suburb / city"],
+  state: ["state"],
+  postcode: ["postcode", "post code", "postal code", "zip"],
   name: ["client name", "client", "name", "client / entity name", "entity name"],
   entity: ["entity type", "entity", "type"],
   abn: ["abn"],
@@ -74,7 +82,7 @@ function matchService(raw: string): string | null {
 }
 
 /** Check uploaded rows against the template and the clients already in the portal. */
-export function checkImport(table: unknown[][], existing: Client[], people: Person[]): ImportCheck | { error: string } {
+export function checkImport(table: unknown[][], existing: Client[], people: Person[], practice: string = DEFAULT_PRACTICE): ImportCheck | { error: string } {
   const headerAt = table.findIndex((r) => r.some((c) => norm(c)));
   if (headerAt < 0) return { error: "The file is empty." };
   const header = table[headerAt].map((c) => key(norm(c)));
@@ -115,6 +123,15 @@ export function checkImport(table: unknown[][], existing: Client[], people: Pers
     });
     if (unknown.length) { out.problems.push({ line, name, reason: `Unknown service: ${unknown.join(", ")}` }); return; }
 
+    const pracRaw = get("practice");
+    const prac = pracRaw ? PRACTICES.find((p) => key(p) === key(pracRaw) || key(p).startsWith(key(pracRaw))) : practice;
+    if (!prac) { out.problems.push({ line, name, reason: `Practice "${pracRaw}" isn't one of: ${PRACTICES.join(", ")}` }); return; }
+
+    // One Address column, or separate Street / Suburb / State / Postcode columns joined together.
+    const full = get("address");
+    const parts = [get("street"), [get("suburb"), get("state"), get("postcode")].filter(Boolean).join(" ")].filter(Boolean);
+    const address = full && parts.length ? [full, ...parts.filter((p) => !full.includes(p))].join(", ") : full || parts.join(", ");
+
     const mgrRaw = get("manager");
     const manager_id = mgrRaw ? people_.get(key(mgrRaw)) ?? null : null;
     if (mgrRaw && !manager_id) out.warnings.push({ line, name, reason: `No team member called "${mgrRaw}", so no manager will be set` });
@@ -123,7 +140,7 @@ export function checkImport(table: unknown[][], existing: Client[], people: Pers
     names.add(key(name));
     if (abnDigits) abns.add(abnDigits);
     out.ready.push({
-      line, name, entity, abn, contact: get("contact"), email: get("email"), phone: get("phone"),
+      line, practice: prac, name, entity, abn, contact: get("contact"), email: get("email"), phone: get("phone"), address,
       manager_id, services, bas_freq: basRaw === "monthly" ? "monthly" : "quarterly", notes: get("notes"),
     });
   });

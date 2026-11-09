@@ -1699,3 +1699,33 @@ alter table public.clients add column if not exists practice text not null defau
 alter table public.clients drop constraint if exists clients_practice_check;
 alter table public.clients add constraint clients_practice_check
   check (practice in ('Supertax', 'Titantax', 'Workpaper', 'Monarch Accounting'));
+
+-- ============================================================
+-- Client address, and the import can now bring in Practice and Address.
+-- ============================================================
+alter table public.clients add column if not exists address text not null default '';
+
+create or replace function public.import_clients(rows jsonb) returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  if coalesce(public.my_role()::text, '') not in ('master', 'manager') then
+    raise exception 'Only the master admin or a manager can import clients' using errcode = '42501';
+  end if;
+  if jsonb_typeof(rows) <> 'array' or jsonb_array_length(rows) = 0 then
+    raise exception 'Nothing to import';
+  end if;
+  if jsonb_array_length(rows) > 5000 then
+    raise exception 'Import at most 5000 clients at a time';
+  end if;
+  insert into public.clients (practice, name, entity, abn, contact, email, phone, address, manager_id, services, bas_freq, notes)
+  select coalesce(nullif(trim(r.practice), ''), 'Supertax'), trim(r.name), coalesce(nullif(trim(r.entity), ''), 'Company'),
+         coalesce(r.abn, ''), coalesce(r.contact, ''), coalesce(r.email, ''), coalesce(r.phone, ''), coalesce(r.address, ''),
+         r.manager_id, coalesce(r.services, '{}'), coalesce(nullif(r.bas_freq, ''), 'quarterly'), coalesce(r.notes, '')
+  from jsonb_to_recordset(rows) as r(practice text, name text, entity text, abn text, contact text, email text, phone text,
+                                     address text, manager_id uuid, services text[], bas_freq text, notes text);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.import_clients(jsonb) from public, anon;
+grant execute on function public.import_clients(jsonb) to authenticated;

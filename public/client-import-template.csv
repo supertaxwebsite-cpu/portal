@@ -1,2 +1,2 @@
-﻿Client name,Entity type,ABN,Contact person,Email,Phone,Manager,Services,BAS cycle,Notes
-EXAMPLE Pty Ltd (delete this row),Company,12 345 678 901,Jane Citizen,jane@example.com.au,0400 000 000,,"BAS, Payroll / STP, Company tax return",Quarterly,Rows starting with EXAMPLE are ignored
+﻿Practice,Client name,Entity type,ABN,Contact person,Email,Phone,Address,Manager,Services,BAS cycle,Notes
+Supertax,EXAMPLE Pty Ltd (delete this row),Company,12 345 678 901,Jane Citizen,jane@example.com.au,0400 000 000,"12 George St, Parramatta NSW 2150",,"BAS, Payroll / STP, Company tax return",Quarterly,Rows starting with EXAMPLE are ignored

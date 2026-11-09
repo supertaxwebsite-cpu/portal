@@ -32,6 +32,7 @@ export interface Client {
   contact: string;
   email: string;
   phone: string;
+  address?: string | null;
   manager_id: string | null;
   services: string[];
   bas_freq: "quarterly" | "monthly";
