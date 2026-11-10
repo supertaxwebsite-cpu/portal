@@ -15,7 +15,7 @@ function Due({ date }: { date: string | null }) {
 }
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onSentForSign, onFollowedUp, onAnswer, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onSentForSign, onFollowedUp, onHandSign, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
   meetings?: Meeting[];
   onOpenMeeting?: (m: Meeting) => void;
@@ -28,6 +28,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
   reviewerName: string;
   busy: boolean;
   onStart: (j: Job) => void;
+  onHandSign?: (j: Job) => void;
   onStop: () => void;
   onStatus: (j: Job, s: StatusId) => void;
   onSubmit: (j: Job) => void;
@@ -87,12 +88,14 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                   <span className="timer mono">● {elapsed(running!.started_at, now)}</span>
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button disabled={busy} onClick={() => onStart(j)} title="Time goes to your timesheet">Start</button>}
+                {onHandSign ? <button disabled={busy} onClick={() => onHandSign(j)} title="Give this job to a team member to send for signing">Hand to…</button> : null}
                 <button className="primary" disabled={busy} onClick={() => onSentForSign?.(j)}>Sent to client for signing</button>
               </div> : signing ? <div className="row actions">
                 {on ? <>
                   <span className="timer mono">● {elapsed(running!.started_at, now)}</span>
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button disabled={busy} onClick={() => onStart(j)} title="Time goes to your timesheet">Start</button>}
+                {onHandSign ? <button disabled={busy} onClick={() => onHandSign(j)} title="Give the signing follow-up to a team member">Hand to…</button> : null}
                 <button className="primary" disabled={busy} onClick={() => onSigned?.(j)}>Client signed, mark lodged</button>
               </div> : cq ? <div className="row actions">
                 {cqDays >= 2 && onFollowedUp ? <button disabled={busy} onClick={() => onFollowedUp(j)}>Followed up, remind me in 2 days</button> : null}

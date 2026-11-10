@@ -63,6 +63,7 @@ type Modal =
   | { kind: "import" }
   | { kind: "meeting"; meeting?: Meeting; date?: string; draft?: MeetingDraft }
   | { kind: "query"; job: Job; mode: "send" | "answer" }
+  | { kind: "handsign"; job: Job }
   | { kind: "temp"; name: string; email: string; password: string }
   | { kind: "confirm"; title: string; text: string; yes: string; run: () => Promise<boolean | void> }
   | null;
@@ -493,7 +494,7 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="grid2">
           <div className="section">
             <MyJobs jobs={openJobs.filter(myJobFilter)}
-              onSigned={markSigned} onSentForSign={markSentForSign} onFollowedUp={followedUp}
+              onSigned={markSigned} onSentForSign={markSentForSign} onFollowedUp={followedUp} onHandSign={(j) => setModal({ kind: "handsign", job: j })}
               onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={me.role === "staff"} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}
@@ -849,7 +850,7 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && (staffNotStarted(modal.job) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && (staffNotStarted(modal.job) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -866,6 +867,8 @@ export default function Workspace({ me }: { me: Profile }) {
           </div></div>
           <footer><span /><button type="button" className="primary" onClick={close}>Done</button></footer></div></Overlay>
       ) : null}
+      {modal?.kind === "handsign" ? <HandSignModal job={modal.job} me={me} team={team} clientName={clientName} personName={personName} onClose={close}
+        run={async (to, note) => { if (await save(() => supabase.rpc("hand_signing", { p_job: modal.job.id, p_to: to, p_note: note }), `Handed to ${personName(to)}. It's in their My jobs now`)) close(); }} /> : null}
       {modal?.kind === "query" ? <QueryModal job={modal.job} mode={modal.mode} me={me} team={team} clientName={clientName} personName={personName}
         run={async (to, note) => {
           const ok = await timerCall(() => modal.mode === "send"
@@ -929,8 +932,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -1072,6 +1075,8 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked} value={v.reviewer_id} onChange={set("reviewer_id")}>{opts("No reviewer")}</select></label>
         <label className="f">Status<select id="m-status" disabled={readOnly || statusLocked} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status}>{s.label}</option>)}</select></label>
+        {job && (job.status === "to_lodge" || job.status === "sent_for_sign") ? <div className="full hint">Signing handled by <strong>{personName(job.sign_owner ?? job.reviewer_id ?? job.assignee_id) || "nobody yet"}</strong>
+          {canHandSign(job) ? <> · <button type="button" className="link" onClick={() => onHandSign(job)}>Hand to a team member</button></> : null}</div> : null}
         <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>
         <label className="f full">Notes<textarea id="m-notes" readOnly={readOnly} placeholder="Records outstanding, queries for the client, lodgment receipt number…" value={v.notes} onChange={set("notes")} /></label>
         {job ? <div className="full hint">Last changed {fmtDate(job.updated_at)}{job.updated_by ? ` by ${personName(job.updated_by)}` : ""}{logged ? <> · <button type="button" className="link" onClick={() => setTab("history")}>{fmtHours(logged)} logged, see history</button></> : null}</div> : null}
@@ -1365,6 +1370,32 @@ function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
       <footer><span className="note">Only the master admin and managers can import.</span><div className="row"><button type="button" onClick={onClose}>Cancel</button>
         <button type="button" className="primary" disabled={busy || !check?.ready.length} onClick={run}>{busy ? "Importing…" : `Import ${check?.ready.length ?? 0} client${check?.ready.length === 1 ? "" : "s"}`}</button></div></footer>
     </div></Overlay>
+  );
+}
+
+function HandSignModal({ job, me, team, clientName, personName, run, onClose }: {
+  job: Job; me: Profile; team: Person[]; clientName: (id: string) => string; personName: (id: string | null) => string;
+  run: (to: string, note: string) => Promise<void>; onClose: () => void;
+}) {
+  const owner = job.sign_owner ?? job.reviewer_id ?? job.assignee_id;
+  const [to, setTo] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const sent = job.status === "sent_for_sign";
+  return (
+    <Overlay onClose={onClose}><form className="modal" onSubmit={async (e) => { e.preventDefault(); setBusy(true); await run(to, note); setBusy(false); }}>
+      <header><h2>{sent ? "Hand over the signing follow-up" : "Hand over for signing"}</h2><button type="button" onClick={onClose}>Close</button></header>
+      <div className="body">
+        <p className="full muted" style={{ margin: 0 }}>{clientName(job.client_id)} · {svcLabel(job.service)} · {job.period}{owner ? ` · now with ${owner === me.id ? "you" : personName(owner)}` : ""}</p>
+        <label className="f full">Give it to<select id="hs-to" required value={to} onChange={(e) => setTo(e.target.value)}>
+          <option value="">Choose a team member…</option>{team.filter((p) => p.id !== owner).map((p) => <option key={p.id} value={p.id}>{p.id === me.id ? `${p.full_name} (me)` : p.full_name}</option>)}</select></label>
+        <label className="f full">Note (optional)<textarea id="hs-note" placeholder={sent ? "e.g. Sent by email on Monday, please call the client" : "e.g. Prepare the engagement letter and send it by DocuSign"} value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        <div className="full hint">{sent
+          ? "The job stays Sent for sign. It moves to their My jobs, they get the 2-day reminders to chase the client, and they mark it signed."
+          : "The job stays Ready for signing and moves to their My jobs. They can time the work and click Sent to client for signing."} They get a bell notification.</div>
+      </div>
+      <footer><span /><div className="row"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy || !to}>Hand over</button></div></footer>
+    </form></Overlay>
   );
 }
 

@@ -1878,3 +1878,56 @@ begin
   return hrs;
 end $$;
 revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;
+
+-- ============================================================
+-- Hand a "Ready for signing" or "Sent for sign" job to a team member.
+-- They become the signing owner: it shows in their My jobs, they get the 2-day reminders,
+-- can run the timer, and can mark it sent / signed.
+-- ============================================================
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned', 'sign_reminder', 'client_query_reminder', 'sign_handover'));
+
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() is distinct from 'staff'
+    or (j.assignee_id is null and j.status not in ('done', 'sent_for_sign', 'lodged'))
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or j.sign_owner = auth.uid()
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+  );
+$$;
+
+create or replace function public.hand_signing(p_job uuid, p_to uuid, p_note text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); who text;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.status not in ('to_lodge', 'sent_for_sign') then
+    raise exception 'Only jobs that are Ready for signing or Sent for sign can be handed over';
+  end if;
+  if coalesce(public.my_role()::text, '') not in ('master', 'manager')
+     and coalesce(j.sign_owner, j.reviewer_id, j.assignee_id) is distinct from me then
+    raise exception 'Only the person handling the signing, a team leader or a master admin can hand it over' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_to and active) then
+    raise exception 'Pick an active team member';
+  end if;
+  select full_name into who from public.profiles where id = me;
+  update public.jobs set sign_owner = p_to,
+    notes = case when coalesce(trim(p_note), '') = '' then notes
+                 else trim(both e'\n' from coalesce(notes, '') || e'\n' || 'Signing handed over by ' || coalesce(who, 'a team member') || ': ' || trim(p_note)) end
+  where id = p_job;
+  if p_to is distinct from me then
+    insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+    select p_to, me, 'sign_handover', j.id, j.service, coalesce(c.name, '') || ' · ' || j.period
+    from public.clients c where c.id = j.client_id;
+  end if;
+end $$;
+revoke all on function public.hand_signing(uuid, uuid, text) from public, anon;
+grant execute on function public.hand_signing(uuid, uuid, text) to authenticated;
