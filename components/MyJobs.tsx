@@ -83,8 +83,16 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                 {incoming ? <div className="s"><span className="pill danger">Internal query from {personName(j.query_from ?? null)}</span></div> : null}
               </div>
               {readySign ? <div className="row actions">
+                {on ? <>
+                  <span className="timer mono">● {elapsed(running!.started_at, now)}</span>
+                  <button disabled={busy} onClick={onStop}>Stop</button>
+                </> : <button disabled={busy} onClick={() => onStart(j)} title="Time goes to your timesheet">Start</button>}
                 <button className="primary" disabled={busy} onClick={() => onSentForSign?.(j)}>Sent to client for signing</button>
               </div> : signing ? <div className="row actions">
+                {on ? <>
+                  <span className="timer mono">● {elapsed(running!.started_at, now)}</span>
+                  <button disabled={busy} onClick={onStop}>Stop</button>
+                </> : <button disabled={busy} onClick={() => onStart(j)} title="Time goes to your timesheet">Start</button>}
                 <button className="primary" disabled={busy} onClick={() => onSigned?.(j)}>Client signed, mark lodged</button>
               </div> : cq ? <div className="row actions">
                 {cqDays >= 2 && onFollowedUp ? <button disabled={busy} onClick={() => onFollowedUp(j)}>Followed up, remind me in 2 days</button> : null}

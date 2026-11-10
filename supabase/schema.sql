@@ -1818,3 +1818,63 @@ update public.clients c set bas_freq = 'annual'
 where c.bas_freq <> 'annual'
   and exists (select 1 from public.jobs j where j.client_id = c.id and j.service = 'bas' and j.period ilike 'Annual GST%')
   and not exists (select 1 from public.jobs j where j.client_id = c.id and j.service = 'bas' and j.period not ilike 'Annual GST%');
+
+-- ============================================================
+-- Timer on "Ready for signing" and "Sent for sign" jobs: the person preparing the signing
+-- documents (or chasing the signature) can Start/Stop, and the time goes to their timesheet.
+-- ============================================================
+create or replace function public.start_job(p_job uuid) returns public.job_timers
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; t public.job_timers;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from auth.uid()
+     and not (j.status = 'review' and j.reviewer_id = auth.uid())
+     and not (j.status = 'to_lodge' and coalesce(j.sign_owner, j.reviewer_id, j.assignee_id) = auth.uid())
+     and not (j.status = 'sent_for_sign' and coalesce(j.sign_owner, j.reviewer_id, j.assignee_id) = auth.uid()) then
+    raise exception 'You can only start jobs assigned to you, waiting for your review or ready for your signing';
+  end if;
+  if j.status in ('lodged', 'done') then raise exception 'This job is already finished'; end if;
+  select * into t from public.job_timers where user_id = auth.uid() and ended_at is null;
+  if found then
+    if t.job_id = p_job then return t; end if;
+    perform public.end_job_timer(auth.uid());
+  end if;
+  insert into public.job_timers (user_id, job_id) values (auth.uid(), p_job) returning * into t;
+  if j.status in ('not_started', 'waiting', 'client_query') then
+    update public.jobs set status = 'in_progress' where id = p_job;
+  end if;
+  return t;
+end $$;
+revoke all on function public.start_job(uuid) from public, anon;
+grant execute on function public.start_job(uuid) to authenticated;
+
+create or replace function public.end_job_timer(p_uid uuid) returns numeric
+language plpgsql security definer set search_path = public as $$
+declare
+  t public.job_timers;
+  j public.jobs;
+  tz constant text := 'Australia/Sydney';
+  hrs numeric;
+  e uuid;
+begin
+  select * into t from public.job_timers where user_id = p_uid and ended_at is null for update;
+  if not found then return null; end if;
+  select * into j from public.jobs where id = t.job_id;
+  hrs := least(24, greatest(0.01, round((extract(epoch from now() - t.started_at) / 3600)::numeric, 2)));
+  perform set_config('supertax.timer_stop', 'on', true);
+  insert into public.timesheet_entries (user_id, work_date, client_id, job_id, hours, description)
+  values (p_uid, (t.started_at at time zone tz)::date, j.client_id, t.job_id, hrs,
+          case when j.status = 'internal_query' and j.assignee_id = p_uid then 'Internal review, timer '
+               when j.status = 'to_lodge' then 'Preparing for signing, timer '
+               when j.status = 'sent_for_sign' then 'Signing follow-up, timer '
+               else 'Timer ' end
+          || lower(to_char(t.started_at at time zone tz, 'FMHH12:MIAM')) || ' to ' || lower(to_char(now() at time zone tz, 'FMHH12:MIAM')))
+  returning id into e;
+  perform set_config('supertax.timer_stop', 'off', true);
+  update public.job_timers set ended_at = now(), entry_id = e where id = t.id;
+  return hrs;
+end $$;
+revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;
