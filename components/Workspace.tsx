@@ -87,6 +87,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [links, setLinks] = useState<ClientLink[]>([]);
   const [linksMissing, setLinksMissing] = useState(false);
+  const [navTick, setNavTick] = useState(0); // bumps on each top-menu click so Payroll/Timesheet/Meetings start fresh
   // Whole-group work on a client's page: ticked jobs and the status to move them to.
   const [gsel, setGsel] = useState<Set<string>>(new Set());
   const [gstatus, setGstatus] = useState<string>("");
@@ -262,6 +263,13 @@ export default function Workspace({ me }: { me: Profile }) {
     return () => window.removeEventListener("hashchange", route);
   }, [canSeeTeam]);
   const go = (v: View) => { if (v !== "clients") setClientId(null); window.location.hash = v; setView(v); window.scrollTo(0, 0); };
+  // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
+  const navGo = (v: View) => {
+    setJf(NO_FILTER); setJsort({ k: "due", dir: 1 });
+    setCq(""); setCpractice(""); setCservice(""); setCentity([]);
+    setGsel(new Set()); setGstatus(""); setClientId(null); setNavTick((n) => n + 1);
+    go(v);
+  };
   const gotoJobs = (f: Partial<JobFilter>) => { setJf({ ...NO_FILTER, ...f }); go("jobs"); };
   const openClient = (id: string) => { setClientId(id); window.location.hash = "clients"; setView("clients"); window.scrollTo(0, 0); };
 
@@ -838,15 +846,15 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   return (
-    <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
+    <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
-      {view === "payroll" ? <PayrollView jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
+      {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => setModal({ kind: "job", job: j })} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
-      {view === "timesheet" ? <Timesheet me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
+      {view === "timesheet" ? <Timesheet key={navTick} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
-      {view === "meetings" && canSeeTeam ? <MeetingsView meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
+      {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
