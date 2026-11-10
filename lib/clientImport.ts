@@ -13,7 +13,7 @@ export interface ImportRow {
   address: string;
   manager_id: string | null;
   services: string[];
-  bas_freq: "quarterly" | "monthly";
+  bas_freq: "quarterly" | "monthly" | "annual";
   notes: string;
 }
 
@@ -112,8 +112,9 @@ export function checkImport(table: unknown[][], existing: Client[], people: Pers
     const entity = entRaw ? ENTITIES.find((e) => key(e) === key(entRaw)) : "Company";
     if (!entity) { out.problems.push({ line, name, reason: `Entity type "${entRaw}" isn't one of: ${ENTITIES.join(", ")}` }); return; }
 
-    const basRaw = key(get("bas"));
-    if (basRaw && basRaw !== "quarterly" && basRaw !== "monthly") { out.problems.push({ line, name, reason: "BAS cycle must be Quarterly or Monthly" }); return; }
+    const basKey = key(get("bas"));
+    const basRaw = ["annual", "annually", "yearly"].includes(basKey) ? "annual" : basKey;
+    if (basRaw && basRaw !== "quarterly" && basRaw !== "monthly" && basRaw !== "annual") { out.problems.push({ line, name, reason: "BAS cycle must be Quarterly, Monthly or Annually" }); return; }
 
     const services: string[] = [];
     const unknown: string[] = [];
@@ -141,7 +142,7 @@ export function checkImport(table: unknown[][], existing: Client[], people: Pers
     if (abnDigits) abns.add(abnDigits);
     out.ready.push({
       line, practice: prac, name, entity, abn, contact: get("contact"), email: get("email"), phone: get("phone"), address,
-      manager_id, services, bas_freq: basRaw === "monthly" ? "monthly" : "quarterly", notes: get("notes"),
+      manager_id, services, bas_freq: basRaw === "monthly" || basRaw === "annual" ? basRaw : "quarterly", notes: get("notes"),
     });
   });
   return out;

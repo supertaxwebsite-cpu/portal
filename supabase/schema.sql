@@ -1765,3 +1765,56 @@ do $$ begin
     begin alter publication supabase_realtime add table public.client_links; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ============================================================
+-- Annual BAS / GST cycle: clients can be set to Annually. An "Annual GST FY26" job is created
+-- automatically in July after the financial year ends, due 15 May (with the tax return).
+-- ============================================================
+alter table public.clients drop constraint if exists clients_bas_freq_check;
+alter table public.clients add constraint clients_bas_freq_check check (bas_freq in ('quarterly', 'monthly', 'annual'));
+
+create or replace function public.generate_bas_jobs() returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  today date := (now() at time zone 'Australia/Sydney')::date;
+  q_end date := (date_trunc('quarter', today) - interval '1 day')::date;
+  m_end date := (date_trunc('month', today) - interval '1 day')::date;
+  m int := extract(month from q_end)::int;
+  fy int := case when m >= 7 then extract(year from q_end)::int + 1 else extract(year from q_end)::int end;
+  q int := case when m between 7 and 9 then 1 when m between 10 and 12 then 2 when m between 1 and 3 then 3 else 4 end;
+  q_due date := case q when 1 then make_date(fy - 1, 11, 25) when 2 then make_date(fy, 2, 28) when 3 then make_date(fy, 5, 26) else make_date(fy, 8, 25) end;
+  -- The financial year that ended most recently (30 June).
+  y_end date := make_date(case when extract(month from today) >= 7 then extract(year from today)::int else extract(year from today)::int - 1 end, 6, 30);
+  n1 int; n2 int; n3 int;
+begin
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'bas', 'Q' || q || ' FY' || right(fy::text, 2), q_due, coalesce(c.bas_assignee, c.manager_id)
+  from public.clients c
+  where 'bas' = any (c.services) and c.bas_freq = 'quarterly'
+    and today - q_end <= 31
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n1 = row_count;
+
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'bas', to_char(m_end, 'Mon YYYY'), (m_end + interval '21 days')::date, coalesce(c.bas_assignee, c.manager_id)
+  from public.clients c
+  where 'bas' = any (c.services) and c.bas_freq = 'monthly'
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n2 = row_count;
+
+  insert into public.jobs (client_id, service, period, due_date, assignee_id)
+  select c.id, 'bas', 'Annual GST FY' || to_char(y_end, 'YY'), make_date(extract(year from y_end)::int + 1, 5, 15), coalesce(c.bas_assignee, c.manager_id)
+  from public.clients c
+  where 'bas' = any (c.services) and c.bas_freq = 'annual'
+    and today - y_end <= 31
+  on conflict (client_id, service, period) do nothing;
+  get diagnostics n3 = row_count;
+  return n1 + n2 + n3;
+end $$;
+revoke all on function public.generate_bas_jobs() from public, anon;
+
+-- Clients whose only BAS jobs are Annual GST are set to Annually.
+update public.clients c set bas_freq = 'annual'
+where c.bas_freq <> 'annual'
+  and exists (select 1 from public.jobs j where j.client_id = c.id and j.service = 'bas' and j.period ilike 'Annual GST%')
+  and not exists (select 1 from public.jobs j where j.client_id = c.id and j.service = 'bas' and j.period not ilike 'Annual GST%');

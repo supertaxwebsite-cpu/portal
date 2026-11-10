@@ -35,7 +35,7 @@ export interface Client {
   address?: string | null;
   manager_id: string | null;
   services: string[];
-  bas_freq: "quarterly" | "monthly";
+  bas_freq: "quarterly" | "monthly" | "annual";
   payroll_freq?: "" | "weekly" | "fortnightly" | "monthly";
   payroll_anchor?: string | null;
   payroll_assignee?: string | null;

@@ -700,7 +700,7 @@ export default function Workspace({ me }: { me: Profile }) {
                     {show("email") ? <td><span className="clip w-email" title={c.email}>{c.email ? <a href={`mailto:${c.email}`}>{c.email}</a> : null}</span></td> : null}
                     {show("phone") ? <td className="mono nowrap">{c.phone}</td> : null}
                     {show("address") ? <td><span className="clip w-address" title={c.address ?? ""}>{c.address}</span></td> : null}
-                    {show("services") ? <td><span className="clip w-svc" title={c.services.map(svcLabel).join(", ")}>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq === "monthly" ? " (monthly)" : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</span></td> : null}
+                    {show("services") ? <td><span className="clip w-svc" title={c.services.map(svcLabel).join(", ")}>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq !== "quarterly" ? ` (${c.bas_freq})` : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</span></td> : null}
                     {show("manager") ? <td className="nowrap">{personName(c.manager_id)}</td> : null}
                     {show("open") ? <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td> : null}</tr>); })}</tbody></table>
               <div className="count row" style={{ justifyContent: "space-between" }}><span>{list.length} client{list.length === 1 ? "" : "s"}</span>
@@ -740,7 +740,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <dt>Manager</dt><dd>{personName(c.manager_id) || "—"}</dd>
             <dt>Services</dt><dd>{c.services.length ? c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>) : "—"}</dd>
             {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, jobs created automatically` : "No automatic jobs"}</dd></> : null}
-            {c.services.some((s) => SVC[s]?.kind === "bas") ? <><dt>BAS cycle</dt><dd>{c.bas_freq === "monthly" ? "Monthly" : "Quarterly"}</dd></> : null}
+            {c.services.some((s) => SVC[s]?.kind === "bas") ? <><dt>BAS cycle</dt><dd>{c.bas_freq === "monthly" ? "Monthly" : c.bas_freq === "annual" ? "Annually" : "Quarterly"}</dd></> : null}
             {c.notes ? <><dt>Notes</dt><dd style={{ whiteSpace: "pre-wrap" }}>{c.notes}</dd></> : null}
             <dt>Last change</dt><dd className="note">{fmtDate(c.updated_at)}{c.updated_by ? ` by ${personName(c.updated_by)}` : ""}</dd>
           </dl></div>
@@ -1008,7 +1008,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
     if (ok && !job && canRepeat && repeat && !alreadyRepeats && client) {
       const services = client.services.includes(v.service) ? client.services : [...client.services, v.service];
       const upd = v.service === "bas"
-        ? { services, bas_freq: /^Q/.test(v.period) ? "quarterly" : "monthly" }
+        ? { services, bas_freq: /^Q/.test(v.period) ? "quarterly" : /^Annual/i.test(v.period) ? "annual" : "monthly" }
         : { services, payroll_freq: payFreq, payroll_anchor: payAnchor || (/^Pay /.test(v.period) ? v.due_date : "") || null };
       await save(() => supabase.from("clients").update(upd).eq("id", client.id), "Job created and set to repeat automatically");
     }
@@ -1058,7 +1058,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
             <option value="__own">Other (type your own)…</option>
           </select>}</label>
         {canRepeat ? <div className="full repeatbox">
-          {alreadyRepeats ? <span className="note">✓ This client is already set up for automatic {v.service === "bas" ? `${client?.bas_freq === "monthly" ? "monthly" : "quarterly"} BAS` : `${client?.payroll_freq} payroll`} jobs. The next one is created by itself.</span> : <>
+          {alreadyRepeats ? <span className="note">✓ This client is already set up for automatic {v.service === "bas" ? `${client?.bas_freq ?? "quarterly"} BAS` : `${client?.payroll_freq} payroll`} jobs. The next one is created by itself.</span> : <>
             <label className="row" style={{ gap: 8, fontWeight: 600 }}><input id="m-repeat" type="checkbox" checked={repeat} onChange={(e) => setRepeat(e.target.checked)} /> Repeat automatically for this client</label>
             {repeat && v.service === "bas" ? <span className="note">The next {/^Q/.test(v.period) || !v.period ? "quarter's" : "month's"} BAS job is created by itself the day after that period ends{/^Q/.test(v.period) || !v.period ? " (e.g. Q2 FY27 appears on 1 Jan 2027)" : ""}.</span> : null}
             {repeat && v.service === "payroll" ? <div className="row">
@@ -1128,7 +1128,7 @@ function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, s
       <div className="body">
         <p className="full hint" style={{ margin: 0 }}>Pick a service and period. Every client you provide that service to is listed; untick any you don&apos;t want. Clients that already have this job are skipped.</p>
         <label className="f">Service<select id="b-service" value={service} onChange={(e) => { setService(e.target.value); setDue(null); setUnticked(new Set()); }}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
-        {isBas ? <label className="f">BAS cycle<select id="b-freq" value={p.freq} onChange={(e) => change({ freq: e.target.value as PeriodInput["freq"] })}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option></select></label> : null}
+        {isBas ? <label className="f">BAS cycle<select id="b-freq" value={p.freq} onChange={(e) => change({ freq: e.target.value as PeriodInput["freq"] })}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option><option value="annual">Annually</option></select></label> : null}
         {!monthly && kind !== "custom" ? <label className="f">{kind === "fbt" ? "FBT year ending 31 March" : "Financial year"}<select id="b-fy" value={p.fy} onChange={(e) => change({ fy: Number(e.target.value) })}>{[fy - 2, fy - 1, fy, fy + 1].map((y) => <option key={y} value={y}>{kind === "fbt" ? `FBT ${y}` : `FY${y} (Jul ${y - 1} – Jun ${y})`}</option>)}</select></label> : null}
         {isBas && p.freq === "quarterly" ? <label className="f">Quarter<select id="b-q" value={p.q} onChange={(e) => change({ q: Number(e.target.value) })}>{[1, 2, 3, 4].map((q) => <option key={q} value={q}>Q{q} ({["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})</option>)}</select></label> : null}
         {monthly ? <label className="f">Month<input id="b-month" type="month" value={p.month} onChange={(e) => change({ month: e.target.value })} /></label> : null}
@@ -1210,7 +1210,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
         <label className="f full">Address<input id="c-address" autoComplete="off" value={v.address} onChange={set("address")} placeholder="e.g. 12 George St, Parramatta NSW 2150" /></label>
         <div className="f full">Services you provide<div className="checks">{SERVICES.map((s) => (
           <label key={s.id}><input type="checkbox" checked={v.services.includes(s.id)} onChange={(e) => setV({ ...v, services: e.target.checked ? [...v.services, s.id] : v.services.filter((x) => x !== s.id) })} /> {s.label}</label>))}</div></div>
-        <label className="f">BAS / IAS cycle<select id="c-basfreq" value={v.bas_freq} onChange={set("bas_freq")}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option></select></label>
+        <label className="f">BAS / IAS cycle<select id="c-basfreq" value={v.bas_freq} onChange={set("bas_freq")}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option><option value="annual">Annually</option></select></label>
         {v.services.includes("bas") ? <label className="f">BAS jobs go to<select id="c-basto" value={v.bas_assignee} onChange={set("bas_assignee")}><option value="">The client&apos;s manager</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label> : null}
         {hasPayroll ? <>
           <label className="f">Pay frequency<select id="c-payfreq" value={v.payroll_freq} onChange={set("payroll_freq")}><option value="">Not set (no automatic jobs)</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option></select></label>

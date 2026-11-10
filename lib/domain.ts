@@ -53,7 +53,7 @@ export const fmtDate = (s: string | null | undefined) => {
 };
 export const currentFY = () => { const d = new Date(); return d.getMonth() >= 6 ? d.getFullYear() + 1 : d.getFullYear(); };
 
-export interface PeriodInput { freq: "quarterly" | "monthly"; fy: number; q: number; month: string; text: string }
+export interface PeriodInput { freq: "quarterly" | "monthly" | "annual"; fy: number; q: number; month: string; text: string }
 
 /** Suggested due dates from the ATO tax agent lodgment program (electronic lodgment).
  *  They are a starting point; confirm each client's actual due date. */
@@ -71,6 +71,7 @@ export function suggestDue(service: string, p: PeriodInput): string {
     return ({ 1: iso(fy - 1, 11, 25), 2: iso(fy, 2, 28), 3: iso(fy, 5, 26), 4: iso(fy, 8, 25) } as Record<number, string>)[p.q] ?? "";
   }
   if (s.kind === "bas" && p.freq === "monthly") return nextMonth(p.month, 21);
+  if (s.kind === "bas" && p.freq === "annual") return iso(p.fy + 1, 5, 15); // with the tax return (tax agent date)
   if (s.kind === "monthly") return nextMonth(p.month, 7);
   if (s.kind === "annual") {
     if (s.rule === "may15") return iso(p.fy + 1, 5, 15);
@@ -85,6 +86,7 @@ export function periodLabel(service: string, p: PeriodInput): string {
   const s = SVC[service];
   if (!s) return "";
   if (s.kind === "bas" && p.freq === "quarterly") return `Q${p.q} FY${String(p.fy).slice(2)}`;
+  if (s.kind === "bas" && p.freq === "annual") return `Annual GST FY${String(p.fy).slice(2)}`;
   if ((s.kind === "bas" && p.freq === "monthly") || s.kind === "monthly") {
     if (!p.month) return "";
     const [y, m] = p.month.split("-").map(Number);
@@ -112,6 +114,8 @@ export function projectedWork(clients: { id: string; name: string; services: str
   const qb = clients.filter((c) => c.services.includes("bas") && c.bas_freq === "quarterly");
   if (qb.length) out.push({ key: "bas-q", label: `BAS Q${q} FY${String(fy).slice(2)}`, detail: `${qb.length} quarterly BAS client${qb.length === 1 ? "" : "s"}`, appears: after(qEndYear, qEndMonth), clients: qb.map((c) => c.name) });
   const mb = clients.filter((c) => c.services.includes("bas") && c.bas_freq === "monthly");
+  const ab = clients.filter((c) => c.services.includes("bas") && c.bas_freq === "annual");
+  if (ab.length && m === 6) out.push({ key: "bas-a", label: `Annual GST FY${String(fy).slice(2)}`, detail: `${ab.length} annual GST client${ab.length === 1 ? "" : "s"}`, appears: iso(y, 7, 1), clients: ab.map((c) => c.name) });
   if (mb.length) out.push({ key: "bas-m", label: `BAS ${MONTHS[m - 1]} ${y}`, detail: `${mb.length} monthly BAS client${mb.length === 1 ? "" : "s"}`, appears: after(y, m), clients: mb.map((c) => c.name) });
   // Payroll pay days in the next couple of weeks (after today).
   const dnumL = (s: string) => { const [a, b, c] = s.split("-").map(Number); return Date.UTC(a, b - 1, c) / 864e5; };
@@ -152,7 +156,11 @@ export function clientUpcoming(c: { services: string[]; bas_freq: string; payrol
   const add = (u: Upcoming) => { if (!has.has(`${u.service}|${u.period}`) && u.appears > today && dn(u.appears) <= horizon) out.push(u); };
   const after = (yy: number, mm: number) => (mm === 12 ? iso(yy + 1, 1, 1) : iso(yy, mm + 1, 1));
   if (c.services.includes("bas")) {
-    if (c.bas_freq === "monthly") {
+    if (c.bas_freq === "annual") {
+      const fy = m >= 7 ? y + 1 : y;
+      const p: PeriodInput = { freq: "annual", fy, q: 0, month: "", text: "" };
+      add({ key: `bas-a-${fy}`, service: "bas", period: periodLabel("bas", p), appears: iso(fy, 7, 1), due: suggestDue("bas", p) });
+    } else if (c.bas_freq === "monthly") {
       for (let k = 0; k < 5; k++) {
         const mm = ((m - 1 + k) % 12) + 1, yy = y + Math.floor((m - 1 + k) / 12);
         const p: PeriodInput = { freq: "monthly", fy: 0, q: 0, month: `${yy}-${pad(mm)}`, text: "" };
@@ -215,8 +223,10 @@ export function periodOptions(service: string, client?: { bas_freq?: string; pay
       q--; if (q < 1) { q = 4; fy--; }
     }
     const monthly = months(8, 1).map((o) => ({ ...o, due: suggestDue(service, { freq: "monthly", fy: 0, q: 0, month: monthISO(o.label), text: "" }) }));
-    const qg = { label: "Quarterly", options: quarters }, mg = { label: "Monthly", options: monthly };
-    return client?.bas_freq === "monthly" ? [mg, qg] : [qg, mg];
+    const fyNow = m >= 7 ? y + 1 : y;
+    const annual = [fyNow, fyNow - 1, fyNow - 2].map((f) => { const p: PeriodInput = { freq: "annual", fy: f, q: 0, month: "", text: "" }; return { label: periodLabel(service, p), due: suggestDue(service, p) }; });
+    const qg = { label: "Quarterly", options: quarters }, mg = { label: "Monthly", options: monthly }, ag = { label: "Annually", options: annual };
+    return client?.bas_freq === "monthly" ? [mg, qg, ag] : client?.bas_freq === "annual" ? [ag, qg, mg] : [qg, mg, ag];
   }
   if (s.kind === "monthly") {
     const groups: PeriodGroup[] = [];
