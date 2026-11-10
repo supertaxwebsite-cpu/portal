@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Client, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
+import type { Client, ClientLink, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import { periodOptions, clientUpcoming,
   ENTITIES, PRACTICES, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
+  RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
@@ -17,6 +18,7 @@ import { similarClients, type Similar } from "@/lib/dupes";
 import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
+import RelatedClients from "./RelatedClients";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
@@ -50,8 +52,8 @@ const CLIENT_COLS = [
 ];
 const DEFAULT_CLIENT_COLS = ["practice", "entity", "abn", "services", "manager", "open"];
 
-interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string; practice: string; entity: string; fy: string; quarter: string }
-const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", practice: "", entity: "", fy: "", quarter: "" };
+interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string; group: string; practice: string; entity: string; fy: string; quarter: string }
+const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", group: "", practice: "", entity: "", fy: "", quarter: "" };
 
 type Modal =
   | { kind: "job"; job?: Job; clientId?: string; service?: string }
@@ -82,6 +84,11 @@ export default function Workspace({ me }: { me: Profile }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [links, setLinks] = useState<ClientLink[]>([]);
+  const [linksMissing, setLinksMissing] = useState(false);
+  // Whole-group work on a client's page: ticked jobs and the status to move them to.
+  const [gsel, setGsel] = useState<Set<string>>(new Set());
+  const [gstatus, setGstatus] = useState<string>("");
   const [running, setRunning] = useState<JobTimer | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [timerBusy, setTimerBusy] = useState(false);
@@ -193,6 +200,9 @@ export default function Workspace({ me }: { me: Profile }) {
         fetchAll<Client>((a, b) => supabase.from("clients").select("*").order("name").range(a, b)),
         fetchAll<Job>((a, b) => supabase.from("jobs").select("*").order("due_date", { nullsFirst: false }).range(a, b)),
       ]);
+      // Related clients (empty until the database update that adds client_links has been run).
+      const { data: lk, error: lkErr } = await supabase.from("client_links").select("*").order("created_at");
+      setLinks((lk as ClientLink[] | null) ?? []); setLinksMissing(!!lkErr);
       const { data: t } = await supabase.from("job_timers").select("*").eq("user_id", me.id).is("ended_at", null).limit(1);
       setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
       const { data: sj, error: sjErr } = await supabase.rpc("started_jobs");
@@ -233,6 +243,7 @@ export default function Workspace({ me }: { me: Profile }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "job_timers" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "meetings" }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_links" }, refresh)
       .subscribe((status) => setLive(status === "SUBSCRIBED"));
     const onFocus = () => refresh();
     window.addEventListener("focus", onFocus);
@@ -282,6 +293,17 @@ export default function Workspace({ me }: { me: Profile }) {
     if (!r.ok) { say(d.error ?? "That didn't work. Try again.", true); return null; }
     load();
     return d;
+  }
+
+  /** Move several jobs (e.g. a whole client group) to one status in one go. */
+  async function applyGroupStatus(list: Job[]) {
+    const status = gstatus as StatusId;
+    if (!list.length || !ST[status]) return;
+    if (!window.confirm(`Change ${list.length} job${list.length === 1 ? "" : "s"} to "${ST[status].label}"?`)) return;
+    const ids = list.map((j) => j.id);
+    const ok = await save(() => supabase.from("jobs").update({ status }).in("id", ids), `${ids.length} job${ids.length === 1 ? "" : "s"} marked ${ST[status].label.toLowerCase()}`);
+    if (ok && status === "lodged") await supabase.from("jobs").update({ lodged_on: todayISO() }).in("id", ids).is("lodged_on", null);
+    if (ok) { setGsel(new Set()); setGstatus(""); }
   }
 
   async function setStatus(j: Job, status: StatusId) {
@@ -522,13 +544,14 @@ export default function Workspace({ me }: { me: Profile }) {
   const jobFYs = useMemo(() => [...new Set(jobs.flatMap((j) => periodFY(j.period).fys))].filter((y) => y > 2000 && y < 2100).sort((a, b) => b - a), [jobs]);
   const filteredJobs = useMemo(() => {
     const f = jf, q = f.q.trim().toLowerCase();
+    const inGroup = f.client && f.group ? clientGroup(f.client, links) : null;
     const base = f.status === "closed" ? jobs.filter((j) => !isOpen(j.status)) : f.status === "" || (ST[f.status] && !ST[f.status].open) ? jobs : openJobs;
     return base.filter((j) => {
       const has = (list: string, v: string | undefined | null) => !list || list.split(",").includes(v ?? "");
       if (!has(f.service, j.service)) return false;
       if (f.status === "review_any" && !(j.status === "review" || j.status === "to_lodge")) return false;
       if (ST[f.status] && j.status !== f.status) return false;
-      if (f.client && j.client_id !== f.client) return false;
+      if (f.client && (inGroup ? !inGroup.has(j.client_id) : j.client_id !== f.client)) return false;
       if (f.assignee === "__none") {
         if (j.assignee_id && profileById.get(j.assignee_id)?.active) return false;
         if (FINISHED.has(j.status)) return false; // nothing left to do on these
@@ -559,7 +582,7 @@ export default function Workspace({ me }: { me: Profile }) {
       }
       return true;
     }).sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999") || (clientById.get(a.client_id)?.name ?? "").localeCompare(clientById.get(b.client_id)?.name ?? ""));
-  }, [jf, jobs, openJobs, clientById, profileById]);
+  }, [jf, jobs, openJobs, clientById, profileById, links]);
 
   function JobsView() {
     const set = (k: keyof JobFilter) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setJf({ ...jf, [k]: e.target.value });
@@ -607,6 +630,7 @@ export default function Workspace({ me }: { me: Profile }) {
             ? <><option value="">Mine and unassigned</option><option value="__none">Unassigned</option></>
             : <><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>}</select>
           <ClientPicker id="jf-client" clients={clients} value={jf.client} emptyLabel="All clients" onChange={(id) => setJf({ ...jf, client: id })} style={{ minWidth: 200 }} />
+          {jf.client && links.some((l) => l.client_id === jf.client || l.related_id === jf.client) ? <label className="chip" style={{ whiteSpace: "nowrap" }}><input type="checkbox" id="jf-group" checked={!!jf.group} onChange={(e) => setJf({ ...jf, group: e.target.checked ? "1" : "" })} /> With related clients</label> : null}
           <button onClick={() => { setJf(NO_FILTER); setJsort({ k: "due", dir: 1 }); }}>Clear</button>
           <span className="clientcount"><strong>{list.length.toLocaleString()}</strong> {filtered ? "matching " : ""}job{list.length === 1 ? "" : "s"}</span>
         </div>
@@ -639,6 +663,8 @@ export default function Workspace({ me }: { me: Profile }) {
       && (!q || [c.name, c.abn, c.contact, c.email, c.phone, c.address ?? ""].join(" ").toLowerCase().includes(q) || (qd.length >= 4 && /^\d+$/.test(qd) && [c.abn, c.phone].join(" ").replace(/\s+/g, "").includes(qd))));
     const show = (id: string) => ccols.includes(id);
     const filtered = !!(q || cpractice || cservice || centity.length);
+    const linkCount = new Map<string, number>();
+    links.forEach((l) => { linkCount.set(l.client_id, (linkCount.get(l.client_id) ?? 0) + 1); linkCount.set(l.related_id, (linkCount.get(l.related_id) ?? 0) + 1); });
     const openBy = new Map<string, Job[]>();
     openJobs.forEach((j) => openBy.set(j.client_id, [...(openBy.get(j.client_id) ?? []), j]));
     return (
@@ -666,7 +692,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <>
               <table className="clienttable"><thead><tr><th>Client</th>{CLIENT_COLS.filter((col) => show(col.id)).map((col) => <th key={col.id} style={col.id === "open" ? { textAlign: "right" } : undefined}>{col.label}</th>)}</tr></thead>
                 <tbody>{list.map((c) => { const oj = openBy.get(c.id) ?? []; const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
-                  <tr key={c.id}><td className="client"><button className="link clip" title={c.name} onClick={() => openClient(c.id)}>{c.name}</button>{c.contact && !show("contact") ? <div className="note clip" title={c.contact}>{c.contact}</div> : null}</td>
+                  <tr key={c.id}><td className="client"><button className="link clip" title={c.name} onClick={() => openClient(c.id)}>{c.name}</button>{linkCount.get(c.id) ? <span className="linkmark" title={`Linked to ${linkCount.get(c.id)} related client${linkCount.get(c.id) === 1 ? "" : "s"}`}>🔗 {linkCount.get(c.id)}</span> : null}{c.contact && !show("contact") ? <div className="note clip" title={c.contact}>{c.contact}</div> : null}</td>
                     {show("practice") ? <td>{practiceOf(c)}</td> : null}
                     {show("entity") ? <td>{c.entity}</td> : null}
                     {show("abn") ? <td className="mono nowrap">{c.abn}</td> : null}
@@ -692,6 +718,10 @@ export default function Workspace({ me }: { me: Profile }) {
     const js = jobs.filter((j) => j.client_id === c.id).sort((a, b) => (b.due_date ?? "").localeCompare(a.due_date ?? ""));
     const openJ = js.filter((j) => isOpen(j.status)), closedJ = js.filter((j) => !isOpen(j.status));
     const upcoming = clientUpcoming(c, js);
+    const group = clientGroup(c.id, links);
+    const groupJobs = group.size > 1 ? openJobs.filter((j) => group.has(j.client_id)).sort((a, b) => clientName(a.client_id).localeCompare(clientName(b.client_id)) || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")) : [];
+    const picked = groupJobs.filter((j) => gsel.has(j.id));
+    const allPicked = groupJobs.length > 0 && picked.length === groupJobs.length;
     const Table = ({ list }: { list: Job[] }) => (
       <table><thead><tr><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
         <tbody>{list.map((j) => (
@@ -715,6 +745,29 @@ export default function Workspace({ me }: { me: Profile }) {
             <dt>Last change</dt><dd className="note">{fmtDate(c.updated_at)}{c.updated_by ? ` by ${personName(c.updated_by)}` : ""}</dd>
           </dl></div>
           <div className="section">
+            <RelatedClients key={`rel-${c.id}`} client={c} clients={clients} links={links} supabase={supabase} say={say} missing={linksMissing} onOpen={openClient} onChanged={load} />
+            {group.size > 1 ? <div id="group-work"><h2>Whole group: pending work ({groupJobs.length} job{groupJobs.length === 1 ? "" : "s"} across {group.size} clients)</h2>
+              <div className="tablebox solo">
+                {canManage && groupJobs.length ? <div className="toolbar groupbar">
+                  <span className="note"><strong>{picked.length}</strong> ticked</span>
+                  <select id="group-status" aria-label="New status for ticked jobs" value={gstatus} onChange={(e) => setGstatus(e.target.value)}>
+                    <option value="">Change status to…</option>
+                    {STATUSES.filter((s) => s.id !== "internal_query").map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                  <button type="button" className="primary" disabled={!picked.length || !gstatus} onClick={() => applyGroupStatus(picked)}>Apply to ticked jobs</button>
+                  <button type="button" onClick={() => gotoJobs({ client: c.id, group: "1" })}>Open in Jobs</button>
+                </div> : null}
+                {groupJobs.length ? <table><thead><tr>
+                  {canManage ? <th style={{ width: 32 }}><input type="checkbox" aria-label="Tick all" checked={allPicked} onChange={() => setGsel(allPicked ? new Set() : new Set(groupJobs.map((j) => j.id)))} /></th> : null}
+                  <th>Client</th><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
+                  <tbody>{groupJobs.map((j) => <tr key={j.id}>
+                    {canManage ? <td><input type="checkbox" aria-label={`Tick ${clientName(j.client_id)} ${svcLabel(j.service)} ${j.period}`} checked={gsel.has(j.id)} onChange={() => { const n = new Set(gsel); if (n.has(j.id)) n.delete(j.id); else n.add(j.id); setGsel(n); }} /></td> : null}
+                    <td>{j.client_id === c.id ? <strong>{clientName(j.client_id)}</strong> : <button className="link" onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button>}</td>
+                    <td>{svcLabel(j.service)}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
+                    <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td>
+                    <td><button onClick={() => setModal({ kind: "job", job: j })}>Edit</button></td></tr>)}</tbody></table>
+                  : <div className="empty">No pending work for anyone in this group.</div>}
+              </div></div> : null}
             <ClientNotes key={c.id} clientId={c.id} meId={me.id} isManager={canManage} canDelete={canDelete} supabase={supabase} personName={personName} say={say} />
             <div><h2>Open jobs ({openJ.length})</h2><div className="tablebox solo">{openJ.length ? <Table list={openJ} /> : <div className="empty">No open jobs for this client.</div>}</div></div>
             {upcoming.length ? <div><h2>Upcoming jobs ({upcoming.length})</h2><div className="tablebox solo"><table><thead><tr><th>Service</th><th>Period</th><th>Created on</th><th>Due</th></tr></thead>

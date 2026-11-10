@@ -277,3 +277,32 @@ export function periodFY(period: string): { fys: number[]; q: number | null } {
   if (!fys.size) for (const x of p.matchAll(/\b(20\d{2})\b/g)) fys.add(Number(x[1]));
   return { fys: [...fys], q: null };
 }
+
+/* ---------- Related clients ---------- */
+// A link reads "<client> is the <of> <related>". `has` is how it reads from the other side.
+export const RELATIONS: { id: string; of: string; has: string }[] = [
+  { id: "director", of: "Director of", has: "Director" },
+  { id: "shareholder", of: "Shareholder of", has: "Shareholder" },
+  { id: "spouse", of: "Spouse / partner of", has: "Spouse / partner" },
+  { id: "trustee", of: "Trustee of", has: "Trustee" },
+  { id: "beneficiary", of: "Beneficiary of", has: "Beneficiary" },
+  { id: "member", of: "Member of", has: "Member" },
+  { id: "partner", of: "Business partner of", has: "Business partner" },
+  { id: "parent", of: "Parent of", has: "Child" },
+  { id: "other", of: "Related to", has: "Related" },
+];
+export const relationText = (relation: string, fromThisSide: boolean) => {
+  const r = RELATIONS.find((x) => x.id === relation) ?? RELATIONS[RELATIONS.length - 1];
+  return fromThisSide ? r.of : r.has;
+};
+/** Every client connected to `id` through links (including `id`). */
+export function clientGroup(id: string, links: { client_id: string; related_id: string }[]): Set<string> {
+  const adj = new Map<string, string[]>();
+  for (const l of links) {
+    adj.set(l.client_id, [...(adj.get(l.client_id) ?? []), l.related_id]);
+    adj.set(l.related_id, [...(adj.get(l.related_id) ?? []), l.client_id]);
+  }
+  const seen = new Set([id]); const todo = [id];
+  while (todo.length) for (const n of adj.get(todo.pop() as string) ?? []) if (!seen.has(n)) { seen.add(n); todo.push(n); }
+  return seen;
+}

@@ -96,3 +96,6 @@ export interface JobTimer {
   started_at: string;
   ended_at: string | null;
 }
+
+/** "<client_id> is the <relation> of <related_id>", e.g. Jane is the director of ABC Pty Ltd. */
+export interface ClientLink { id: string; client_id: string; related_id: string; relation: string; created_by: string | null; created_at: string }

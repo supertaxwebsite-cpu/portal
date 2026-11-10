@@ -1729,3 +1729,39 @@ begin
 end $$;
 revoke all on function public.import_clients(jsonb) from public, anon;
 grant execute on function public.import_clients(jsonb) to authenticated;
+
+-- ============================================================
+-- Related clients: link a company to its directors, husband and wife, a trust to its trustee, etc.
+-- Linked clients form a group, so the whole group's pending work can be seen and finished together.
+-- A link reads "<client_id> is the <relation> of <related_id>", e.g. "Jane is the director of ABC Pty Ltd".
+-- ============================================================
+create table if not exists public.client_links (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references public.clients (id) on delete cascade,
+  related_id uuid not null references public.clients (id) on delete cascade,
+  relation text not null default 'other'
+    check (relation in ('director', 'shareholder', 'spouse', 'partner', 'trustee', 'beneficiary', 'member', 'parent', 'other')),
+  created_by uuid references public.profiles (id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  check (client_id <> related_id)
+);
+-- One link per pair of clients (either way round).
+create unique index if not exists client_links_pair_idx on public.client_links (least(client_id, related_id), greatest(client_id, related_id));
+create index if not exists client_links_related_idx on public.client_links (related_id);
+alter table public.client_links enable row level security;
+drop policy if exists "members read client links" on public.client_links;
+create policy "members read client links" on public.client_links
+  for select to authenticated using (public.is_active_member());
+drop policy if exists "members add client links" on public.client_links;
+create policy "members add client links" on public.client_links
+  for insert to authenticated with check (public.is_active_member());
+drop policy if exists "members remove client links" on public.client_links;
+create policy "members remove client links" on public.client_links
+  for delete to authenticated using (public.is_active_member());
+revoke all on public.client_links from anon;
+grant select, insert, delete on public.client_links to authenticated;
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.client_links; exception when duplicate_object then null; end;
+  end if;
+end $$;
