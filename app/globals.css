@@ -441,3 +441,7 @@ main.wrap.wide{max-width:1640px}
 .related .reladd { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .groupbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .linkmark { font-size: 11px; color: var(--muted, #667); margin-left: 6px; white-space: nowrap; }
+
+/* Prospects */
+.navbadge{display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--danger);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+table.prospects tr.muted td{opacity:.65}

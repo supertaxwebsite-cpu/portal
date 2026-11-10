@@ -1931,3 +1931,62 @@ begin
 end $$;
 revoke all on function public.hand_signing(uuid, uuid, text) from public, anon;
 grant execute on function public.hand_signing(uuid, uuid, text) to authenticated;
+
+-- ============================================================
+-- Prospects: possible new clients still in discussion. Kept apart from the client list
+-- and job counts. "Convert to client" creates the client and marks the prospect Won.
+-- ============================================================
+create table if not exists public.prospects (
+  id uuid primary key default gen_random_uuid(),
+  practice text not null default 'Supertax' check (practice in ('Supertax', 'Titantax', 'Workpaper', 'Monarch Accounting')),
+  name text not null check (length(trim(name)) > 0 and length(name) <= 200),
+  entity text not null default 'Individual',
+  contact text not null default '',
+  email text not null default '',
+  phone text not null default '',
+  services text[] not null default '{}',
+  fee numeric(12, 2) check (fee is null or fee >= 0),
+  source text not null default '',
+  stage text not null default 'new' check (stage in ('new', 'contacted', 'meeting', 'proposal', 'won', 'lost')),
+  follow_up date,
+  owner_id uuid references public.profiles (id) on delete set null,
+  notes text not null default '' check (length(notes) <= 8000),
+  lost_reason text not null default '',
+  client_id uuid references public.clients (id) on delete set null,
+  created_by uuid references public.profiles (id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists prospects_stage_idx on public.prospects (stage, follow_up);
+alter table public.prospects enable row level security;
+drop policy if exists "members read prospects" on public.prospects;
+create policy "members read prospects" on public.prospects
+  for select to authenticated using (public.is_active_member());
+drop policy if exists "members add prospects" on public.prospects;
+create policy "members add prospects" on public.prospects
+  for insert to authenticated with check (public.is_active_member());
+drop policy if exists "members edit prospects" on public.prospects;
+create policy "members edit prospects" on public.prospects
+  for update to authenticated using (public.is_active_member()) with check (public.is_active_member());
+drop policy if exists "delete prospects with delete access" on public.prospects;
+create policy "delete prospects with delete access" on public.prospects
+  for delete to authenticated using (public.can_delete_data());
+revoke all on public.prospects from anon;
+grant select, insert, update, delete on public.prospects to authenticated;
+
+create or replace function public.stamp_prospect() returns trigger
+language plpgsql as $$
+begin
+  new.updated_at := now();
+  if tg_op = 'UPDATE' then new.created_at := old.created_at; new.created_by := old.created_by; end if;
+  return new;
+end $$;
+drop trigger if exists prospects_stamp on public.prospects;
+create trigger prospects_stamp before insert or update on public.prospects
+  for each row execute function public.stamp_prospect();
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.prospects; exception when duplicate_object then null; end;
+  end if;
+end $$;

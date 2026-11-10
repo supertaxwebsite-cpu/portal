@@ -19,14 +19,15 @@ import Timesheet from "./Timesheet";
 import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
 import RelatedClients from "./RelatedClients";
+import ProspectsView from "./Prospects";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
-type View = "overview" | "jobs" | "payroll" | "clients" | "timesheet" | "team" | "meetings";
+type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings";
 /** Statuses where nothing more needs doing: kept out of the unassigned list. */
 const FINISHED = new Set(["done", "sent_for_sign", "lodged"]);
-const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "timesheet", "team", "meetings"];
+const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "prospects", "timesheet", "team", "meetings"];
 /** A dropdown of tick boxes: pick one or several values (stored comma-separated; empty means all). */
 function MultiPick({ id, all, value, options, onChange }: { id: string; all: string; value: string; options: { v: string; l: string; short?: string }[]; onChange: (v: string) => void }) {
   const picked = value ? value.split(",") : [];
@@ -87,6 +88,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [links, setLinks] = useState<ClientLink[]>([]);
   const [linksMissing, setLinksMissing] = useState(false);
+  const [prospectsDue, setProspectsDue] = useState(0); // my open prospects with a follow-up due
   const [navTick, setNavTick] = useState(0); // bumps on each top-menu click so Payroll/Timesheet/Meetings start fresh
   // Whole-group work on a client's page: ticked jobs and the status to move them to.
   const [gsel, setGsel] = useState<Set<string>>(new Set());
@@ -205,6 +207,9 @@ export default function Workspace({ me }: { me: Profile }) {
       // Related clients (empty until the database update that adds client_links has been run).
       const { data: lk, error: lkErr } = await supabase.from("client_links").select("*").order("created_at");
       setLinks((lk as ClientLink[] | null) ?? []); setLinksMissing(!!lkErr);
+      const { count: pd } = await supabase.from("prospects").select("id", { count: "exact", head: true })
+        .eq("owner_id", me.id).in("stage", ["new", "contacted", "meeting", "proposal"]).lte("follow_up", todayISO());
+      setProspectsDue(pd ?? 0);
       const { data: t } = await supabase.from("job_timers").select("*").eq("user_id", me.id).is("ended_at", null).limit(1);
       setRunning(((t as JobTimer[] | null) ?? [])[0] ?? null);
       const { data: sj, error: sjErr } = await supabase.rpc("started_jobs");
@@ -256,7 +261,7 @@ export default function Workspace({ me }: { me: Profile }) {
   useEffect(() => {
     const route = () => {
       const h = window.location.hash.replace("#", "") as View;
-      setView(VIEWS.includes(h) && ((h !== "team" && h !== "meetings") || canSeeTeam) ? h : "overview");
+      setView(VIEWS.includes(h) && ((h !== "team" && h !== "meetings" && h !== "prospects") || canSeeTeam) ? h : "overview");
     };
     route();
     window.addEventListener("hashchange", route);
@@ -846,12 +851,13 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   return (
-    <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
+    <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? JobsView() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => setModal({ kind: "job", job: j })} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
+      {view === "prospects" && canSeeTeam ? <ProspectsView key={navTick} supabase={supabase} meId={me.id} team={team} clients={clients} canDelete={canDelete} personName={personName} say={say} onOpenClient={openClient} onChanged={load} /> : null}
       {view === "timesheet" ? <Timesheet key={navTick} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
       {view === "team" && canSeeTeam ? <TeamView /> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
@@ -896,14 +902,14 @@ export default function Workspace({ me }: { me: Profile }) {
 }
 
 /* ---------- layout ---------- */
-function Shell({ me, view, go, live, showTeam, bell, wide, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; wide?: boolean; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
+function Shell({ me, view, go, live, showTeam, bell, wide, badges, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; wide?: boolean; badges?: Partial<Record<View, number>>; children: React.ReactNode }) {
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
         <div className="brand"><img src="/logo.webp" alt="Supertax" width={136} height={34} /><small>Practice Desk</small></div>
         <nav className="tabs" aria-label="Sections">{tabs.map(([v, l]) => (
-          <a key={v} href={`#${v}`} aria-current={view === v ? "page" : undefined} onClick={(e) => { e.preventDefault(); go(v); }}>{l}</a>))}</nav>
+          <a key={v} href={`#${v}`} aria-current={view === v ? "page" : undefined} onClick={(e) => { e.preventDefault(); go(v); }}>{l}{badges?.[v] ? <span className="navbadge" title={`${badges[v]} follow-up${badges[v] === 1 ? "" : "s"} due`}>{badges[v]}</span> : null}</a>))}</nav>
         <div className="userbox">{bell}<span><strong>{me.full_name}</strong></span><SignOutButton /></div>
       </div></header>
       <IdleSignOut />
