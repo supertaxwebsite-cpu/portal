@@ -1060,7 +1060,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
         <button type="button" role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}>Files{fileCount ? ` · ${fileCount}` : ""}</button>
         <button type="button" role="tab" aria-selected={tab === "email"} className={tab === "email" ? "on" : ""} onClick={() => setTab("email")}>Email client</button>
       </div> : null}
-      {job && tab === "email" ? <div className="jobemailwrap"><JobEmail job={job} client={client} meName={meName} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onSent={onClose} /></div> : null}
+      {job && tab === "email" ? <div className="jobemailwrap"><JobEmail job={job} client={client} clients={allClients} meName={meName} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onSent={onClose} /></div> : null}
       {job ? <div style={{ display: tab === "files" ? "block" : "none" }}><JobFiles jobId={job.id} meId={meId} canDelete={canDelete} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onCount={setFileCount} /></div> : null}
       {job ? <div style={{ display: tab === "history" ? "block" : "none" }}><JobHistory jobId={job.id} readOnly={readOnly} meId={meId} canDelete={canDelete} supabase={supabase} personName={personName} say={say} onSummary={setSum} /></div> : null}
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>

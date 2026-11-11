@@ -4,6 +4,7 @@ import type { createClient } from "@/lib/supabase/client";
 import type { Client, Job } from "@/lib/types";
 import { svcLabel } from "@/lib/domain";
 import type { JobFile } from "./JobFiles";
+import ClientPicker from "./ClientPicker";
 
 type SB = ReturnType<typeof createClient>;
 interface Sent { id: string; sent_by: string | null; to_addr: string[]; cc_addr: string[]; subject: string; body: string; files: string[]; created_at: string }
@@ -11,8 +12,8 @@ const when = (s: string) => new Date(s).toLocaleString("en-AU", { day: "numeric"
 const firstName = (s: string) => s.trim().split(/\s+/)[0] ?? "";
 
 /** Email the client about this job (e.g. a query), from the practice mailbox, with the job's files attached. */
-export default function JobEmail({ job, client, meName, readOnly, supabase, personName, say, onSent }: {
-  job: Job; client?: Client; meName: string; readOnly?: boolean; supabase: SB;
+export default function JobEmail({ job, client, clients = [], meName, readOnly, supabase, personName, say, onSent }: {
+  job: Job; client?: Client; clients?: Client[]; meName: string; readOnly?: boolean; supabase: SB;
   personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onSent: () => void;
 }) {
   const [cfg, setCfg] = useState<{ configured: boolean; from: string; cc: string } | null>(null);
@@ -45,6 +46,9 @@ export default function JobEmail({ job, client, meName, readOnly, supabase, pers
     fetch("/api/email").then((r) => r.json()).then((d) => { setCfg({ configured: !!d.configured, from: d.from ?? "", cc: d.cc ?? "" }); setV((x) => (x.cc ? x : { ...x, cc: d.cc ?? "" })); }).catch(() => setCfg({ configured: false, from: "", cc: "" }));
   }, [load]);
 
+  const withEmail = clients.filter((c) => c.email?.trim()).map((c) => ({ ...c, name: `${c.name} · ${c.email}` }));
+  const hasAddr = (list: string, a: string) => list.toLowerCase().split(/[,;\s]+/).includes(a.trim().toLowerCase());
+  const addTo = (a: string) => setV((x) => (hasAddr(x.to, a) ? x : { ...x, to: [x.to.trim(), a.trim()].filter(Boolean).join(", ") }));
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setV({ ...v, [k]: e.target.value });
   const unfinished = /\n\d\.\s*\n/.test(v.body + "\n");
 
@@ -80,7 +84,11 @@ export default function JobEmail({ job, client, meName, readOnly, supabase, pers
       {cfg && !cfg.configured ? <div className="hint lockednote" style={{ marginBottom: 12 }}>
         Sending straight from the portal isn&apos;t switched on yet. Until it is, <strong>Open in my email app</strong> starts the email in Outlook with everything filled in. Attach the files there yourself; the Download links are below.</div> : null}
       {readOnly ? null : <div className="body" style={{ padding: 0 }}>
-        <label className="f full">To<input id="em-to" value={v.to} onChange={set("to")} placeholder="client@example.com (separate several with commas)" /></label>
+        <div className="f full"><label className="f">To<input id="em-to" value={v.to} onChange={set("to")} placeholder="Type an email address, or pick a client below (separate several with commas)" /></label>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+            {client?.email && !hasAddr(v.to, client.email) ? <button type="button" className="chip" onClick={() => addTo(client.email)}>+ {client.email} <span className="note">(this client)</span></button> : null}
+            <ClientPicker id="em-pick" clients={withEmail} value="" onChange={(id) => { const c = withEmail.find((x) => x.id === id); if (c) addTo(c.email); }} placeholder="Add a saved client email: search by name or email…" style={{ minWidth: 300, flex: 1 }} />
+          </div></div>
         <label className="f full">CC<input id="em-cc" value={v.cc} onChange={set("cc")} placeholder="info@supertax.com.au" /></label>
         <label className="f full">Subject<input id="em-subject" value={v.subject} onChange={set("subject")} /></label>
         <label className="f full">Message<textarea id="em-body" rows={11} value={v.body} onChange={set("body")} /></label>
