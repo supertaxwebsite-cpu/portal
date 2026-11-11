@@ -15,7 +15,7 @@ function Due({ date }: { date: string | null }) {
 }
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onSentForSign, onFollowedUp, onHandSign, onAnswer, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onSentForSign, onFollowedUp, onHandSign, onComplete, onAnswer, onOpen, onSeeAll }: {
   jobs: Job[];
   meetings?: Meeting[];
   onOpenMeeting?: (m: Meeting) => void;
@@ -29,6 +29,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
   busy: boolean;
   onStart: (j: Job) => void;
   onHandSign?: (j: Job) => void;
+  onComplete?: (j: Job) => void;
   onStop: () => void;
   onStatus: (j: Job, s: StatusId) => void;
   onSubmit: (j: Job) => void;
@@ -89,6 +90,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button disabled={busy} onClick={() => onStart(j)} title="Time goes to your timesheet">Start</button>}
                 {onHandSign ? <button disabled={busy} onClick={() => onHandSign(j)} title="Give this job to a team member to send for signing">Hand to…</button> : null}
+                {onComplete ? <button disabled={busy} onClick={() => onComplete(j)} title="Nothing to sign: close the job as Completed">No signing needed, complete</button> : null}
                 <button className="primary" disabled={busy} onClick={() => onSentForSign?.(j)}>Sent to client for signing</button>
               </div> : signing ? <div className="row actions">
                 {on ? <>
@@ -107,6 +109,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                 </> : <button disabled={busy} onClick={() => onStart(j)}>Start review</button>}
                 {j.service === "payroll" ? <button className="primary" onClick={() => onPayroll?.()}>Sign off in Payroll</button> : <>
                   <button disabled={busy} onClick={() => onSendBack?.(j)}>Send back</button>
+                  {onComplete ? <button disabled={busy} onClick={() => onComplete(j)} title="Approve and close the job as Completed, when nothing needs signing">Approve &amp; complete</button> : null}
                   <button className="primary" disabled={busy} onClick={() => onApprove?.(j)}>Approve</button>
                 </>}
               </div> : away ? <div className="row actions"><span className="pill danger">With {personName(j.assignee_id)} for internal query</span></div> : <div className="row actions">

@@ -357,6 +357,12 @@ export default function Workspace({ me }: { me: Profile }) {
     if (running?.job_id === j.id && !(await stopJob())) return;
     await save(() => supabase.from("jobs").update({ status: "to_lodge" }).eq("id", j.id), "Approved. It's in your My jobs as Ready for signing");
   }
+  /** Nothing to sign: close the job straight away as Completed. */
+  async function completeNoSign(j: Job) {
+    if (!window.confirm(`Mark ${clientName(j.client_id)} · ${svcLabel(j.service)} ${j.period} as Completed? Use this when nothing needs to be signed by the client.`)) return;
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    await save(() => supabase.from("jobs").update({ status: "done" }).eq("id", j.id), `${clientName(j.client_id)} marked completed`);
+  }
   async function sendBackReview(j: Job) {
     const note = window.prompt(`What does ${personName(j.assignee_id) || "the preparer"} need to fix? (optional)`, "");
     if (note === null) return;
@@ -519,7 +525,7 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="grid2">
           <div className="section">
             <MyJobs jobs={openJobs.filter(myJobFilter)}
-              onSigned={markSigned} onSentForSign={markSentForSign} onFollowedUp={followedUp} onHandSign={(j) => setModal({ kind: "handsign", job: j })}
+              onSigned={markSigned} onSentForSign={markSentForSign} onFollowedUp={followedUp} onComplete={completeNoSign} onHandSign={(j) => setModal({ kind: "handsign", job: j })}
               onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={me.role === "staff"} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}
