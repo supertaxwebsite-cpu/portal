@@ -1116,8 +1116,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
       </div>
       <footer style={{ display: tab === "email" ? "none" : undefined }}>
         {job && canDeleteJob ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}
-        <div className="row">{job && isStaff && !readOnly && isOpen(job.status) && job.reviewer_id !== meId && (job.assignee_id === meId || !job.reviewer_id) ? <button type="button" disabled={busy} title="Make yourself the reviewer, so you can approve it and move it on yourself" onClick={async () => { if (await save(() => supabase.rpc("review_myself", { p_job: job.id }), "You're the reviewer now. You can change its status and approve it yourself")) onClose(); }}>Review it myself</button> : null}
-          {job && staffLock && !job.assignee_id && !readOnly ? <button type="button" disabled={busy} onClick={async () => { if (await save(() => supabase.from("jobs").update({ assignee_id: meId }).eq("id", job.id), "The job is yours. It's in My jobs now")) onClose(); }}>Take this job</button> : null}
+        <div className="row">{job && staffLock && !job.assignee_id && !readOnly ? <button type="button" disabled={busy} onClick={async () => { if (await save(() => supabase.from("jobs").update({ assignee_id: meId }).eq("id", job.id), "The job is yours. It's in My jobs now")) onClose(); }}>Take this job</button> : null}
           <button type="button" onClick={onClose}>{readOnly ? "Close" : "Cancel"}</button>{readOnly ? null : <button type="submit" className="primary" disabled={busy}>{job ? "Save changes" : "Create job"}</button>}</div>
       </footer>
     </form></Overlay>
@@ -1411,7 +1410,8 @@ function SubmitModal({ job, me, team, suggested, clientName, run, onClose }: {
   job: Job; me: Profile; team: Person[]; suggested: string | null; clientName: (id: string) => string;
   run: (to: string, note: string) => Promise<void>; onClose: () => void;
 }) {
-  const others = [...team.filter((p) => p.id !== me.id), { id: me.id, full_name: "Myself", title: "I'll review it" } as Person];
+  // "Myself" only when a manager has made you this job's reviewer.
+  const others = [...team.filter((p) => p.id !== me.id), ...(job.reviewer_id === me.id ? [{ id: me.id, full_name: "Myself", title: "I'm the reviewer" } as Person] : [])];
   const [to, setTo] = useState(suggested && others.some((p) => p.id === suggested) ? suggested : "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);

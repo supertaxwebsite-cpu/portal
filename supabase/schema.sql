@@ -2108,28 +2108,13 @@ create policy "see emails of jobs you can see" on public.job_emails for select t
 revoke all on public.job_emails from anon, authenticated;
 grant select on public.job_emails to authenticated;
 
+
 -- ============================================================
--- Staff can be their own reviewer: take the review of a job they prepared (or one with no reviewer),
--- and submit it to themselves. As the reviewer they can then move it on (approve, ready for signing, lodged).
+-- A team member who has been set as a job's reviewer (by a manager or master admin) acts as the
+-- reviewer: they can move the status on, and can submit their own job to themselves for review.
+-- Staff can't make themselves the reviewer.
 -- ============================================================
-create or replace function public.review_myself(p_job uuid) returns void
-language plpgsql security definer set search_path = public as $$
-declare j public.jobs; me uuid := auth.uid();
-begin
-  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
-  select * into j from public.jobs where id = p_job for update;
-  if not found or not public.can_see_job(j) then raise exception 'That job no longer exists'; end if;
-  if j.status in ('lodged', 'done') then raise exception 'This job is already finished'; end if;
-  if j.reviewer_id = me then return; end if;
-  if public.my_role() = 'staff' and j.assignee_id is distinct from me and j.reviewer_id is not null then
-    raise exception 'You can take the review of your own jobs, or of jobs that have no reviewer' using errcode = '42501';
-  end if;
-  perform set_config('supertax.job_handover', 'on', true);
-  update public.jobs set reviewer_id = me where id = p_job;
-  perform set_config('supertax.job_handover', 'off', true);
-end $$;
-revoke all on function public.review_myself(uuid) from public, anon;
-grant execute on function public.review_myself(uuid) to authenticated;
+drop function if exists public.review_myself(uuid);
 
 create or replace function public.submit_for_review(p_job uuid, p_to uuid, p_note text default '') returns void
 language plpgsql security definer set search_path = public as $$
@@ -2144,9 +2129,12 @@ begin
   if j.status in ('review', 'to_lodge', 'sent_for_sign', 'lodged', 'done') then
     raise exception 'This job has already been submitted';
   end if;
-  -- p_to may be yourself: you review your own work.
   if p_to is null or not exists (select 1 from public.profiles where id = p_to and active) then
     raise exception 'Choose who should review this job';
+  end if;
+  -- Submitting to yourself only if you've been made this job's reviewer.
+  if p_to = me and j.reviewer_id is distinct from me then
+    raise exception 'Choose another team member to review this job';
   end if;
   if exists (select 1 from public.job_timers where user_id = me and job_id = p_job and ended_at is null) then
     perform public.end_job_timer(me);
