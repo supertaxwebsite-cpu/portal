@@ -109,8 +109,8 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                 </> : <button disabled={busy} onClick={() => onStart(j)}>Start review</button>}
                 {j.service === "payroll" ? <button className="primary" onClick={() => onPayroll?.()}>Sign off in Payroll</button> : <>
                   <button disabled={busy} onClick={() => onSendBack?.(j)}>Send back</button>
-                  {onComplete ? <button disabled={busy} onClick={() => onComplete(j)} title="Approve and close the job as Completed, when nothing needs signing">Approve &amp; complete</button> : null}
-                  <button className="primary" disabled={busy} onClick={() => onApprove?.(j)}>Approve</button>
+                  {onComplete && j.needs_signature !== false ? <button disabled={busy} onClick={() => onComplete(j)} title="Approve and close the job as Completed, when nothing needs signing">Approve &amp; complete</button> : null}
+                  <button className="primary" disabled={busy} onClick={() => onApprove?.(j)} title={j.needs_signature === false ? "Nothing to sign: approving completes the job" : "Approve: it moves to Ready for signing"}>{j.needs_signature === false ? "Approve & complete" : "Approve"}</button>
                 </>}
               </div> : away ? <div className="row actions"><span className="pill danger">With {personName(j.assignee_id)} for internal query</span></div> : <div className="row actions">
                 {on ? <>

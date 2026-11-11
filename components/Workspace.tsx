@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Client, ClientLink, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import { periodOptions, clientUpcoming,
-  ENTITIES, PRACTICES, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
+  ENTITIES, PRACTICES, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
 } from "@/lib/domain";
@@ -355,6 +355,10 @@ export default function Workspace({ me }: { me: Profile }) {
   /** Reviewer: approve (ready for signing) or send back to the preparer with a note. */
   async function approveReview(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
+    if (j.needs_signature === false) {
+      await save(() => supabase.from("jobs").update({ status: "done" }).eq("id", j.id), "Approved and completed. Nothing for the client to sign");
+      return;
+    }
     await save(() => supabase.from("jobs").update({ status: "to_lodge" }).eq("id", j.id), "Approved. It's in your My jobs as Ready for signing");
   }
   /** Nothing to sign: close the job straight away as Completed. */
@@ -882,7 +886,7 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && (staffNotStarted(modal.job) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && (staffNotStarted(modal.job) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -966,8 +970,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -977,6 +981,9 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
     priority: job?.priority ?? "normal", assignee_id: job?.assignee_id ?? preset?.manager_id ?? "", reviewer_id: job?.reviewer_id ?? "",
     status: job?.status ?? "not_started", lodged_on: job?.lodged_on ?? "", notes: job?.notes ?? "",
   });
+  // Does the client need to sign? (Saved only once the database has the column.)
+  const [needsSign, setNeedsSign] = useState<boolean>(job ? job.needs_signature !== false : !NO_SIGN_SERVICES.has(presetService ?? "bas"));
+  const hasSignCol = job ? "needs_signature" in job : signCol;
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"details" | "history" | "files" | "email">("details");
   const [fileCount, setFileCount] = useState<number | null>(null);
@@ -1036,7 +1043,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
     setBusy(true);
     // Staff can only change the status and notes of an existing job (the database enforces this too).
     const row: Partial<Job> = locked ? { status: v.status, notes: v.notes, ...(ownPick && v.reviewer_id && v.reviewer_id !== job?.reviewer_id ? { reviewer_id: v.reviewer_id } : {}), ...(v.status === "lodged" && !job?.lodged_on ? { lodged_on: todayISO() } : {}) } : { ...v, period: v.period.trim(), due_date: v.due_date || null, assignee_id: v.assignee_id || null, reviewer_id: v.reviewer_id || null,
-      lodged_on: v.lodged_on || (v.status === "lodged" ? todayISO() : null) };
+      lodged_on: v.lodged_on || (v.status === "lodged" ? todayISO() : null), ...(hasSignCol ? { needs_signature: needsSign } : {}) };
     // Choosing Internal query: save the other changes, then pick who to send it to.
     const query = !!job && v.status === "internal_query" && job.status !== "internal_query";
     if (query) row.status = job.status;
@@ -1092,7 +1099,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
           <div className="row"><button type="button" className="primary" disabled={busy || !quick.name.trim()} onClick={addQuickClient}>{quickDupes?.length ? "Yes, add anyway" : "Add client"}</button><button type="button" onClick={() => { setQuick(null); setQuickDupes(null); }}>Cancel</button>
             <span className="note">You can add contact details later from the client page.</span></div>
         </div> : null}
-        <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={set("service")}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
+        <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={(e) => { setV({ ...v, service: e.target.value }); if (!job) setNeedsSign(!NO_SIGN_SERVICES.has(e.target.value)); }}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Period{isCustom ? <span className="periodown">
             <input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} />
             {groups.length && !locked ? <button type="button" className="link" onClick={() => { setCustom(false); setV({ ...v, period: "" }); }}>Pick from list</button> : null}</span>
@@ -1112,6 +1119,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
           </>}
         </div> : null}
         <label className="f">Due date<input id="m-due" type="date" disabled={locked} value={v.due_date} onChange={set("due_date")} /></label>
+        {hasSignCol ? <label className="f full row" style={{ gap: 8, flexDirection: "row", alignItems: "center", fontSize: 14, fontWeight: 400, color: "inherit" }}><input id="m-needsign" type="checkbox" disabled={locked} checked={needsSign} onChange={(e) => setNeedsSign(e.target.checked)} /> Needs the client&apos;s signature <span className="note">(untick if there&apos;s nothing to sign: approving it then marks it Completed)</span></label> : null}
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked && !ownPick} value={v.reviewer_id} onChange={set("reviewer_id")}>{ownPick ? <><option value="">No reviewer</option>{team.map((p) => <option key={p.id} value={p.id}>{p.id === meId ? `${p.full_name} (me)` : p.full_name}</option>)}</> : opts("No reviewer")}</select></label>

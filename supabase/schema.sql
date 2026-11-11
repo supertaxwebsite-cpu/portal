@@ -2233,3 +2233,14 @@ begin
 end $$;
 revoke all on function public.submit_for_review(uuid, uuid, text) from public, anon;
 grant execute on function public.submit_for_review(uuid, uuid, text) to authenticated;
+
+-- Needs client signature (Nov 2026)
+
+-- ============================================================
+-- Does the client need to sign this job? When not, approving it completes it
+-- (no Ready for signing / Sent for sign steps).
+-- ============================================================
+alter table public.jobs add column if not exists needs_signature boolean not null default true;
+-- Payroll, bookkeeping and ASIC reviews usually have nothing to sign.
+update public.jobs set needs_signature = false
+where service in ('payroll', 'bookkeeping', 'asic') and needs_signature;

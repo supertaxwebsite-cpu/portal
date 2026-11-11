@@ -66,6 +66,8 @@ export interface Job {
   stp_done_by?: string | null;
   sign_sent_at?: string | null;
   sign_reminded_at?: string | null;
+  /** false: nothing for the client to sign, so approving the job completes it. */
+  needs_signature?: boolean;
   sign_owner?: string | null;
   updated_at: string;
   updated_by: string | null;

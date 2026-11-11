@@ -262,6 +262,8 @@ export function monthISO(label: string): string {
 /** Once a job is submitted for review, staff can't move its status any more (unless it's sent back to them). */
 export const SUBMITTED_STATUSES = new Set(["review", "to_lodge", "sent_for_sign", "lodged", "done"]);
 /** Statuses staff can never pick themselves: only the reviewer / signer moves a job there. */
+/** Services that usually have nothing for the client to sign (default for new jobs). */
+export const NO_SIGN_SERVICES = new Set(["payroll", "bookkeeping", "asic"]);
 export const STAFF_CANT_PICK = new Set(["to_lodge", "sent_for_sign", "lodged", "done"]);
 export function staffSubmittedLock(j: { status: string; reviewer_id?: string | null; sign_owner?: string | null }, meId: string) {
   return SUBMITTED_STATUSES.has(j.status) && j.reviewer_id !== meId && j.sign_owner !== meId;
