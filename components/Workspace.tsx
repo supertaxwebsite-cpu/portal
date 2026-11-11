@@ -402,7 +402,7 @@ export default function Workspace({ me }: { me: Profile }) {
   }
   async function sendForReview(j: Job, to: string, note: string) {
     const { error } = await supabase.rpc("submit_for_review", { p_job: j.id, p_to: to, p_note: note });
-    if (!error) { say(`Sent to ${personName(to)} for review`); setModal(null); await load(); return; }
+    if (!error) { say(to === me.id ? "Ready for your review. It's in your My jobs: Approve it when you've checked it" : `Sent to ${personName(to)} for review`); setModal(null); await load(); return; }
     if (!/function|schema cache|does not exist/i.test(error.message)) { say(error.message, true); return; }
     // Database update not run yet: the old way (job's reviewer or your team leader).
     if (running?.job_id === j.id && !(await stopJob())) return;
@@ -448,7 +448,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const closedFor = (j: Job) => !isOpen(j.status) && !isMaster;
   const StatusSelect = ({ j }: { j: Job }) => (
     <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j) || staffSubmitted(j) || staffNotStarted(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : staffSubmitted(j) ? SUBMITTED_LOCK_MSG : staffNotStarted(j) ? "Press Start on this job first, then you can change its status" : undefined} onChange={(e) => (me.role === "staff" && e.target.value === "review" ? submitForReview(j) : setStatus(j, e.target.value as StatusId))}>
-      {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={me.role === "staff" && STAFF_CANT_PICK.has(s.id) && s.id !== j.status}>{s.label}</option>)}
+      {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={me.role === "staff" && STAFF_CANT_PICK.has(s.id) && s.id !== j.status && j.reviewer_id !== me.id}>{s.label}</option>)}
     </select>
   );
 
@@ -1107,7 +1107,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked} value={v.reviewer_id} onChange={set("reviewer_id")}>{opts("No reviewer")}</select></label>
-        <label className="f">Status<select id="m-status" disabled={readOnly || statusLocked} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status}>{s.label}</option>)}</select></label>
+        <label className="f">Status<select id="m-status" disabled={readOnly || statusLocked} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status && job?.reviewer_id !== meId}>{s.label}</option>)}</select></label>
         {job && (job.status === "to_lodge" || job.status === "sent_for_sign") ? <div className="full hint">Signing handled by <strong>{personName(job.sign_owner ?? job.reviewer_id ?? job.assignee_id) || "nobody yet"}</strong>
           {canHandSign(job) ? <> · <button type="button" className="link" onClick={() => onHandSign(job)}>Hand to a team member</button></> : null}</div> : null}
         <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>
@@ -1116,7 +1116,8 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
       </div>
       <footer style={{ display: tab === "email" ? "none" : undefined }}>
         {job && canDeleteJob ? <button type="button" className="danger" onClick={() => confirm({ title: "Delete this job?", text: "The job and its notes are removed for everyone. This cannot be undone.", yes: "Delete job", run: () => save(() => supabase.from("jobs").delete().eq("id", job.id), "Job deleted") })}>Delete job</button> : <span />}
-        <div className="row">{job && staffLock && !job.assignee_id && !readOnly ? <button type="button" disabled={busy} onClick={async () => { if (await save(() => supabase.from("jobs").update({ assignee_id: meId }).eq("id", job.id), "The job is yours. It's in My jobs now")) onClose(); }}>Take this job</button> : null}
+        <div className="row">{job && isStaff && !readOnly && isOpen(job.status) && job.reviewer_id !== meId && (job.assignee_id === meId || !job.reviewer_id) ? <button type="button" disabled={busy} title="Make yourself the reviewer, so you can approve it and move it on yourself" onClick={async () => { if (await save(() => supabase.rpc("review_myself", { p_job: job.id }), "You're the reviewer now. You can change its status and approve it yourself")) onClose(); }}>Review it myself</button> : null}
+          {job && staffLock && !job.assignee_id && !readOnly ? <button type="button" disabled={busy} onClick={async () => { if (await save(() => supabase.from("jobs").update({ assignee_id: meId }).eq("id", job.id), "The job is yours. It's in My jobs now")) onClose(); }}>Take this job</button> : null}
           <button type="button" onClick={onClose}>{readOnly ? "Close" : "Cancel"}</button>{readOnly ? null : <button type="submit" className="primary" disabled={busy}>{job ? "Save changes" : "Create job"}</button>}</div>
       </footer>
     </form></Overlay>
@@ -1410,7 +1411,7 @@ function SubmitModal({ job, me, team, suggested, clientName, run, onClose }: {
   job: Job; me: Profile; team: Person[]; suggested: string | null; clientName: (id: string) => string;
   run: (to: string, note: string) => Promise<void>; onClose: () => void;
 }) {
-  const others = team.filter((p) => p.id !== me.id);
+  const others = [...team.filter((p) => p.id !== me.id), { id: me.id, full_name: "Myself", title: "I'll review it" } as Person];
   const [to, setTo] = useState(suggested && others.some((p) => p.id === suggested) ? suggested : "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
