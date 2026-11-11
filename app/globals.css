@@ -454,3 +454,11 @@ table.prospects tr.muted td{opacity:.65}
 .jobfiles .filelist li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
 .jobfiles .fname{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .jobfiles .tag.qs{background:color-mix(in srgb,var(--warn) 18%,transparent)}
+
+/* Email client */
+.jobemailwrap{padding:16px 18px}
+.jobemail .body{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.jobemail .lbl2{font-size:12px;font-weight:600;color:var(--muted)}
+.jobemail textarea{font-family:inherit;min-height:220px}
+.jobemail .sentlist{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.jobemail .sentlist li{padding:8px 10px;border:1px solid var(--line);border-radius:8px}

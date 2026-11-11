@@ -2083,3 +2083,27 @@ do $$ begin
     begin alter publication supabase_realtime add table public.job_files; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ============================================================
+-- Emails sent to clients from a job (through the practice's Microsoft 365 mailbox).
+-- A log for the team; the email itself is also in the mailbox's Sent Items.
+-- ============================================================
+create table if not exists public.job_emails (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references public.jobs (id) on delete cascade,
+  sent_by uuid references public.profiles (id) on delete set null,
+  to_addr text[] not null default '{}',
+  cc_addr text[] not null default '{}',
+  subject text not null default '',
+  body text not null default '',
+  files text[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+create index if not exists job_emails_job_idx on public.job_emails (job_id, created_at desc);
+alter table public.job_emails enable row level security;
+drop policy if exists "see emails of jobs you can see" on public.job_emails;
+create policy "see emails of jobs you can see" on public.job_emails for select to authenticated
+  using (exists (select 1 from public.jobs j where j.id = job_id and public.can_see_job(j)));
+-- Rows are written by the server after the email is sent, never directly by the browser.
+revoke all on public.job_emails from anon, authenticated;
+grant select on public.job_emails to authenticated;
