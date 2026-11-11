@@ -82,7 +82,7 @@ export default function JobEmail({ job, client, clients = [], meName, readOnly, 
   return (
     <div className="jobemail" onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault(); }}>
       {cfg && !cfg.configured ? <div className="hint lockednote" style={{ marginBottom: 12 }}>
-        Sending straight from the portal isn&apos;t switched on yet. Until it is, <strong>Open in my email app</strong> starts the email in Outlook with everything filled in. Attach the files there yourself; the Download links are below.</div> : null}
+        Sending straight from the portal isn&apos;t switched on yet. Until it is, <strong>Open in my email app</strong> starts the email in your email program with everything filled in. Attach the files there yourself; the Download links are below.</div> : null}
       {readOnly ? null : <div className="body" style={{ padding: 0 }}>
         <div className="f full"><label className="f">To<input id="em-to" value={v.to} onChange={set("to")} placeholder="Type an email address, or pick a client below (separate several with commas)" /></label>
           <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6 }}>
@@ -99,7 +99,7 @@ export default function JobEmail({ job, client, clients = [], meName, readOnly, 
             : <span className="note">No files on this job yet. Add the query sheet in the Files tab first if you want to send it.</span>}</div>
         <label className="full row" style={{ gap: 8 }}><input id="em-mark" type="checkbox" checked={markQuery} onChange={(e) => setMarkQuery(e.target.checked)} /> Move the job to <strong>Query with client</strong> (reminder in 2 days if they don&apos;t reply)</label>
         <div className="full row" style={{ justifyContent: "space-between" }}>
-          <span className="note">{cfg?.configured ? <>Sends from <strong>{cfg.from}</strong>. Replies go to that mailbox and a copy is saved in its Sent Items.</> : ""}</span>
+          <span className="note">{cfg?.configured ? <>Sends from <strong>{cfg.from}</strong>. Replies go to that mailbox, and the CC address gets a copy.</> : ""}</span>
           <div className="row">
             <button type="button" onClick={openInEmailApp}>Open in my email app</button>
             {cfg?.configured ? <button type="button" className="primary" disabled={busy} onClick={send}>{busy ? "Sending…" : "Send email"}</button> : null}

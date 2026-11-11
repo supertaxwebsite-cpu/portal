@@ -3,8 +3,11 @@ import "server-only";
 /** Sending email from the practice's Microsoft 365 mailbox through Microsoft Graph.
  *  Needs four settings in Vercel: MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET and MAIL_FROM
  *  (an Entra app with the Mail.Send application permission, admin consent given). */
-export const mailConfigured = () => !!(process.env.MS_TENANT_ID && process.env.MS_CLIENT_ID && process.env.MS_CLIENT_SECRET && process.env.MAIL_FROM);
-export const mailFrom = () => (process.env.MAIL_FROM ?? "").trim();
+const graphReady = () => !!(process.env.MS_TENANT_ID && process.env.MS_CLIENT_ID && process.env.MS_CLIENT_SECRET && process.env.MAIL_FROM);
+/** Or any SMTP mailbox (e.g. Zoho Mail): SMTP_HOST, SMTP_USER, SMTP_PASS (an app password), optional SMTP_PORT (465). */
+const smtpReady = () => !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+export const mailConfigured = () => smtpReady() || graphReady();
+export const mailFrom = () => (process.env.MAIL_FROM || process.env.SMTP_USER || "").trim();
 /** Address put in CC by default (can be changed on each email). */
 export const mailCc = () => (process.env.MAIL_CC ?? "info@supertax.com.au").trim();
 
@@ -40,6 +43,7 @@ async function graph(t: string, path: string, init: RequestInit = {}) {
 /** Creates a draft in MAIL_FROM's mailbox, attaches the files (large ones in chunks) and sends it.
  *  The email lands in that mailbox's Sent Items, and replies come back to it. */
 export async function sendMail(m: { to: string[]; cc: string[]; replyTo?: string; subject: string; html: string; files: MailFile[] }) {
+  if (smtpReady()) return sendSmtp(m);
   const t = await token();
   const box = `/users/${encodeURIComponent(mailFrom())}`;
   const addr = (a: string) => ({ emailAddress: { address: a } });
@@ -70,5 +74,26 @@ export async function sendMail(m: { to: string[]; cc: string[]; replyTo?: string
   } catch (e) {
     await graph(t, `${box}/messages/${draft.id}`, { method: "DELETE" }).catch(() => null);
     throw e;
+  }
+}
+
+async function sendSmtp(m: { to: string[]; cc: string[]; replyTo?: string; subject: string; html: string; files: MailFile[] }) {
+  const nodemailer = (await import("nodemailer")).default;
+  const port = Number(process.env.SMTP_PORT || 465);
+  const t = nodemailer.createTransport({
+    host: process.env.SMTP_HOST!.trim(), port, secure: port === 465,
+    auth: { user: process.env.SMTP_USER!.trim(), pass: process.env.SMTP_PASS!.trim() },
+  });
+  try {
+    await t.sendMail({
+      from: { name: process.env.MAIL_NAME?.trim() || "Supertax", address: mailFrom() },
+      to: m.to, cc: m.cc.length ? m.cc : undefined, replyTo: m.replyTo, subject: m.subject, html: m.html,
+      attachments: m.files.map((f) => ({ filename: f.name, content: Buffer.from(f.bytes), contentType: f.type || undefined })),
+    });
+  } catch (e) {
+    const msg = (e as Error).message;
+    throw new Error(/auth|535|credentials|password/i.test(msg)
+      ? "The mail server didn't accept the sign-in. Check SMTP_USER and the app password (SMTP_PASS) in Vercel."
+      : `Email not sent: ${msg}`);
   }
 }
