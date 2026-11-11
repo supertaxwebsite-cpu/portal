@@ -21,6 +21,7 @@ import ClientPicker from "./ClientPicker";
 import RelatedClients from "./RelatedClients";
 import ProspectsView from "./Prospects";
 import JobHistory, { type JobSummary } from "./JobHistory";
+import JobFiles from "./JobFiles";
 import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
@@ -970,7 +971,8 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
     status: job?.status ?? "not_started", lodged_on: job?.lodged_on ?? "", notes: job?.notes ?? "",
   });
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"details" | "history">("details");
+  const [tab, setTab] = useState<"details" | "history" | "files">("details");
+  const [fileCount, setFileCount] = useState<number | null>(null);
   const [sum, setSum] = useState<JobSummary | null>(null);
   const logged = sum?.hours ?? 0;
   // Add a new client without leaving the form.
@@ -1054,7 +1056,9 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
       {job ? <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === "details"} className={tab === "details" ? "on" : ""} onClick={() => setTab("details")}>Details</button>
         <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>History &amp; time{sum ? ` · ${sum.hours ? fmtHours(sum.hours) : "0h"}${sum.comments ? ` · ${sum.comments} comment${sum.comments === 1 ? "" : "s"}` : ""}` : ""}</button>
+        <button type="button" role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}>Files{fileCount ? ` · ${fileCount}` : ""}</button>
       </div> : null}
+      {job ? <div style={{ display: tab === "files" ? "block" : "none" }}><JobFiles jobId={job.id} meId={meId} canDelete={canDelete} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onCount={setFileCount} /></div> : null}
       {job ? <div style={{ display: tab === "history" ? "block" : "none" }}><JobHistory jobId={job.id} readOnly={readOnly} meId={meId} canDelete={canDelete} supabase={supabase} personName={personName} say={say} onSummary={setSum} /></div> : null}
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>
         {readOnly ? <div className="full hint lockednote">This job is {job?.status === "lodged" ? "lodged" : "completed"}, so it&apos;s read-only. Only a master admin can change it. The History &amp; time tab shows everything that was done.</div>

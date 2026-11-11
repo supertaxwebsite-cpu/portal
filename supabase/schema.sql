@@ -2029,3 +2029,57 @@ begin
 end $$;
 revoke all on function public.submit_for_review(uuid, uuid, text) from public, anon;
 grant execute on function public.submit_for_review(uuid, uuid, text) to authenticated;
+
+-- ============================================================
+-- Job files: attach query sheets, client documents and workpapers to a job.
+-- Files live in a private storage bucket "job-files", in a folder per job (<job id>/...).
+-- Anyone who can see the job can see and add its files; the uploader or anyone with
+-- delete access can remove one.
+-- ============================================================
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('job-files', 'job-files', false, 26214400)
+on conflict (id) do update set public = false, file_size_limit = 26214400;
+
+create table if not exists public.job_files (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references public.jobs (id) on delete cascade,
+  path text not null unique,
+  name text not null check (length(name) between 1 and 255),
+  size bigint not null default 0,
+  mime text not null default '',
+  kind text not null default 'document' check (kind in ('query_sheet', 'document', 'workpaper', 'other')),
+  uploaded_by uuid references public.profiles (id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now()
+);
+create index if not exists job_files_job_idx on public.job_files (job_id, created_at desc);
+alter table public.job_files enable row level security;
+drop policy if exists "see files of jobs you can see" on public.job_files;
+create policy "see files of jobs you can see" on public.job_files for select to authenticated
+  using (exists (select 1 from public.jobs j where j.id = job_id and public.can_see_job(j)));
+drop policy if exists "add files to jobs you can see" on public.job_files;
+create policy "add files to jobs you can see" on public.job_files for insert to authenticated
+  with check (uploaded_by = auth.uid() and path like job_id::text || '/%'
+              and exists (select 1 from public.jobs j where j.id = job_id and public.can_see_job(j)));
+drop policy if exists "remove own files or with delete access" on public.job_files;
+create policy "remove own files or with delete access" on public.job_files for delete to authenticated
+  using (public.is_active_member() and (uploaded_by = auth.uid() or public.can_delete_data()));
+revoke all on public.job_files from anon;
+grant select, insert, delete on public.job_files to authenticated;
+
+drop policy if exists "job files: read" on storage.objects;
+create policy "job files: read" on storage.objects for select to authenticated
+  using (bucket_id = 'job-files' and exists (
+    select 1 from public.jobs j where j.id::text = (storage.foldername(name))[1] and public.can_see_job(j)));
+drop policy if exists "job files: upload" on storage.objects;
+create policy "job files: upload" on storage.objects for insert to authenticated
+  with check (bucket_id = 'job-files' and exists (
+    select 1 from public.jobs j where j.id::text = (storage.foldername(name))[1] and public.can_see_job(j)));
+drop policy if exists "job files: delete" on storage.objects;
+create policy "job files: delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'job-files' and public.is_active_member() and (owner_id = auth.uid()::text or public.can_delete_data()));
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.job_files; exception when duplicate_object then null; end;
+  end if;
+end $$;

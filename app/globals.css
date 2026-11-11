@@ -445,3 +445,12 @@ main.wrap.wide{max-width:1640px}
 /* Prospects */
 .navbadge{display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--danger);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
 table.prospects tr.muted td{opacity:.65}
+
+/* Job files */
+.jobfiles{padding:16px 18px}
+.jobfiles .dropzone{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:12px;border:1.5px dashed var(--line);border-radius:10px;margin-bottom:12px}
+.jobfiles .dropzone.over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.jobfiles .filelist{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.jobfiles .filelist li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.jobfiles .fname{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.jobfiles .tag.qs{background:color-mix(in srgb,var(--warn) 18%,transparent)}
