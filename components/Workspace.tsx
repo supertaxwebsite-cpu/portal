@@ -882,7 +882,7 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
 
-      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && (staffNotStarted(modal.job) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal job={modal.job} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && (staffNotStarted(modal.job) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -966,8 +966,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -1035,7 +1035,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
     if (!v.client_id) { say("Choose a client.", true); return; }
     setBusy(true);
     // Staff can only change the status and notes of an existing job (the database enforces this too).
-    const row: Partial<Job> = locked ? { status: v.status, notes: v.notes, ...(v.status === "lodged" && !job?.lodged_on ? { lodged_on: todayISO() } : {}) } : { ...v, period: v.period.trim(), due_date: v.due_date || null, assignee_id: v.assignee_id || null, reviewer_id: v.reviewer_id || null,
+    const row: Partial<Job> = locked ? { status: v.status, notes: v.notes, ...(ownPick && v.reviewer_id && v.reviewer_id !== job?.reviewer_id ? { reviewer_id: v.reviewer_id } : {}), ...(v.status === "lodged" && !job?.lodged_on ? { lodged_on: todayISO() } : {}) } : { ...v, period: v.period.trim(), due_date: v.due_date || null, assignee_id: v.assignee_id || null, reviewer_id: v.reviewer_id || null,
       lodged_on: v.lodged_on || (v.status === "lodged" ? todayISO() : null) };
     // Choosing Internal query: save the other changes, then pick who to send it to.
     const query = !!job && v.status === "internal_query" && job.status !== "internal_query";
@@ -1055,6 +1055,8 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
     else if (ok) onClose();
   }
   // Staff only see themselves (and whoever is already on this job, or their team leader), not the whole team.
+  // Staff allowed to choose their own reviewer: on their own open jobs, any team member (or themselves).
+  const ownPick = canPickReviewer && !!job && job.assignee_id === meId && !readOnly;
   const pick = isStaff ? team.filter((p) => p.id === meId || p.id === v.assignee_id || p.id === v.reviewer_id || p.id === leaderId) : team;
   const opts = (blank: string) => <><option value="">{blank}</option>{pick.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>;
   return (
@@ -1112,7 +1114,7 @@ function JobModal({ job, presetClient, presetService, isStaff, leaderId, statusL
         <label className="f">Due date<input id="m-due" type="date" disabled={locked} value={v.due_date} onChange={set("due_date")} /></label>
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
-        <label className="f">Reviewer<select id="m-reviewer" disabled={locked} value={v.reviewer_id} onChange={set("reviewer_id")}>{opts("No reviewer")}</select></label>
+        <label className="f">Reviewer<select id="m-reviewer" disabled={locked && !ownPick} value={v.reviewer_id} onChange={set("reviewer_id")}>{ownPick ? <><option value="">No reviewer</option>{team.map((p) => <option key={p.id} value={p.id}>{p.id === meId ? `${p.full_name} (me)` : p.full_name}</option>)}</> : opts("No reviewer")}</select></label>
         <label className="f">Status<select id="m-status" disabled={readOnly || statusLocked} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status && job?.reviewer_id !== meId}>{s.label}</option>)}</select></label>
         {job && (job.status === "to_lodge" || job.status === "sent_for_sign") ? <div className="full hint">Signing handled by <strong>{personName(job.sign_owner ?? job.reviewer_id ?? job.assignee_id) || "nobody yet"}</strong>
           {canHandSign(job) ? <> · <button type="button" className="link" onClick={() => onHandSign(job)}>Hand to a team member</button></> : null}</div> : null}
@@ -1279,9 +1281,9 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1319,6 +1321,7 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
         {v.role !== "master" ? <div className="f full permbox"><span>Permissions</span>
           <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? " (not just their own team)" : ""}</label>
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label> : null}
+          {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-pickrev" type="checkbox" checked={perm.canPickReviewer} onChange={(e) => setPerm({ ...perm, canPickReviewer: e.target.checked })} /> Choose the reviewer on their own jobs (including themselves)</label> : null}
           <span className="note">Only master admins can delete clients and jobs.</span>
         </div> : null}
         {!member ? <p className="full hint" style={{ margin: 0 }}>You&apos;ll get a temporary password to give them. They choose their own the first time they sign in.</p> : null}
@@ -1417,7 +1420,7 @@ function SubmitModal({ job, me, team, suggested, clientName, run, onClose }: {
   run: (to: string, note: string) => Promise<void>; onClose: () => void;
 }) {
   // "Myself" only when a manager has made you this job's reviewer.
-  const others = [...team.filter((p) => p.id !== me.id), ...(job.reviewer_id === me.id ? [{ id: me.id, full_name: "Myself", title: "I'm the reviewer" } as Person] : [])];
+  const others = [...team.filter((p) => p.id !== me.id), ...(job.reviewer_id === me.id || me.can_pick_reviewer ? [{ id: me.id, full_name: "Myself", title: "I'm the reviewer" } as Person] : [])];
   const [to, setTo] = useState(suggested && others.some((p) => p.id === suggested) ? suggested : "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);

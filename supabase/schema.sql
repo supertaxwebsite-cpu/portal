@@ -2154,3 +2154,82 @@ begin
 end $$;
 revoke all on function public.submit_for_review(uuid, uuid, text) from public, anon;
 grant execute on function public.submit_for_review(uuid, uuid, text) to authenticated;
+
+-- ============================================================
+-- Per-person permission "Chooses own reviewer": a staff member can pick the reviewer
+-- (anyone, including themselves) on their own jobs. Ticked per person in Team → Manage.
+-- ============================================================
+alter table public.profiles add column if not exists can_pick_reviewer boolean not null default false;
+
+create or replace function public.guard_job_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or public.my_role() is distinct from 'staff'
+     or current_setting('supertax.job_handover', true) = 'on' then return new; end if;
+  new.query_from := old.query_from;
+  if new.status = 'lodged' and old.lodged_on is null then
+    new.lodged_on := (now() at time zone 'Australia/Sydney')::date;
+  else
+    new.lodged_on := old.lodged_on;
+  end if;
+  if new.reviewer_id is distinct from old.reviewer_id
+     and not (old.reviewer_id is null and new.reviewer_id is not distinct from (select reports_to from public.profiles where id = auth.uid()))
+     -- Staff with "Chooses own reviewer" may pick anyone (including themselves) on their own jobs.
+     and not (old.assignee_id = auth.uid() and new.reviewer_id is not null
+              and coalesce((select can_pick_reviewer from public.profiles where id = auth.uid()), false)) then
+    raise exception 'Only your manager can change the reviewer of a job' using errcode = '42501';
+  end if;
+  -- Taking an unassigned job for yourself is allowed.
+  if old.assignee_id is null and new.assignee_id = auth.uid() then
+    if (new.client_id, new.service, new.period, new.due_date, new.priority)
+       is distinct from (old.client_id, old.service, old.period, old.due_date, old.priority) then
+      raise exception 'Only your manager can change the client, service, period, due date or priority of a job' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if (new.client_id, new.service, new.period, new.due_date, new.priority, new.assignee_id)
+     is distinct from (old.client_id, old.service, old.period, old.due_date, old.priority, old.assignee_id) then
+    raise exception 'Only your manager can change the client, service, period, due date, priority or assignee of a job' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+
+create or replace function public.submit_for_review(p_job uuid, p_to uuid, p_note text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); who text;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from me and public.my_role() not in ('master', 'manager') then
+    raise exception 'Only the person working on this job can submit it for review' using errcode = '42501';
+  end if;
+  if j.status in ('review', 'to_lodge', 'sent_for_sign', 'lodged', 'done') then
+    raise exception 'This job has already been submitted';
+  end if;
+  if p_to is null or not exists (select 1 from public.profiles where id = p_to and active) then
+    raise exception 'Choose who should review this job';
+  end if;
+  -- Submitting to yourself only if you've been made this job's reviewer.
+  if p_to = me and j.reviewer_id is distinct from me
+     and not coalesce((select can_pick_reviewer from public.profiles where id = me), false) then
+    raise exception 'Choose another team member to review this job';
+  end if;
+  if exists (select 1 from public.job_timers where user_id = me and job_id = p_job and ended_at is null) then
+    perform public.end_job_timer(me);
+  end if;
+  select full_name into who from public.profiles where id = me;
+  perform set_config('supertax.job_handover', 'on', true);
+  update public.jobs set
+    status = 'review',
+    reviewer_id = p_to,
+    notes = case when coalesce(trim(p_note), '') = '' then notes
+                 else trim(both E'\n' from coalesce(notes, '') || E'\n' || 'Submitted for review by ' || coalesce(who, 'a team member') || ' (' || to_char(now() at time zone 'Australia/Sydney', 'FMDD Mon') || '): ' || trim(p_note)) end
+  where id = p_job;
+  perform set_config('supertax.job_handover', 'off', true);
+  if coalesce(trim(p_note), '') <> '' then
+    insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'comment', 'For review: ' || trim(p_note));
+  end if;
+end $$;
+revoke all on function public.submit_for_review(uuid, uuid, text) from public, anon;
+grant execute on function public.submit_for_review(uuid, uuid, text) to authenticated;

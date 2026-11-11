@@ -11,6 +11,8 @@ export interface Profile {
   reports_to?: string | null;
   can_delete?: boolean;
   can_see_workload?: boolean;
+  /** Staff only: may choose the reviewer (anyone, including themselves) on their own jobs. */
+  can_pick_reviewer?: boolean;
   created_at: string;
 }
 

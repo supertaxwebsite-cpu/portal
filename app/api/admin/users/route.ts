@@ -31,10 +31,11 @@ export async function POST(req: Request) {
   const perms: Record<string, boolean> = {};
   if (role === "staff" && typeof body.canDelete === "boolean") perms.can_delete = body.canDelete;
   if (role !== "master" && body.canSeeWorkload === true) perms.can_see_workload = true;
+  if (role === "staff" && body.canPickReviewer === true) perms.can_pick_reviewer = true;
   let { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) });
-  if (pErr && /can_see_workload/.test(pErr.message)) {
-    // Database update for the workload permission not run yet: add them without it.
-    delete perms.can_see_workload;
+  if (pErr && /can_see_workload|can_pick_reviewer/.test(pErr.message)) {
+    // Database update for a permission not run yet: add them without it.
+    delete perms.can_see_workload; delete perms.can_pick_reviewer;
     ({ error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) }));
   }
   if (pErr) {

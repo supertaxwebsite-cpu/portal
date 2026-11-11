@@ -22,7 +22,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (update.role === "manager" || update.role === "master") update.reports_to = null;
   if (typeof body.canDelete === "boolean") update.can_delete = body.canDelete;
   if (typeof body.canSeeWorkload === "boolean") update.can_see_workload = body.canSeeWorkload;
+  if (typeof body.canPickReviewer === "boolean") update.can_pick_reviewer = body.canPickReviewer;
   if (update.role === "master") { update.can_delete = false; update.can_see_workload = false; }
+  if (update.role === "master" || update.role === "manager") update.can_pick_reviewer = false;
   if (!Object.keys(update).length && !Array.isArray(body.team)) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
 
   const admin = createAdminClient();
@@ -41,7 +43,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   if (Object.keys(update).length) {
     const { error } = await admin.from("profiles").update(update).eq("id", id);
-    if (error) return NextResponse.json({ error: /can_see_workload/.test(error.message) ? "Run the latest database update first (the workload permission)." : error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: /can_see_workload|can_pick_reviewer/.test(error.message) ? "Run the latest database update first." : error.message }, { status: 500 });
   }
   const role = (update.role as string | undefined) ?? target.role;
   if (role === "manager" && Array.isArray(body.team)) {
