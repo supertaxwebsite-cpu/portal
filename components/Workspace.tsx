@@ -65,6 +65,7 @@ type Modal =
   | { kind: "meeting"; meeting?: Meeting; date?: string; draft?: MeetingDraft }
   | { kind: "query"; job: Job; mode: "send" | "answer" }
   | { kind: "handsign"; job: Job }
+  | { kind: "submit"; job: Job }
   | { kind: "temp"; name: string; email: string; password: string }
   | { kind: "confirm"; title: string; text: string; yes: string; run: () => Promise<boolean | void> }
   | null;
@@ -392,12 +393,21 @@ export default function Workspace({ me }: { me: Profile }) {
     await save(() => supabase.from("jobs").update({ status: "lodged", lodged_on: j.lodged_on ?? todayISO() }).eq("id", j.id), `${clientName(j.client_id)} signed. Job marked lodged`);
   }
   const wasStarted = (j: Job) => !started || started.has(j.id) || running?.job_id === j.id;
+  /** Submit for review: pick the senior or manager who checks it (defaults to the job's reviewer or your team leader). */
   async function submitForReview(j: Job) {
     if (!wasStarted(j)) { say("Start the job first: press Start, do the work, then submit it for review.", true); return; }
+    setModal({ kind: "submit", job: j });
+  }
+  async function sendForReview(j: Job, to: string, note: string) {
+    const { error } = await supabase.rpc("submit_for_review", { p_job: j.id, p_to: to, p_note: note });
+    if (!error) { say(`Sent to ${personName(to)} for review`); setModal(null); await load(); return; }
+    if (!/function|schema cache|does not exist/i.test(error.message)) { say(error.message, true); return; }
+    // Database update not run yet: the old way (job's reviewer or your team leader).
     if (running?.job_id === j.id && !(await stopJob())) return;
     const rev = myReviewer(j);
     await save(() => supabase.from("jobs").update({ status: "review", reviewer_id: rev }).eq("id", j.id),
       rev && rev !== me.id ? `Sent to ${personName(rev)} for review` : "Marked ready for review");
+    setModal(null);
   }
 
   async function payrollStep(j: Job, step: "super" | "stp" | "undo_super") {
@@ -881,6 +891,8 @@ export default function Workspace({ me }: { me: Profile }) {
           </div></div>
           <footer><span /><button type="button" className="primary" onClick={close}>Done</button></footer></div></Overlay>
       ) : null}
+      {modal?.kind === "submit" ? <SubmitModal job={modal.job} me={me} team={team} suggested={myReviewer(modal.job)} clientName={clientName} onClose={close}
+        run={(to, note) => sendForReview(modal.job, to, note)} /> : null}
       {modal?.kind === "handsign" ? <HandSignModal job={modal.job} me={me} team={team} clientName={clientName} personName={personName} onClose={close}
         run={async (to, note) => { if (await save(() => supabase.rpc("hand_signing", { p_job: modal.job.id, p_to: to, p_note: note }), `Handed to ${personName(to)}. It's in their My jobs now`)) close(); }} /> : null}
       {modal?.kind === "query" ? <QueryModal job={modal.job} mode={modal.mode} me={me} team={team} clientName={clientName} personName={personName}
@@ -1384,6 +1396,30 @@ function ImportModal({ clients, people, supabase, onDone, onClose, say }: {
       <footer><span className="note">Only the master admin and managers can import.</span><div className="row"><button type="button" onClick={onClose}>Cancel</button>
         <button type="button" className="primary" disabled={busy || !check?.ready.length} onClick={run}>{busy ? "Importing…" : `Import ${check?.ready.length ?? 0} client${check?.ready.length === 1 ? "" : "s"}`}</button></div></footer>
     </div></Overlay>
+  );
+}
+
+function SubmitModal({ job, me, team, suggested, clientName, run, onClose }: {
+  job: Job; me: Profile; team: Person[]; suggested: string | null; clientName: (id: string) => string;
+  run: (to: string, note: string) => Promise<void>; onClose: () => void;
+}) {
+  const others = team.filter((p) => p.id !== me.id);
+  const [to, setTo] = useState(suggested && others.some((p) => p.id === suggested) ? suggested : "");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Overlay onClose={onClose}><form className="modal" onSubmit={async (e) => { e.preventDefault(); setBusy(true); await run(to, note); setBusy(false); }}>
+      <header><h2>Submit for review</h2><button type="button" onClick={onClose}>Close</button></header>
+      <div className="body">
+        <p className="full muted" style={{ margin: 0 }}>{clientName(job.client_id)} · {svcLabel(job.service)} · {job.period}</p>
+        <label className="f full">Send to (senior or manager)<select id="sr-to" required value={to} onChange={(e) => setTo(e.target.value)}>
+          <option value="">Choose who reviews it…</option>
+          {others.map((p) => <option key={p.id} value={p.id}>{p.full_name}{p.title ? ` · ${p.title}` : ""}{p.id === suggested ? " (usual reviewer)" : ""}</option>)}</select></label>
+        <label className="f full">Note for the reviewer (optional)<textarea id="sr-note" placeholder="e.g. All done. Please check the depreciation schedule and the rental property expenses." value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        <div className="full hint">Your timer stops and the time goes to your timesheet. The job moves to Ready for review in their My jobs and they get a bell notification. You can&apos;t change its status after this unless they send it back to you.</div>
+      </div>
+      <footer><span /><div className="row"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy || !to}>Submit for review</button></div></footer>
+    </form></Overlay>
   );
 }
 
