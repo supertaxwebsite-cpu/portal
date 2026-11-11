@@ -13,6 +13,7 @@ export interface Profile {
   can_see_workload?: boolean;
   /** Staff only: may choose the reviewer (anyone, including themselves) on their own jobs. */
   can_pick_reviewer?: boolean;
+  can_see_mgmt_notes?: boolean;
   created_at: string;
 }
 

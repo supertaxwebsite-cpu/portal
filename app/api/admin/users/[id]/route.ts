@@ -23,8 +23,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (typeof body.canDelete === "boolean") update.can_delete = body.canDelete;
   if (typeof body.canSeeWorkload === "boolean") update.can_see_workload = body.canSeeWorkload;
   if (typeof body.canPickReviewer === "boolean") update.can_pick_reviewer = body.canPickReviewer;
+  if (typeof body.canSeeMgmt === "boolean") update.can_see_mgmt_notes = body.canSeeMgmt;
   if (update.role === "master") { update.can_delete = false; update.can_see_workload = false; }
-  if (update.role === "master" || update.role === "manager") update.can_pick_reviewer = false;
+  if (update.role === "master" || update.role === "manager") { update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; }
   if (!Object.keys(update).length && !Array.isArray(body.team)) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
 
   const admin = createAdminClient();
@@ -42,8 +43,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (Object.keys(update).length) {
-    const { error } = await admin.from("profiles").update(update).eq("id", id);
-    if (error) return NextResponse.json({ error: /can_see_workload|can_pick_reviewer/.test(error.message) ? "Run the latest database update first." : error.message }, { status: 500 });
+    let { error } = await admin.from("profiles").update(update).eq("id", id);
+    if (error && /can_see_mgmt_notes/.test(error.message) && !update.can_see_mgmt_notes) {
+      // Management notes database update not run yet: save everything else.
+      delete update.can_see_mgmt_notes;
+      ({ error } = await admin.from("profiles").update(update).eq("id", id));
+    }
+    if (error) return NextResponse.json({ error: /can_see_workload|can_pick_reviewer|can_see_mgmt_notes/.test(error.message) ? "Run the latest database update first." : error.message }, { status: 500 });
   }
   const role = (update.role as string | undefined) ?? target.role;
   if (role === "manager" && Array.isArray(body.team)) {

@@ -32,10 +32,11 @@ export async function POST(req: Request) {
   if (role === "staff" && typeof body.canDelete === "boolean") perms.can_delete = body.canDelete;
   if (role !== "master" && body.canSeeWorkload === true) perms.can_see_workload = true;
   if (role === "staff" && body.canPickReviewer === true) perms.can_pick_reviewer = true;
+  if (role === "staff" && body.canSeeMgmt === true) perms.can_see_mgmt_notes = true;
   let { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) });
-  if (pErr && /can_see_workload|can_pick_reviewer/.test(pErr.message)) {
+  if (pErr && /can_see_workload|can_pick_reviewer|can_see_mgmt_notes/.test(pErr.message)) {
     // Database update for a permission not run yet: add them without it.
-    delete perms.can_see_workload; delete perms.can_pick_reviewer;
+    delete perms.can_see_workload; delete perms.can_pick_reviewer; delete perms.can_see_mgmt_notes;
     ({ error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) }));
   }
   if (pErr) {

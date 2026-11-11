@@ -2244,3 +2244,57 @@ alter table public.jobs add column if not exists needs_signature boolean not nul
 -- Payroll, bookkeeping and ASIC reviews usually have nothing to sign.
 update public.jobs set needs_signature = false
 where service in ('payroll', 'bookkeeping', 'asic') and needs_signature;
+
+-- ============================================================
+-- Management notes: confidential notes on a client (quotes, fees, sensitive matters).
+-- Only master admins, managers, and people given "See management notes" can see them.
+-- ============================================================
+alter table public.profiles add column if not exists can_see_mgmt_notes boolean not null default false;
+
+create or replace function public.can_see_mgmt_notes() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and active
+                 and (role in ('master', 'manager') or can_see_mgmt_notes));
+$$;
+revoke all on function public.can_see_mgmt_notes() from public, anon;
+grant execute on function public.can_see_mgmt_notes() to authenticated;
+
+create table if not exists public.client_mgmt_notes (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references public.clients (id) on delete cascade,
+  author_id uuid references public.profiles (id) on delete set null default auth.uid(),
+  category text not null default 'general'
+    check (category in ('general', 'quote', 'fees', 'relationship', 'risk')),
+  body text not null check (length(trim(body)) > 0 and length(body) <= 4000),
+  pinned boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists client_mgmt_notes_client_idx on public.client_mgmt_notes (client_id, created_at desc);
+alter table public.client_mgmt_notes enable row level security;
+revoke all on public.client_mgmt_notes from anon;
+drop policy if exists "mgmt read" on public.client_mgmt_notes;
+create policy "mgmt read" on public.client_mgmt_notes
+  for select to authenticated using (public.can_see_mgmt_notes());
+drop policy if exists "mgmt add" on public.client_mgmt_notes;
+create policy "mgmt add" on public.client_mgmt_notes
+  for insert to authenticated with check (public.can_see_mgmt_notes() and author_id = auth.uid());
+drop policy if exists "mgmt edit" on public.client_mgmt_notes;
+create policy "mgmt edit" on public.client_mgmt_notes
+  for update to authenticated
+  using (public.can_see_mgmt_notes() and (author_id = auth.uid() or public.my_role() in ('master', 'manager')))
+  with check (public.can_see_mgmt_notes());
+drop policy if exists "mgmt delete" on public.client_mgmt_notes;
+create policy "mgmt delete" on public.client_mgmt_notes
+  for delete to authenticated
+  using (public.can_see_mgmt_notes() and (author_id = auth.uid() or public.my_role() in ('master', 'manager')));
+
+drop trigger if exists client_mgmt_notes_stamp on public.client_mgmt_notes;
+create trigger client_mgmt_notes_stamp before update on public.client_mgmt_notes
+  for each row execute function public.stamp_client_note();
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.client_mgmt_notes; exception when duplicate_object then null; end;
+  end if;
+end $$;

@@ -805,6 +805,7 @@ export default function Workspace({ me }: { me: Profile }) {
                   : <div className="empty">No pending work for anyone in this group.</div>}
               </div></div> : null}
             <ClientNotes key={c.id} clientId={c.id} meId={me.id} isManager={canManage} canDelete={canDelete} supabase={supabase} personName={personName} say={say} />
+            {canManage || me.can_see_mgmt_notes ? <ClientNotes key={`m-${c.id}`} mgmt clientId={c.id} meId={me.id} isManager={canManage} canDelete={false} supabase={supabase} personName={personName} say={say} /> : null}
             <div><h2>Open jobs ({openJ.length})</h2><div className="tablebox solo">{openJ.length ? <Table list={openJ} /> : <div className="empty">No open jobs for this client.</div>}</div></div>
             {upcoming.length ? <div><h2>Upcoming jobs ({upcoming.length})</h2><div className="tablebox solo"><table><thead><tr><th>Service</th><th>Period</th><th>Created on</th><th>Due</th></tr></thead>
               <tbody>{upcoming.map((u) => <tr key={u.key}><td>{svcLabel(u.service)}</td><td className="mono">{u.period}</td><td><span className="pill">{fmtDate(u.appears)}</span></td><td>{u.due ? fmtDate(u.due) : <span className="muted">—</span>}</td></tr>)}</tbody></table>
@@ -1289,9 +1290,9 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1330,7 +1331,8 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
           <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? " (not just their own team)" : ""}</label>
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label> : null}
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-pickrev" type="checkbox" checked={perm.canPickReviewer} onChange={(e) => setPerm({ ...perm, canPickReviewer: e.target.checked })} /> Choose the reviewer on their own jobs (including themselves)</label> : null}
-          <span className="note">Only master admins can delete clients and jobs.</span>
+          {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-mgmt" type="checkbox" checked={perm.canSeeMgmt} onChange={(e) => setPerm({ ...perm, canSeeMgmt: e.target.checked })} /> See and add confidential management notes on clients (quotes, fees)</label> : null}
+          <span className="note">Only master admins can delete clients and jobs. Managers always see management notes.</span>
         </div> : null}
         {!member ? <p className="full hint" style={{ margin: 0 }}>You&apos;ll get a temporary password to give them. They choose their own the first time they sign in.</p> : null}
         {member ? (
