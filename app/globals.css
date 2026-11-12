@@ -468,3 +468,7 @@ table.prospects tr.muted td{opacity:.65}
 .workgate h2{margin:6px 0 8px}
 .workgate p{margin:0 0 16px}
 .wg-icon{font-size:40px;line-height:1}
+.chasebox{border-left:4px solid var(--warn,#d97706);margin-bottom:16px}
+.chasebox .remh{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:10px 14px 2px}
+.chasebox .list li .actions{flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:719px){.chasebox .list li{grid-template-columns:minmax(0,1fr)}.chasebox .list li .actions{justify-content:flex-start}}

@@ -10,6 +10,7 @@ import { periodOptions, clientUpcoming,
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import WorkGate from "./WorkGate";
+import Reminders from "./Reminders";
 import UpdateBanner from "./UpdateBanner";
 import { MeetingsView, MeetingModal, MeetingReminders, involves, type Meeting } from "./Meetings";
 import type { MeetingDraft } from "@/lib/quickMeeting";
@@ -399,7 +400,7 @@ export default function Workspace({ me }: { me: Profile }) {
   }
   /** Query with client: chased them again, so hide it for another 2 days. */
   async function followedUp(j: Job) {
-    await save(() => supabase.from("jobs").update({ sign_sent_at: new Date().toISOString(), sign_reminded_at: null }).eq("id", j.id), "Got it. It comes back in 2 days if the client still hasn't replied");
+    await save(() => supabase.from("jobs").update({ sign_sent_at: new Date().toISOString(), sign_reminded_at: null }).eq("id", j.id), "Got it. It comes back in 2 days if the client still hasn't answered");
   }
   async function markSigned(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
@@ -527,6 +528,8 @@ export default function Workspace({ me }: { me: Profile }) {
           <div className="statusrow">{STATUSES.map((st) => { const n = jobs.filter((j) => j.status === st.id).length; return (
             <button key={st.id} className="statuschip" onClick={() => gotoJobs({ status: st.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>); })}</div>
         </div>
+        <Reminders jobs={openJobs} myId={me.id} showOwner={canManage} clientName={clientName} personName={personName} busy={timerBusy}
+          onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} onWaiting={followedUp} />
         <div className="grid2">
           <div className="section">
             <MyJobs jobs={openJobs.filter(myJobFilter)}
@@ -864,6 +867,12 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   async function openNotice(n: Notice) {
+    if (n.kind === "sign_reminder" || n.kind === "client_query_reminder") {
+      // Answered from the Reminders box on the Overview, without opening the job.
+      navGo("overview");
+      setTimeout(() => document.getElementById("reminders")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+      return;
+    }
     if (n.job_id) {
       const j = jobs.find((x) => x.id === n.job_id);
       if (j) setModal({ kind: "job", job: j }); else say("That job has been deleted or is no longer visible to you.", true);
