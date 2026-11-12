@@ -2298,3 +2298,51 @@ do $$ begin
     begin alter publication supabase_realtime add table public.client_mgmt_notes; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- ============================================================
+-- Client types per team member: a staff member can be limited to some client types
+-- (e.g. only SMSF, or only Company and Trust). None ticked = they see every client.
+-- They always still see the clients of jobs they are working on.
+-- ============================================================
+alter table public.profiles add column if not exists client_types text[] not null default '{}';
+
+create or replace function public.can_see_client(p_id uuid, p_entity text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles p where p.id = auth.uid() and p.active and (
+    p.role <> 'staff'
+    or cardinality(p.client_types) = 0
+    or p_entity = any (p.client_types)
+    or exists (select 1 from public.jobs j where j.client_id = p_id
+               and (j.assignee_id = p.id or j.reviewer_id = p.id or j.sign_owner = p.id or j.query_from = p.id))
+  ));
+$$;
+revoke all on function public.can_see_client(uuid, text) from public, anon;
+grant execute on function public.can_see_client(uuid, text) to authenticated;
+
+drop policy if exists "members read clients" on public.clients;
+create policy "members read clients" on public.clients
+  for select to authenticated using (public.can_see_client(id, entity));
+drop policy if exists "members edit clients" on public.clients;
+create policy "members edit clients" on public.clients
+  for update to authenticated using (public.can_see_client(id, entity)) with check (public.is_active_member());
+
+-- Unassigned open jobs show to staff only for client types they can see.
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() is distinct from 'staff'
+    or (j.assignee_id is null and j.status not in ('done', 'sent_for_sign', 'lodged')
+        and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or j.sign_owner = auth.uid()
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+  );
+$$;
+
+-- Notes and links follow the client.
+drop policy if exists "members read client notes" on public.client_notes;
+create policy "members read client notes" on public.client_notes
+  for select to authenticated using (public.is_active_member()
+    and exists (select 1 from public.clients c where c.id = client_id and public.can_see_client(c.id, c.entity)));

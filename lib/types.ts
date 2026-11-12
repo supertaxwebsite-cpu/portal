@@ -14,6 +14,7 @@ export interface Profile {
   /** Staff only: may choose the reviewer (anyone, including themselves) on their own jobs. */
   can_pick_reviewer?: boolean;
   can_see_mgmt_notes?: boolean;
+  client_types?: string[];
   created_at: string;
 }
 
