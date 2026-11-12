@@ -2346,3 +2346,83 @@ drop policy if exists "members read client notes" on public.client_notes;
 create policy "members read client notes" on public.client_notes
   for select to authenticated using (public.is_active_member()
     and exists (select 1 from public.clients c where c.id = client_id and public.can_see_client(c.id, c.entity)));
+
+-- ============================================================
+-- Internal queries inside a job: a team member asks a manager/admin a question
+-- (with an optional query sheet), and the reply (with an optional query list) sits beside it.
+-- The job stays with the team member. Plus a per-job checklist.
+-- ============================================================
+create table if not exists public.job_queries (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references public.jobs (id) on delete cascade,
+  parent_id uuid references public.job_queries (id) on delete cascade, -- null = a question; set = the reply to it
+  author_id uuid references public.profiles (id) on delete set null default auth.uid(),
+  to_id uuid references public.profiles (id) on delete set null,
+  body text not null check (length(trim(body)) > 0 and length(body) <= 4000),
+  file_id uuid references public.job_files (id) on delete set null,
+  answered_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists job_queries_job_idx on public.job_queries (job_id, created_at);
+alter table public.job_queries enable row level security;
+revoke all on public.job_queries from anon;
+drop policy if exists "see queries of jobs you can see" on public.job_queries;
+create policy "see queries of jobs you can see" on public.job_queries for select to authenticated
+  using (public.is_active_member() and exists (select 1 from public.jobs j where j.id = job_id));
+drop policy if exists "ask or reply on jobs you can see" on public.job_queries;
+create policy "ask or reply on jobs you can see" on public.job_queries for insert to authenticated
+  with check (public.is_active_member() and author_id = auth.uid() and answered_at is null
+    and exists (select 1 from public.jobs j where j.id = job_id));
+
+create or replace function public.job_query_posted() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; asker uuid; label text;
+begin
+  select * into j from public.jobs where id = new.job_id;
+  select coalesce(c.name, '') || ' · ' || j.period into label from public.clients c where c.id = j.client_id;
+  if new.parent_id is null then
+    if new.to_id is not null and new.to_id <> new.author_id then
+      insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+      values (new.to_id, new.author_id, 'internal_query', new.job_id, j.service, coalesce(label, '') || ': ' || left(new.body, 160));
+    end if;
+  else
+    update public.job_queries set answered_at = now() where id = new.parent_id returning author_id into asker;
+    if asker is not null and asker <> new.author_id then
+      insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+      values (asker, new.author_id, 'query_answered', new.job_id, j.service, coalesce(label, '') || ': ' || left(new.body, 160));
+    end if;
+  end if;
+  insert into public.job_activity (job_id, actor_id, kind, body)
+  values (new.job_id, new.author_id, 'comment', case when new.parent_id is null then 'Internal query: ' else 'Reply: ' end || new.body);
+  return new;
+end $$;
+revoke all on function public.job_query_posted() from public, anon, authenticated;
+drop trigger if exists job_queries_posted on public.job_queries;
+create trigger job_queries_posted after insert on public.job_queries
+  for each row execute function public.job_query_posted();
+
+create table if not exists public.job_checks (
+  job_id uuid not null references public.jobs (id) on delete cascade,
+  item text not null check (length(item) between 1 and 200),
+  done_by uuid references public.profiles (id) on delete set null default auth.uid(),
+  done_at timestamptz not null default now(),
+  primary key (job_id, item)
+);
+alter table public.job_checks enable row level security;
+revoke all on public.job_checks from anon;
+drop policy if exists "see checks" on public.job_checks;
+create policy "see checks" on public.job_checks for select to authenticated
+  using (public.is_active_member() and exists (select 1 from public.jobs j where j.id = job_id));
+drop policy if exists "tick checks" on public.job_checks;
+create policy "tick checks" on public.job_checks for insert to authenticated
+  with check (public.is_active_member() and done_by = auth.uid() and exists (select 1 from public.jobs j where j.id = job_id));
+drop policy if exists "untick checks" on public.job_checks;
+create policy "untick checks" on public.job_checks for delete to authenticated
+  using (public.is_active_member() and exists (select 1 from public.jobs j where j.id = job_id));
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.job_queries; exception when duplicate_object then null; end;
+    begin alter publication supabase_realtime add table public.job_checks; exception when duplicate_object then null; end;
+  end if;
+end $$;
