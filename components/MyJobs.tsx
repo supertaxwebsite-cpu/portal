@@ -117,7 +117,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button className="primary" disabled={busy} onClick={() => onStart(j)}>Start</button>}
                 {incoming ? <button disabled={busy} onClick={() => onAnswer(j)}>Send back</button> : <>
-                <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy || (isStaff && staffSubmittedLock(j, myId)) || (isStaff && !!wasStarted && !wasStarted(j))} title={isStaff && staffSubmittedLock(j, myId) ? SUBMITTED_LOCK_MSG : isStaff && wasStarted && !wasStarted(j) ? "Press Start first, then you can change the status" : undefined} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
+                <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy || (isStaff && staffSubmittedLock(j, myId)) || (!!wasStarted && !wasStarted(j))} title={isStaff && staffSubmittedLock(j, myId) ? SUBMITTED_LOCK_MSG : wasStarted && !wasStarted(j) ? "Press Start first, then you can change the status" : undefined} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
                   {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== j.status && j.reviewer_id !== myId}>{s.label}</option>)}
                 </select>
                 {canSubmit ? (wasStarted && !wasStarted(j)
