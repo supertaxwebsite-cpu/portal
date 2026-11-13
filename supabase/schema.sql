@@ -2426,3 +2426,16 @@ do $$ begin
     begin alter publication supabase_realtime add table public.job_checks; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- Practice Desk: email code at sign-in.
+-- Holds one short-lived sign-in code per person (only a hash of it, never the code).
+-- Only the server reads and writes it: row level security is on and there are no policies.
+create table if not exists public.login_codes (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  code_hash text not null,
+  attempts int not null default 0,
+  sent_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+alter table public.login_codes enable row level security;
+revoke all on public.login_codes from anon, authenticated;

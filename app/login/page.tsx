@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AuthCard from "@/components/AuthCard";
+import { safeNext } from "@/lib/nextPath";
 import { createClient } from "@/lib/supabase/client";
 import { markActive } from "@/components/IdleSignOut";
 
@@ -28,7 +29,7 @@ export default function LoginPage() {
       return;
     }
     markActive();
-    router.replace("/");
+    router.replace(`/verify${safeNext() ? `?next=${encodeURIComponent(safeNext())}` : ""}`);
     router.refresh();
   }
 
