@@ -571,3 +571,5 @@ ol.jstages li:not(.now):not(.done) .t{color:var(--muted)}
 dl.people{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;padding:0 14px 14px}
 dl.people dt{color:var(--muted);font-size:13px}dl.people dd{margin:0;text-align:right;font-weight:600}
 ul.actions{list-style:none;margin:0;padding:0 14px 12px;display:grid;gap:8px}
+.jobhero .count i.blue{background:var(--accent)}.jobhero .count i.red{background:var(--danger)}.jobhero .count i.amber{background:#c77a0a}.jobhero .count i.green{background:var(--ok)}
+details#cl-closed>summary{list-style:none}details#cl-closed>summary::after{content:" ▸";color:var(--muted)}details#cl-closed[open]>summary::after{content:" ▾"}

@@ -823,31 +823,45 @@ export default function Workspace({ me }: { me: Profile }) {
     const picked = groupJobs.filter((j) => gsel.has(j.id));
     const allPicked = groupJobs.length > 0 && picked.length === groupJobs.length;
     const Table = ({ list }: { list: Job[] }) => (
-      <table><thead><tr><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
+      <table className="jobtable"><thead><tr><th>Job</th><th>Stage</th><th>Assigned</th><th>Reviewer</th><th>Due / time left</th><th>Status</th></tr></thead>
         <tbody>{list.map((j) => (
-          <tr key={j.id}><td>{svcLabel(j.service)}{j.priority === "high" ? <span className="prio">!</span> : null}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
-            <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td><td><button onClick={() => openJob(j)}>{closedFor(j) ? "View" : "Edit"}</button></td></tr>))}</tbody></table>
+          <tr key={j.id}><td><button className="link jobname" onClick={() => openJob(j)}>{svcLabel(j.service)} · {j.period}</button>{j.priority === "high" ? <div><span className="pill danger">High</span></div> : null}</td>
+            <td><Stage j={j} /></td><td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td>{personName(j.reviewer_id) || <span className="muted">—</span>}</td>
+            <td><TimeLeft j={j} /></td><td><StatusSelect j={j} /></td></tr>))}</tbody></table>
     );
+    const od = openJ.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length;
+    const waitingN = openJ.filter((j) => j.status === "waiting" || j.status === "client_query" || j.status === "sent_for_sign").length;
+    const freq = (sv: string) => sv === "bas" ? (c.bas_freq === "monthly" ? " · monthly" : c.bas_freq === "annual" ? " · annually" : " · quarterly") : sv === "payroll" && c.payroll_freq ? ` · ${c.payroll_freq}` : "";
+    const go2 = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
     return (
       <>
-        <div className="pagehead">
-          <div><button className="link" onClick={() => setClientId(null)}>← All clients</button><h1 style={{ marginTop: 6 }}>{c.name}</h1><p>{c.entity}{c.abn ? <> · ABN <span className="mono">{c.abn}</span></> : null}</p></div>
-          <div className="row"><button onClick={() => setModal({ kind: "client", client: c })}>Edit client</button><button className="primary" onClick={() => setModal({ kind: "job", clientId: c.id })}>New job for this client</button></div>
+        <div className="crumb"><button type="button" className="link" onClick={() => setClientId(null)}>← Clients</button> / Client page</div>
+        <div className="jobhero">
+          <h1>{c.name} <span>· {c.entity}</span></h1>
+          <div className="facts">
+            {c.abn ? <span>ABN <b className="mono">{c.abn}</b></span> : null}<span>Practice <b>{practiceOf(c)}</b></span><span>Manager <b>{personName(c.manager_id) || "—"}</b></span>
+            {c.contact ? <span>Contact <b>{c.contact}</b></span> : null}{c.phone ? <span>📞 <b>{c.phone}</b></span> : null}{c.email ? <span>✉ <b><a href={`mailto:${c.email}`}>{c.email}</a></b></span> : null}
+          </div>
+          {c.services.length ? <div className="row" style={{ marginTop: 10 }}>{c.services.map((sv) => <span key={sv} className="chip">{svcLabel(sv)}{freq(sv)}</span>)}</div> : null}
+          <div className="row" style={{ marginTop: 12 }}><button onClick={() => setModal({ kind: "client", client: c })}>✎ Edit client</button><button className="primary" onClick={() => setModal({ kind: "job", clientId: c.id })}>+ New job for this client</button></div>
+          <div className="counts">
+            <button type="button" className="count" onClick={() => go2("cl-work")}>Open jobs <i className="blue">{openJ.length}</i></button>
+            <button type="button" className="count" onClick={() => go2("cl-work")}>Overdue <i className={od ? "red" : ""}>{od}</i></button>
+            <button type="button" className="count" onClick={() => go2("cl-work")}>Waiting on client <i className={waitingN ? "amber" : ""}>{waitingN}</i></button>
+            <button type="button" className="count" onClick={() => go2("cl-related")}>Related clients <i className="blue">{Math.max(0, group.size - 1)}</i></button>
+            <button type="button" className="count" onClick={() => go2("cl-closed")}>Lodged and completed <i className="green">{closedJ.length}</i></button>
+          </div>
         </div>
-        <div className="detail">
-          <div className="panel"><dl className="kv">
-            <dt>Practice</dt><dd>{practiceOf(c)}</dd><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Email</dt><dd>{c.email || "—"}</dd><dt>Phone</dt><dd className="mono">{c.phone || "—"}</dd><dt>Address</dt><dd>{c.address || "—"}</dd>
-            <dt>Manager</dt><dd>{personName(c.manager_id) || "—"}</dd>
-            <dt>Services</dt><dd>{c.services.length ? c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}</span>) : "—"}</dd>
-            {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, jobs created automatically` : "No automatic jobs"}</dd></> : null}
-            {c.services.some((s) => SVC[s]?.kind === "bas") ? <><dt>BAS cycle</dt><dd>{c.bas_freq === "monthly" ? "Monthly" : c.bas_freq === "annual" ? "Annually" : "Quarterly"}</dd></> : null}
-            {c.notes ? <><dt>Notes</dt><dd style={{ whiteSpace: "pre-wrap" }}>{c.notes}</dd></> : null}
-            <dt>Last change</dt><dd className="note">{fmtDate(c.updated_at)}{c.updated_by ? ` by ${personName(c.updated_by)}` : ""}</dd>
-          </dl></div>
-          <div className="section">
-            <RelatedClients key={`rel-${c.id}`} client={c} clients={clients} links={links} supabase={supabase} say={say} missing={linksMissing} onOpen={openClient} onChanged={load} />
-            {group.size > 1 ? <div id="group-work"><h2>Whole group: pending work ({groupJobs.length} job{groupJobs.length === 1 ? "" : "s"} across {group.size} clients)</h2>
-              <div className="tablebox solo">
+        <div className="jobgrid">
+          <div className="jobmain">
+            <div className="panel" id="cl-work">
+              <div className="ph"><h2>Work for this client</h2><span className="note">Open jobs, what stage they&apos;re at, who has them</span></div>
+              {openJ.length ? <div style={{ overflowX: "auto" }}><Table list={openJ} /></div> : <div className="empty">No open jobs for this client.</div>}
+              {upcoming.length ? <div className="note" style={{ padding: "10px 14px", borderTop: "1px solid var(--line)" }}><strong style={{ color: "var(--fg)" }}>Coming up automatically:</strong> {upcoming.slice(0, 4).map((u) => `${svcLabel(u.service)} ${u.period} on ${fmtDate(u.appears)}`).join(" · ")}</div> : null}
+            </div>
+            <div id="cl-related"><RelatedClients key={`rel-${c.id}`} client={c} clients={clients} links={links} supabase={supabase} say={say} missing={linksMissing} onOpen={openClient} onChanged={load} /></div>
+            {group.size > 1 ? <div id="group-work" className="panel"><div className="ph"><h2>Whole group: {groupJobs.length} open job{groupJobs.length === 1 ? "" : "s"} across {group.size} clients</h2></div>
+              <div>
                 {canManage && groupJobs.length ? <div className="toolbar groupbar">
                   <span className="note"><strong>{picked.length}</strong> ticked</span>
                   <select id="group-status" aria-label="New status for ticked jobs" value={gstatus} onChange={(e) => setGstatus(e.target.value)}>
@@ -857,25 +871,32 @@ export default function Workspace({ me }: { me: Profile }) {
                   <button type="button" className="primary" disabled={!picked.length || !gstatus} onClick={() => applyGroupStatus(picked)}>Apply to ticked jobs</button>
                   <button type="button" onClick={() => gotoJobs({ client: c.id, group: "1" })}>Open in Jobs</button>
                 </div> : null}
-                {groupJobs.length ? <table><thead><tr>
+                {groupJobs.length ? <div style={{ overflowX: "auto" }}><table><thead><tr>
                   {canManage ? <th style={{ width: 32 }}><input type="checkbox" aria-label="Tick all" checked={allPicked} onChange={() => setGsel(allPicked ? new Set() : new Set(groupJobs.map((j) => j.id)))} /></th> : null}
-                  <th>Client</th><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
+                  <th>Client</th><th>Job</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
                   <tbody>{groupJobs.map((j) => <tr key={j.id}>
                     {canManage ? <td><input type="checkbox" aria-label={`Tick ${clientName(j.client_id)} ${svcLabel(j.service)} ${j.period}`} checked={gsel.has(j.id)} onChange={() => { const n = new Set(gsel); if (n.has(j.id)) n.delete(j.id); else n.add(j.id); setGsel(n); }} /></td> : null}
                     <td>{j.client_id === c.id ? <strong>{clientName(j.client_id)}</strong> : <button className="link" onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button>}</td>
-                    <td>{svcLabel(j.service)}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
+                    <td>{svcLabel(j.service)} · {j.period}</td><td><TimeLeft j={j} /></td>
                     <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td>
-                    <td><button onClick={() => openJob(j)}>Edit</button></td></tr>)}</tbody></table>
+                    <td><button onClick={() => openJob(j)}>Open</button></td></tr>)}</tbody></table></div>
                   : <div className="empty">No pending work for anyone in this group.</div>}
               </div></div> : null}
             <ClientNotes key={c.id} clientId={c.id} meId={me.id} isManager={canManage} canDelete={canDelete} supabase={supabase} personName={personName} say={say} />
-            {canManage || me.can_see_mgmt_notes ? <ClientNotes key={`m-${c.id}`} mgmt clientId={c.id} meId={me.id} isManager={canManage} canDelete={false} supabase={supabase} personName={personName} say={say} /> : null}
-            <div><h2>Open jobs ({openJ.length})</h2><div className="tablebox solo">{openJ.length ? <Table list={openJ} /> : <div className="empty">No open jobs for this client.</div>}</div></div>
-            {upcoming.length ? <div><h2>Upcoming jobs ({upcoming.length})</h2><div className="tablebox solo"><table><thead><tr><th>Service</th><th>Period</th><th>Created on</th><th>Due</th></tr></thead>
-              <tbody>{upcoming.map((u) => <tr key={u.key}><td>{svcLabel(u.service)}</td><td className="mono">{u.period}</td><td><span className="pill">{fmtDate(u.appears)}</span></td><td>{u.due ? fmtDate(u.due) : <span className="muted">—</span>}</td></tr>)}</tbody></table>
-              <div className="note" style={{ padding: "8px 12px" }}>Created automatically: BAS the day after the period ends, payroll on each pay day.</div></div></div> : null}
-            <div><h2>Lodged and completed ({closedJ.length})</h2><div className="tablebox solo">{closedJ.length ? <Table list={closedJ} /> : <div className="empty">Nothing lodged yet.</div>}</div></div>
+            <details className="panel" id="cl-closed"><summary className="ph" style={{ cursor: "pointer" }}><h2 style={{ display: "inline" }}>Lodged and completed ({closedJ.length})</h2></summary>
+              {closedJ.length ? <div style={{ overflowX: "auto" }}><Table list={closedJ} /></div> : <div className="empty">Nothing lodged yet.</div>}</details>
           </div>
+          <aside className="jobside">
+            {canManage || me.can_see_mgmt_notes ? <ClientNotes key={`m-${c.id}`} mgmt clientId={c.id} meId={me.id} isManager={canManage} canDelete={false} supabase={supabase} personName={personName} say={say} /> : null}
+            <div className="panel"><div className="ph"><h2>Contact</h2></div>
+              <dl className="people"><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Phone</dt><dd>{c.phone || "—"}</dd><dt>Email</dt><dd style={{ overflowWrap: "anywhere" }}>{c.email || "—"}</dd><dt>Address</dt><dd>{c.address || "—"}</dd></dl></div>
+            <div className="panel"><div className="ph"><h2>Details</h2></div>
+              <dl className="people">
+                {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, automatic` : "No automatic jobs"}</dd></> : null}
+                {c.services.some((sv) => SVC[sv]?.kind === "bas") ? <><dt>BAS cycle</dt><dd>{c.bas_freq === "monthly" ? "Monthly" : c.bas_freq === "annual" ? "Annually" : "Quarterly"}</dd></> : null}
+                <dt>Last change</dt><dd>{fmtDate(c.updated_at)}{c.updated_by ? ` · ${personName(c.updated_by)}` : ""}</dd></dl>
+              {c.notes ? <div style={{ padding: "0 14px 14px", whiteSpace: "pre-wrap" }} className="note">{c.notes}</div> : null}</div>
+          </aside>
         </div>
       </>
     );
