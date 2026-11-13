@@ -9,10 +9,42 @@ interface Q { id: string; job_id: string; parent_id: string | null; author_id: s
 interface Pr { id: string; name: string; follow_up: string | null; fee: number | null; stage: string; owner_id: string | null }
 const ago = (ts: string) => { const d = Math.floor((Date.now() - Date.parse(ts)) / 864e5); return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; };
 
-/** The manager's to-do across the practice: queries to answer, reviews, client signatures to chase, prospects to follow up. */
-export function NeedsAttention({ supabase, meId, canManage, jobs, clientName, personName, onOpen, onFollowedUp, onProspects }: {
-  supabase: SB; meId: string; canManage: boolean; jobs: Job[]; clientName: (id: string) => string; personName: (id: string | null) => string;
-  onOpen: (j: Job) => void; onFollowedUp: (j: Job) => void; onProspects: () => void;
+/** Internal queries raised to me that nobody has answered yet. */
+export function useMyQueries(supabase: SB, meId: string, jobs: Job[], on: boolean) {
+  const [qs, setQs] = useState<Q[]>([]);
+  useEffect(() => {
+    if (!on) return;
+    let live = true;
+    supabase.from("job_queries").select("id,job_id,parent_id,author_id,to_id,body,answered_at,created_at").gte("created_at", new Date(Date.now() - 120 * 864e5).toISOString()).limit(2000)
+      .then(({ data }) => { if (live) setQs((data as Q[] | null) ?? []); });
+    return () => { live = false; };
+  }, [supabase, meId, jobs, on]);
+  const byId = new Map(jobs.map((j) => [j.id, j]));
+  const replied = new Set(qs.filter((x) => x.parent_id).map((x) => x.parent_id));
+  return qs.filter((x) => !x.parent_id && !x.answered_at && !replied.has(x.id) && x.to_id === meId && byId.has(x.job_id))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at)).map((q) => ({ q, j: byId.get(q.job_id)! }));
+}
+
+/** The "Internal queries" view on the overview: every open query raised to me, oldest first. */
+export function MyQueries({ list, clientName, personName, onOpen }: {
+  list: { q: Q; j: Job }[]; clientName: (id: string) => string; personName: (id: string | null) => string; onOpen: (j: Job) => void;
+}) {
+  return (
+    <div className="panel attention">
+      <div className="ph"><h2>Internal queries raised to you</h2><span className="note">Oldest first</span></div>
+      {!list.length ? <div className="empty"><strong>No queries waiting on you.</strong>When someone in the team raises an internal query to you, it shows here.</div> : (
+        <ul className="list">{list.map(({ q, j }) => (
+          <li key={q.id}><span className="pill danger">Query</span><div className="grow"><div className="t">{clientName(j.client_id)} · {svcLabel(j.service)} {j.period}</div>
+            <div className="s">{personName(q.author_id) || "Someone"} asked {ago(q.created_at)}: &ldquo;{q.body.length > 160 ? `${q.body.slice(0, 160)}…` : q.body}&rdquo;</div></div>
+            <button type="button" className="primary" onClick={() => onOpen(j)}>Answer</button></li>))}</ul>)}
+    </div>
+  );
+}
+
+/** The manager's to-do across the practice: queries to answer, reviews, prospects to follow up. Signing reminders stay in the bell. */
+export function NeedsAttention({ supabase, meId, jobs, clientName, personName, onOpen, onProspects }: {
+  supabase: SB; meId: string; jobs: Job[]; clientName: (id: string) => string; personName: (id: string | null) => string;
+  onOpen: (j: Job) => void; onProspects: () => void;
 }) {
   const [qs, setQs] = useState<Q[]>([]);
   const [pr, setPr] = useState<Pr[]>([]);
@@ -33,14 +65,11 @@ export function NeedsAttention({ supabase, meId, canManage, jobs, clientName, pe
   const replied = new Set(qs.filter((x) => x.parent_id).map((x) => x.parent_id));
   const toAnswer = qs.filter((x) => !x.parent_id && !x.answered_at && !replied.has(x.id) && x.to_id === meId && byId.has(x.job_id));
   const reviews = jobs.filter((j) => j.status === "review" && j.reviewer_id === meId);
-  const twoDays = (ts: string | null | undefined) => !!ts && Date.now() - Date.parse(ts) >= 2 * 864e5;
-  const mineToChase = (j: Job) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === meId;
-  const chase = jobs.filter((j) => (j.status === "sent_for_sign" || j.status === "client_query") && twoDays(j.sign_sent_at) && mineToChase(j));
-  const n = toAnswer.length + reviews.length + chase.length + pr.length;
+  const n = toAnswer.length + reviews.length + pr.length;
   return (
     <div className="panel attention">
       <div className="ph"><h2>Needs your attention</h2><span className="note">Most urgent first</span></div>
-      {!n ? <div className="empty"><strong>Nothing waiting on you.</strong>Queries to answer, reviews, client signatures to chase and prospect follow-ups show here.</div> : (
+      {!n ? <div className="empty"><strong>Nothing waiting on you.</strong>Queries to answer, reviews and prospect follow-ups show here.</div> : (
         <ul className="list">
           {toAnswer.map((q) => { const j = byId.get(q.job_id)!; return (
             <li key={q.id}><span className="pill danger">Query</span><div className="grow"><div className="t">{clientName(j.client_id)} · {svcLabel(j.service)} {j.period}</div>
@@ -50,10 +79,6 @@ export function NeedsAttention({ supabase, meId, canManage, jobs, clientName, pe
             <li key={j.id}><span className="pill info">Review</span><div className="grow"><div className="t">{clientName(j.client_id)} · {svcLabel(j.service)} {j.period}</div>
               <div className="s">Prepared by {personName(j.assignee_id) || "someone"}</div></div>
               <button type="button" className="primary" onClick={() => onOpen(j)}>Start review</button></li>))}
-          {chase.map((j) => (
-            <li key={j.id}><span className="pill warn">{j.status === "client_query" ? "Client query" : "Signing"}</span><div className="grow"><div className="t">{clientName(j.client_id)} · {svcLabel(j.service)} {j.period}</div>
-              <div className="s">{j.status === "client_query" ? "Query sent" : "Sent for signing"} {ago(j.sign_sent_at!)}, no {j.status === "client_query" ? "reply" : "signature"} yet</div></div>
-              <div className="row"><button type="button" onClick={() => onFollowedUp(j)}>Still waiting</button><button type="button" onClick={() => onOpen(j)}>Open</button></div></li>))}
           {pr.map((p) => (
             <li key={p.id}><span className="pill accent">Prospect</span><div className="grow"><div className="t">{p.name}</div>
               <div className="s">Follow-up {p.follow_up === todayISO() ? "due today" : "overdue"}{p.fee ? ` · quoted $${p.fee.toLocaleString()} + GST` : ""}</div></div>

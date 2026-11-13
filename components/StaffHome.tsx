@@ -61,7 +61,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     || Number(over(b)) - Number(over(a)) || Number(b.priority === "high") - Number(a.priority === "high") || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
   const rank = new Map(ordered.map((j, i) => [j.id, i + 1]));
   const PILLS: [Kind, string, (j: Job) => boolean, boolean][] = [
-    ["all", "My tasks", () => true, false],
+    ["all", "All", () => true, false],
     ["overdue", "Overdue", over, true],
     ["review", "To review", isReview, false],
     ["sign", "Signing & client queries", isSign, false],

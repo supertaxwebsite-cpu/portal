@@ -2577,3 +2577,37 @@ end $$;
 drop policy if exists "leader adds leave for team" on public.leave_requests;
 create policy "leader adds leave for team" on public.leave_requests for insert to authenticated
   with check (public.can_approve_leave(user_id));
+
+-- ===== Choose who gets the signing reminders =====
+
+alter table public.profiles add column if not exists gets_sign_reminders boolean not null default false;
+
+create or replace function public.remind_unsigned() returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  with due as (
+    update public.jobs j set sign_reminded_at = now()
+    where j.status in ('sent_for_sign', 'client_query') and j.sign_owner is not null
+      and j.sign_sent_at <= now() - interval '2 days'
+      and (j.sign_reminded_at is null or j.sign_reminded_at <= now() - interval '2 days')
+    returning j.id, j.status, j.sign_owner, j.service, j.client_id, j.period
+  ),
+  owner_ok as (
+    select d.*, coalesce(p.active and (p.role = 'master' or p.gets_sign_reminders), false) as ok
+    from due d left join public.profiles p on p.id = d.sign_owner
+  ),
+  recipients as (
+    select o.id, o.status, o.service, o.client_id, o.period, o.sign_owner as user_id from owner_ok o where o.ok
+    union
+    select o.id, o.status, o.service, o.client_id, o.period, m.id from owner_ok o
+      join public.profiles m on m.role = 'master' and m.active
+    where not o.ok
+  )
+  insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+  select r.user_id, null, case when r.status = 'client_query' then 'client_query_reminder' else 'sign_reminder' end,
+         r.id, r.service, coalesce(c.name, '') || ' · ' || r.period
+  from recipients r left join public.clients c on c.id = r.client_id;
+  get diagnostics n = row_count;
+  return n;
+end $$;

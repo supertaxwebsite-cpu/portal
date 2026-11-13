@@ -32,7 +32,7 @@ import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
 import MyJobs, { fmtHours } from "./MyJobs";
 import StaffHome from "./StaffHome";
-import { NeedsAttention, ReviewByPerson, ReviewTypes } from "./OverviewPanels";
+import { MyQueries, NeedsAttention, ReviewByPerson, ReviewTypes, useMyQueries } from "./OverviewPanels";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings";
@@ -123,7 +123,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jsort, setJsort] = useState<{ k: string; dir: 1 | -1 }>({ k: "due", dir: 1 });
   // Ticked rows on the Jobs list, for changing several jobs at once.
   const [jsel, setJsel] = useState<Set<string>>(new Set());
-  const [ovTab, setOvTab] = useState<"team" | "mine">("team"); // managers: whole team, or their own task list
+  const [ovTab, setOvTab] = useState<"mine" | "team" | "queries">("mine"); // managers: their own task list (default), the whole team, or queries raised to them
   const [bulk, setBulk] = useState({ assignee: "", reviewer: "", status: "", due: "" });
   // Open internal queries, open review notes and files per job (the flags under each job name).
   const [flags, setFlags] = useState<Map<string, { q: number; rn: number; f: number }>>(new Map());
@@ -310,7 +310,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
   const navGo = (v: View) => {
     setJf(NO_FILTER); setJsort({ k: "due", dir: 1 });
-    setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick(""); setTeamFilter(""); setOvTab("team"); setJsel(new Set());
+    setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick(""); setTeamFilter(""); setOvTab("mine"); setJsel(new Set());
     setGsel(new Set()); setGstatus(""); setClientId(null); setNavTick((n) => n + 1);
     go(v);
   };
@@ -325,6 +325,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const personName = (id: string | null) => (id ? profileById.get(id)?.full_name ?? "Former staff" : "");
   const clientName = (id: string) => clientById.get(id)?.name ?? "Deleted client";
   const openJobs = useMemo(() => jobs.filter((j) => isOpen(j.status)), [jobs]);
+  const myQueries = useMyQueries(supabase, me.id, openJobs, me.role !== "staff" && view === "overview");
 
   /** Run a database write; show a friendly message either way. */
   async function save(fn: () => PromiseLike<{ error: { message: string; code?: string } | null }>, ok?: string): Promise<boolean> {
@@ -417,16 +418,11 @@ export default function Workspace({ me }: { me: Profile }) {
   const staffNotStarted = (j: Job) => !wasStarted(j);
   /** Staff can't change the status of a job they've submitted for review (until it's sent back). */
   const staffSubmitted = (j: Job) => me.role === "staff" && staffSubmittedLock(j, me.id);
-  /** What belongs in My jobs: my own work, reviews waiting for me, and jobs I approved that wait for the client's signature. */
+  /** What belongs in My jobs: my own work, reviews waiting for me, and approved jobs I send to the client for signing.
+   *  Jobs already with the client (sent for signing, query with client) are not tasks: the reminder goes to the bell only. */
   const myJobFilter = (j: Job) => {
-    // Ready for signing: the approver sends it to the client.
     if (j.status === "to_lodge") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id;
-    // Sent for sign: out of the list until it's 2+ days unsigned, then back so they chase the client.
-    if (j.status === "sent_for_sign") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id
-      && !!j.sign_sent_at && Date.now() - new Date(j.sign_sent_at).getTime() >= 2 * 864e5;
-    // Query with client: out of the list until 2+ days without a reply, then back so they follow up.
-    if (j.status === "client_query") return (j.sign_owner ?? j.assignee_id) === me.id
-      && (!j.sign_sent_at || Date.now() - new Date(j.sign_sent_at).getTime() >= 2 * 864e5);
+    if (j.status === "sent_for_sign" || j.status === "client_query") return false;
     if (j.status === "review") return j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id);
     return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query");
   };
@@ -551,7 +547,23 @@ export default function Workspace({ me }: { me: Profile }) {
     const ym = (off: number) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + off); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
     const lastMonthLodged = jobs.filter((j) => (j.lodged_on ?? "").startsWith(ym(-1))).length;
     const myOpen = openJobs.filter(myJobFilter);
-    const teamPill = me.role !== "staff" ? <div className="quickpills"><button type="button" onClick={() => setOvTab("team")}>← Team overview</button></div> : null;
+    const teamPill = me.role !== "staff" ? (
+      <div className="quickpills">
+        <button type="button" className={ovTab === "mine" ? "on" : undefined} onClick={() => setOvTab("mine")}>My tasks <i>{myOpen.length}</i></button>
+        <button type="button" className={ovTab === "team" ? "on" : undefined} onClick={() => setOvTab("team")}>Team</button>
+        <button type="button" className={ovTab === "queries" ? "on" : undefined} onClick={() => setOvTab("queries")}>Internal queries <i className={myQueries.length ? "hot" : undefined}>{myQueries.length}</i></button>
+        {ovTab === "team" ? <>
+          <button type="button" onClick={() => setOvTab("mine")}>Waiting for my review <i>{openJobs.filter((j) => j.status === "review" && j.reviewer_id === me.id).length}</i></button>
+          <button type="button" onClick={() => setOvTab("mine")}>Signing &amp; client queries <i>{myOpen.filter((j) => j.status === "to_lodge" || j.status === "sent_for_sign" || j.status === "client_query").length}</i></button>
+        </> : null}
+      </div>) : null;
+    if (me.role !== "staff" && ovTab === "queries") {
+      return (<>
+        {teamPill}
+        <div className="pagehead"><div><h1>Internal queries</h1><p>Questions the team has raised to you. Answer them from the job.</p></div></div>
+        <MyQueries list={myQueries} clientName={clientName} personName={personName} onOpen={(j) => openJob(j)} />
+      </>);
+    }
     if (me.role === "staff" || ovTab === "mine") {
       const ym = (off: number) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + off); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
       const closedIn = (m: string) => jobs.filter((j) => j.assignee_id === me.id && !isOpen(j.status) && (j.lodged_on ?? "").startsWith(m)).length;
@@ -585,13 +597,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <div className="side"><strong>Signed in as {roleLabel(me.role)}</strong><span className="note">{isMaster ? "Only you can add team members, change roles and switch access off." : canManage ? "Only master admins can delete clients and jobs." : "You can add and update clients and jobs."}</span></div>
           </div>
         ) : null}
-        <div className="quickpills">
-          <button type="button" className="on">Team</button>
-          <button type="button" onClick={() => setOvTab("mine")}>My tasks <i>{myOpen.length}</i></button>
-          <button type="button" onClick={() => setOvTab("mine")}>Waiting for my review <i>{openJobs.filter((j) => j.status === "review" && j.reviewer_id === me.id).length}</i></button>
-          <button type="button" onClick={() => gotoJobs({ status: "internal_query" })}>Queries to answer <i className={openJobs.some((j) => j.status === "internal_query") ? "hot" : undefined}>{openJobs.filter((j) => j.status === "internal_query").length}</i></button>
-          <button type="button" onClick={() => setOvTab("mine")}>Signing &amp; client queries <i>{myOpen.filter((j) => j.status === "to_lodge" || j.status === "sent_for_sign" || j.status === "client_query").length}</i></button>
-        </div>
+        {teamPill}
         <div className="tiles">
           <Tile lbl="Overdue" n={overdue.length} cls={overdue.length ? "danger" : ""} f={{ due: "overdue" }} sub="Click to see them in Jobs" />
           <Tile lbl="Due in the next 7 days" n={week.length} cls={week.length ? "warn" : ""} f={{ due: "week" }} sub="Click to see them in Jobs" />
@@ -607,8 +613,8 @@ export default function Workspace({ me }: { me: Profile }) {
         {canSeeWorkload || seesOwnTeam ? <TeamBoard supabase={supabase} rows={rows} timers={teamRunning} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} meId={me.id}
           title={seesOwnTeam ? "My team board" : "Team board"} onOpen={(j) => openJob(j)} onViewTasks={(id) => gotoJobs({ assignee: id })} /> : null}
         <div className="grid2 ovbottom">
-          <NeedsAttention supabase={supabase} meId={me.id} canManage={canManage} jobs={openJobs} clientName={clientName} personName={personName}
-            onOpen={(j) => openJob(j)} onFollowedUp={followedUp} onProspects={() => go("prospects")} />
+          <NeedsAttention supabase={supabase} meId={me.id} jobs={openJobs} clientName={clientName} personName={personName}
+            onOpen={(j) => openJob(j)} onProspects={() => go("prospects")} />
           <div className="section">
             <ReviewTypes supabase={supabase} personName={personName} visible={new Set(rows.map((r) => r.id))} />
             {projected.length ? (
@@ -1034,6 +1040,7 @@ export default function Workspace({ me }: { me: Profile }) {
               <div className="perms">
                 {chip(p.role !== "staff" || !!p.can_delete, "Can delete notes", canToggleDelete ? async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete notes` : `${p.full_name} can now delete notes and comments`); } : undefined)}
                 {p.role === "staff" ? chip(!!p.can_pick_reviewer, "Chooses own reviewer") : null}
+                {chip(p.role === "master" || !!p.gets_sign_reminders, "Gets signing reminders")}
                 {p.role === "staff" ? chip(!!p.can_see_mgmt_notes, "Sees management notes") : chip(true, "Sees management notes")}
                 {chip(p.role === "master" || !!p.can_see_workload, "Sees team workload", isMaster && p.role !== "master" && p.active ? async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); } : undefined)}
               </div>
@@ -1066,12 +1073,6 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   async function openNotice(n: Notice) {
-    if (n.kind === "sign_reminder" || n.kind === "client_query_reminder") {
-      // Answered from the Reminders box on the Overview, without opening the job.
-      navGo("overview");
-      setTimeout(() => document.getElementById("reminders")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
-      return;
-    }
     if (n.job_id) {
       const j = jobs.find((x) => x.id === n.job_id);
       if (j) setModal({ kind: "job", job: j, ...(n.kind === "internal_query" || n.kind === "query_answered" ? { tab: "queries" as const } : {}) }); else say("That job has been deleted or is no longer visible to you.", true);
@@ -1527,9 +1528,9 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], practices: v.role === "staff" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], practices: v.role === "staff" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1566,6 +1567,7 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
         </div> : null}
         {v.role !== "master" ? <div className="f full permbox"><span>Permissions</span>
           <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? " (not just their own team)" : ""}</label>
+          <label className="row" style={{ gap: 8 }}><input id="u-signrem" type="checkbox" checked={perm.signReminders} onChange={(e) => setPerm({ ...perm, signReminders: e.target.checked })} /> Get the bell reminders to chase client signatures and client query replies on jobs they send out (otherwise the reminders go to the master admins)</label>
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label> : null}
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-pickrev" type="checkbox" checked={perm.canPickReviewer} onChange={(e) => setPerm({ ...perm, canPickReviewer: e.target.checked })} /> Choose the reviewer on their own jobs (including themselves)</label> : null}
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-mgmt" type="checkbox" checked={perm.canSeeMgmt} onChange={(e) => setPerm({ ...perm, canSeeMgmt: e.target.checked })} /> See and add confidential management notes on clients (quotes, fees)</label> : null}

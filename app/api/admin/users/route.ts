@@ -34,12 +34,13 @@ export async function POST(req: Request) {
   if (role !== "master" && body.canSeeWorkload === true) perms.can_see_workload = true;
   if (role === "staff" && body.canPickReviewer === true) perms.can_pick_reviewer = true;
   if (role === "staff" && body.canSeeMgmt === true) perms.can_see_mgmt_notes = true;
+  if (role !== "master" && body.signReminders === true) perms.gets_sign_reminders = true;
   if (role === "staff" && Array.isArray(body.clientTypes) && body.clientTypes.length) perms.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (role === "staff" && Array.isArray(body.practices) && body.practices.length) perms.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   let { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) });
-  if (pErr && /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices/.test(pErr.message)) {
+  if (pErr && /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders/.test(pErr.message)) {
     // Database update for a permission not run yet: add them without it.
-    delete perms.can_see_workload; delete perms.can_pick_reviewer; delete perms.can_see_mgmt_notes;
+    delete perms.gets_sign_reminders; delete perms.can_see_workload; delete perms.can_pick_reviewer; delete perms.can_see_mgmt_notes;
     if (!(perms.practices as string[] | undefined)?.length) delete perms.practices;
     ({ error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) }));
   }
