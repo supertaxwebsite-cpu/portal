@@ -17,6 +17,10 @@ export const SERVICES: Service[] = [
   { id: "fbt", label: "FBT return", kind: "fbt" },
   { id: "tpar", label: "TPAR", kind: "annual", rule: "aug28" },
   { id: "asic", label: "ASIC annual review", kind: "custom" },
+  { id: "ato_payment", label: "ATO payment", kind: "custom" },
+  { id: "sgc", label: "SGC request", kind: "custom" },
+  { id: "ato_comm", label: "ATO communication", kind: "custom" },
+  { id: "company_formation", label: "Company formation", kind: "custom" },
   { id: "other", label: "Other", kind: "custom" },
 ];
 export const SVC: Record<string, Service> = Object.fromEntries(SERVICES.map((s) => [s.id, s]));

@@ -23,6 +23,7 @@ import ClientNotes from "./ClientNotes";
 import ClientPicker from "./ClientPicker";
 import RelatedClients from "./RelatedClients";
 import ProspectsView from "./Prospects";
+import ActivityLog from "./ActivityLog";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
@@ -828,12 +829,13 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and manager, and switch access off." : "You and the team members allocated to you."}</p></div>
-          <div className="row">{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
-        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th>{isMaster ? <th>Team leader</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th title="Can see Team workload and Working now on the Overview">Sees workload</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
+          <div className="row"><a className="btn" href="#activity-log" onClick={(e) => { e.preventDefault(); document.getElementById("activity-log")?.scrollIntoView({ behavior: "smooth" }); }}>🕘 Activity log</a>{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
+        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th title="Staff see only clients of these practices (plus jobs assigned to them)">Practices</th>{isMaster ? <th>Team leader</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th title="Can see Team workload and Working now on the Overview">Sees workload</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
           <tbody>{sorted.map((p) => { const oj = openJobs.filter((j) => j.assignee_id === p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
             <tr key={p.id}><td className="client">{p.full_name}{p.id === me.id ? " (you)" : ""}{p.title ? <div className="note">{p.title}</div> : null}</td>
               <td>{p.email}</td>
               <td><span className="role">{roleLabel(p.role)}</span>{!p.active ? <> <span className="pill danger">Access off</span></> : p.must_change_password ? <> <span className="pill warn">Hasn&apos;t signed in yet</span></> : null}</td>
+              <td>{p.role !== "staff" || !p.practices?.length ? <span className="note">All</span> : p.practices.join(", ")}</td>
               {isMaster ? <td>{p.role === "staff" ? personName(p.reports_to ?? null) || <span className="note">Not allocated</span> : null}</td> : null}
               <td>{p.role !== "staff" ? <span className="note">Always</span>
                 : (isMaster || p.reports_to === me.id) && p.active
@@ -895,7 +897,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "prospects" && canSeeTeam ? <ProspectsView key={navTick} supabase={supabase} meId={me.id} team={team} clients={clients} canDelete={canDelete} personName={personName} say={say} onOpenClient={openClient} onChanged={load} /> : null}
       {view === "timesheet" ? <Timesheet key={navTick} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
-      {view === "team" && canSeeTeam ? <TeamView /> : null}
+      {view === "team" && canSeeTeam ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => setModal({ kind: "job", job: j })} /></> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
@@ -1308,9 +1310,9 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, clientTypes: member?.client_types ?? [] as string[] });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], practices: v.role === "staff" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1350,6 +1352,10 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label> : null}
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-pickrev" type="checkbox" checked={perm.canPickReviewer} onChange={(e) => setPerm({ ...perm, canPickReviewer: e.target.checked })} /> Choose the reviewer on their own jobs (including themselves)</label> : null}
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-mgmt" type="checkbox" checked={perm.canSeeMgmt} onChange={(e) => setPerm({ ...perm, canSeeMgmt: e.target.checked })} /> See and add confidential management notes on clients (quotes, fees)</label> : null}
+          {v.role === "staff" ? <div style={{ marginTop: 6 }}><span>Practices they can see</span>
+            <div className="row" style={{ marginTop: 4, flexWrap: "wrap", gap: 6 }}>{PRACTICES.map((t) => { const on = perm.practices.includes(t); return (
+              <label key={t} className={`chip ${on ? "on" : ""}`}><input type="checkbox" checked={on} onChange={() => setPerm({ ...perm, practices: on ? perm.practices.filter((x) => x !== t) : [...perm.practices, t] })} />{t}</label>); })}</div>
+            <span className="note">{perm.practices.length ? `They see only clients of ${perm.practices.join(", ")}, plus the clients of any job assigned to them.` : "None ticked: they see clients of every practice."}</span></div> : null}
           {v.role === "staff" ? <div style={{ marginTop: 6 }}><span>Client types they can see</span>
             <div className="row" style={{ marginTop: 4, flexWrap: "wrap", gap: 6 }}>{ENTITIES.map((t) => { const on = perm.clientTypes.includes(t); return (
               <label key={t} className={`chip ${on ? "on" : ""}`}><input type="checkbox" checked={on} onChange={() => setPerm({ ...perm, clientTypes: on ? perm.clientTypes.filter((x) => x !== t) : [...perm.clientTypes, t] })} />{t}</label>); })}</div>

@@ -2305,13 +2305,16 @@ end $$;
 -- They always still see the clients of jobs they are working on.
 -- ============================================================
 alter table public.profiles add column if not exists client_types text[] not null default '{}';
+-- Practices per team member (Nov 2026): none ticked = every practice.
+alter table public.profiles add column if not exists practices text[] not null default '{}';
 
 create or replace function public.can_see_client(p_id uuid, p_entity text) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.profiles p where p.id = auth.uid() and p.active and (
     p.role <> 'staff'
-    or cardinality(p.client_types) = 0
-    or p_entity = any (p.client_types)
+    or ((cardinality(p.client_types) = 0 or p_entity = any (p.client_types))
+        and (cardinality(p.practices) = 0
+             or (select c.practice from public.clients c where c.id = p_id) = any (p.practices)))
     or exists (select 1 from public.jobs j where j.client_id = p_id
                and (j.assignee_id = p.id or j.reviewer_id = p.id or j.sign_owner = p.id or j.query_from = p.id))
   ));

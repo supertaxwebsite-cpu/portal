@@ -11,22 +11,36 @@ const time = (ts: string | null) => (ts ? new Date(ts).toLocaleTimeString("en-AU
 const mins = (a: Attendance, now: number) => Math.max(0, ((a.clock_out ? Date.parse(a.clock_out) : now) - Date.parse(a.clock_in)) / 60000);
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const hrs = (n: number) => `${Number(n.toFixed(2))} h`;
-// Attendance rules: clock in after 7:45 am = Late; a past weekday with no timesheet = Leave;
-// a finished day under 8 hours clocked = Half day.
+// Office rules (India office): Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break
+// (8h 15m of work, 9h logged in). Sunday is off. No annual leave.
+// Log in after 7:45 am = Late; a past working day with no timesheet = Leave;
+// a finished day under 6 hours logged in = Half day; logging out before the suggested time = Left early.
+const OFFICE_TZ = "Asia/Kolkata";
+const START = 7 * 60 + 30;
 const LATE_AFTER = 7 * 60 + 45;
-const FULL_DAY_MIN = 8 * 60;
-const sydneyMinutes = (ts: string) => {
-  const parts = new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ts));
+const HALF_DAY_MIN = 6 * 60;
+const SHIFT_MIN = 9 * 60; // 8h 15m work + 45 min break
+const WORK_DAY_H = 8.25;
+const EARLY_GRACE_MIN = 5;
+const officeMinutes = (ts: string) => {
+  const parts = new Intl.DateTimeFormat("en-AU", { timeZone: OFFICE_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ts));
   const n = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
   return n("hour") * 60 + n("minute");
 };
 const addDays = (d: string, n: number) => { const [y, m, dd] = d.split("-").map(Number); const x = new Date(Date.UTC(y, m - 1, dd + n)); return x.toISOString().slice(0, 10); };
-const isWeekday = (d: string) => { const [y, m, dd] = d.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay(); return w >= 1 && w <= 5; };
+/** A working day: Monday to Saturday (Sunday is off). */
+const isWeekday = (d: string) => { const [y, m, dd] = d.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay(); return w >= 1 && w <= 6; };
+/** When someone should log out: 9 hours after they started (or after 7:30 am if they came in early). */
+const suggestedOut = (firstIn: string) => {
+  const t = Date.parse(firstIn);
+  const base = Math.max(t, t - (officeMinutes(firstIn) - START) * 60000);
+  return new Date(base + SHIFT_MIN * 60000).toISOString();
+};
 
 export interface Override { user_id: string; work_date: string; status: "present" | "leave" | "half_day"; note: string }
 export interface LateRequest { user_id: string; work_date: string; reason: string; status: "pending" | "approved" | "rejected" }
 
-export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean; override?: Override["status"]; request?: LateRequest["status"]; lateExcused: boolean }
+export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean; early: number; suggested: string; override?: Override["status"]; request?: LateRequest["status"]; lateExcused: boolean }
 
 function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string; created_at?: string }[], from: string, to: string, now: number,
   overrides: Override[] = [], requests: LateRequest[] = []): Day[] {
@@ -35,7 +49,7 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
   const get = (user: string, date: string) => {
     const k = `${date}|${user}`;
     let d = map.get(k);
-    if (!d) { d = { user, date, first: "", last: null, open: false, m: 0, h: 0, late: false, leave: false, half: false, lateExcused: false }; map.set(k, d); }
+    if (!d) { d = { user, date, first: "", last: null, open: false, m: 0, h: 0, late: false, leave: false, half: false, early: 0, suggested: "", lateExcused: false }; map.set(k, d); }
     return d;
   };
   att.filter((a) => ids.has(a.user_id) && a.work_date >= from && a.work_date <= to).forEach((a) => {
@@ -45,7 +59,7 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
     d.m += mins(a, now);
   });
   entries.filter((e) => ids.has(e.user_id) && e.work_date >= from && e.work_date <= to).forEach((e) => { get(e.user_id, e.work_date).h += e.hours; });
-  // Past weekdays with nothing recorded count as leave (from the day the person was added).
+  // Past working days (Mon to Sat) with nothing recorded count as leave (from the day the person was added).
   const today = todayISO();
   people.forEach((p) => {
     const start = p.created_at && p.created_at.slice(0, 10) > from ? p.created_at.slice(0, 10) : from;
@@ -58,18 +72,20 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
     const k = `${d.date}|${d.user}`;
     const override = ov.get(k);
     const request = rq.get(k);
-    const wasLate = !!d.first && sydneyMinutes(d.first) > LATE_AFTER;
+    const wasLate = !!d.first && officeMinutes(d.first) > LATE_AFTER;
     const lateExcused = wasLate && request === "approved";
     // A master admin's status change wins over the automatic Leave / Half day marks.
     const leave = override ? override === "leave" : d.h === 0 && d.date < today;
-    const half = override ? override === "half_day" : !d.open && d.m > 0 && d.m < FULL_DAY_MIN;
-    return { ...d, override, request, lateExcused, late: wasLate && !lateExcused, leave, half };
+    const half = override ? override === "half_day" : !d.open && d.m > 0 && d.m < HALF_DAY_MIN;
+    const suggested = d.first ? suggestedOut(d.first) : "";
+    const earlyMin = !override && !half && !d.open && d.last && suggested ? Math.round((Date.parse(suggested) - Date.parse(d.last)) / 60000) : 0;
+    return { ...d, override, request, lateExcused, late: wasLate && !lateExcused, leave, half, suggested, early: earlyMin > EARLY_GRACE_MIN ? earlyMin : 0 };
   });
 }
 
 const Status = ({ d }: { d: Day }) => (
-  <>{d.leave ? <span className="pill danger">Leave</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day</span> : null}
-    {!d.leave && !d.late && !d.half ? <span className="pill ok">{d.open ? "Working" : d.override === "present" ? "Working day" : "Present"}</span> : null}
+  <>{d.leave ? <span className="pill danger">Leave</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day</span> : null} {d.early ? <span className="pill warn" title={`Suggested log out was ${time(d.suggested)}`}>Left {hm(d.early)} early</span> : null}
+    {!d.leave && !d.late && !d.half && !d.early ? <span className="pill ok">{d.open ? "Working" : d.override === "present" ? "Working day" : "Present"}</span> : null}
     {d.lateExcused ? <> <span className="pill ok">Late approved</span></> : null}
     {d.override ? <span className="note" title="Changed by your manager"> ✎</span> : null}</>
 );
@@ -159,6 +175,15 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   }
 
   const myMonth = buildDays(att, entries, [me], monthStart, todayISO(), now, overrides, requests);
+  // Suggested log-out for the shift that's running (9 hours after the start, or after 7:30 am).
+  const shiftFirst = openShift ? att.filter((a) => a.user_id === me.id && a.work_date === openShift.work_date).map((a) => a.clock_in).sort()[0] : "";
+  const outAt = shiftFirst ? suggestedOut(shiftFirst) : "";
+  const startedLate = !!shiftFirst && officeMinutes(shiftFirst) > START;
+  // Hours this month against the target (working days so far, Mon to Sat, 8h 15m each).
+  let workDays = 0;
+  for (let d = monthStart; d <= todayISO(); d = addDays(d, 1)) if (isWeekday(d) && !myMonth.some((x) => x.date === d && x.override === "leave")) workDays++;
+  const monthHours = entries.filter((e) => e.user_id === me.id && e.work_date >= monthStart).reduce((s, e) => s + e.hours, 0);
+  const target = workDays * WORK_DAY_H;
   const isMaster = me.role === "master";
 
   async function askApproval(d: Day) {
@@ -192,13 +217,13 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     .sort((a, b) => a.work_date.localeCompare(b.work_date) || name(a.user_id).localeCompare(name(b.user_id)));
   const teamPeople = visible.filter((p) => !who || p.id === who);
   const summary = buildDays(att, entries, teamPeople, from, to, now, overrides, requests).sort((a, b) => b.date.localeCompare(a.date) || name(a.user).localeCompare(name(b.user)));
-  const counts = { late: summary.filter((d) => d.late).length, leave: summary.filter((d) => d.leave).length, half: summary.filter((d) => d.half).length };
+  const counts = { early: summary.filter((d) => d.early).length, late: summary.filter((d) => d.late).length, leave: summary.filter((d) => d.leave).length, half: summary.filter((d) => d.half).length };
 
   function exportCsv() {
     const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = [["Date", "Person", "Client", "Job", "Hours", "Description"], ...teamEntries.map((e) => [e.work_date, name(e.user_id), clientName(e.client_id), jobLabel(e.job_id), e.hours, e.description])];
     rows.push([], ["Date", "Person", "Logged in", "Logged out", "Time logged in (hours)", "Timesheet hours", "Status"]);
-    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still logged in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && "Leave", d.late && "Late", d.half && "Half day"].filter(Boolean).join(", ") || "Present"]));
+    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still logged in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && "Leave", d.late && "Late", d.half && "Half day", d.early && `Left ${d.early} min early`].filter(Boolean).join(", ") || "Present"]));
     const blob = new Blob(["﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -220,6 +245,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
                 <p className="note" style={{ margin: "4px 0 0" }}>{openShift
                   ? <>Since {time(openShift.clock_in)}{openShift.work_date !== todayISO() ? ` on ${fmtDate(openShift.work_date)}` : ""} · {hm(mins(openShift, now))}</>
                   : "Log in when you start work."}</p>
+                {openShift && outAt ? <p className="pill warn" style={{ margin: "8px 0 0", whiteSpace: "normal" }}>🕓 Suggested log out <strong>{time(outAt)}</strong>{startedLate ? " (you started after 7:30, so this moves later to make up 8h 15m of work)" : ""}</p> : null}
                 {openShift && !shiftFilled ? <p className="pill warn" style={{ margin: "8px 0 0", whiteSpace: "normal" }}>Fill in your timesheet for {fmtDate(openShift.work_date)} below before you log out.</p> : null}
               </div>
               {openShift
@@ -233,17 +259,19 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
         <div className="section">
           <div className="panel" style={{ padding: 16 }}>
             <h2 style={{ marginTop: 0 }}>My attendance this month</h2>
+            <p className="note" style={{ margin: "2px 0 0" }}>Timesheet <strong>{hrs(monthHours)}</strong> of {hrs(target)} target ({workDays} working day{workDays === 1 ? "" : "s"} so far, 8h 15m each)</p>
             <div className="row" style={{ margin: "6px 0 10px" }}>
               <span className="pill warn">{myMonth.filter((d) => d.late).length} late</span>
+              <span className="pill warn">{myMonth.filter((d) => d.early).length} left early</span>
               <span className="pill info">{myMonth.filter((d) => d.half).length} half day</span>
               <span className="pill danger">{myMonth.filter((d) => d.leave).length} leave</span>
             </div>
-            {myMonth.some((d) => d.late || d.half || d.leave || d.lateExcused) ? (
-              <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave || d.lateExcused).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
+            {myMonth.some((d) => d.late || d.half || d.leave || d.early || d.lateExcused) ? (
+              <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave || d.early || d.lateExcused).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
                 <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}
                   {d.late && !d.request ? <> <button type="button" className="link" onClick={() => askApproval(d)}>Ask for approval</button></> : null}</li>))}</ul>
             ) : <p className="note" style={{ margin: 0 }}>No late starts, half days or leave this month.</p>}
-            <p className="note" style={{ margin: "10px 0 0" }}>Late = log in after 7:45 am · Half day = under 8 hours logged in · Leave = a weekday with no timesheet. Your manager can see this.</p>
+            <p className="note" style={{ margin: "10px 0 0" }}>Office hours: Monday to Saturday, 7:30 am to 4:30 pm (India time) with a 45 min break, so 8h 15m of work. Sunday is off. Late = log in after 7:45 am · Left early = log out before your suggested time · Half day = under 6 hours logged in · Leave = a working day with no timesheet. Your manager can see this.</p>
           </div>
         </div>
       </div>
@@ -283,7 +311,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
             <label className="row note">From <input type="date" id="tt-from" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} /></label>
             <label className="row note">To <input type="date" id="tt-to" value={to} onChange={(e) => e.target.value && setTo(e.target.value)} /></label>
             <select id="tt-who" aria-label="Person" value={who} onChange={(e) => setWho(e.target.value)}><option value="">Everyone</option>{visible.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>
-            <span className="row" style={{ marginLeft: "auto", gap: 6 }}><span className="pill warn">{counts.late} late</span><span className="pill info">{counts.half} half day</span><span className="pill danger">{counts.leave} leave</span></span>
+            <span className="row" style={{ marginLeft: "auto", gap: 6 }}><span className="pill warn">{counts.late} late</span><span className="pill warn">{counts.early} left early</span><span className="pill info">{counts.half} half day</span><span className="pill danger">{counts.leave} leave</span></span>
           </div>
           <div className="tablebox">
             {!summary.length ? <div className="empty"><strong>Nothing recorded for these dates.</strong>Log-ins and timesheet entries show here.</div> : (

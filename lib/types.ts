@@ -15,6 +15,8 @@ export interface Profile {
   can_pick_reviewer?: boolean;
   can_see_mgmt_notes?: boolean;
   client_types?: string[];
+  /** Staff only: practices whose clients they can see. Empty = every practice. */
+  practices?: string[];
   created_at: string;
 }
 

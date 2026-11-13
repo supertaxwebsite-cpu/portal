@@ -15,6 +15,10 @@ export const CHECKLISTS: Record<string, string[]> = {
   fin: ["Trial balance reviewed", "Balance sheet accounts reconciled", "Profit and loss reviewed against last year", "Notes and statements prepared"],
   fbt: ["Cars and logbooks", "Entertainment and meals", "Loans and other benefits", "Employee contributions", "FBT calculation checked"],
   tpar: ["Contractor payments listed", "ABNs and details checked", "Totals agree to the ledger"],
+  ato_payment: ["Amount and due date taken from the ATO account", "Payment reference (PRN) and BPAY / card details sent to the client", "Payment plan set up if they can't pay in full", "Client confirms it's paid", "Payment shows on the ATO account"],
+  sgc: ["Employees and quarters with late or missed super listed", "Shortfall, interest and admin fee worked out", "SGC statement lodged by the due date", "Client told the amount and how to pay", "Late payment offset recorded (if any)"],
+  ato_comm: ["Letter saved to Files and deadline noted", "Reply, objection or extension request prepared", "Penalty or interest remission asked for (if it fits)", "Copy sent to the client", "Followed up until the ATO confirms"],
+  company_formation: ["Directors' details and Director IDs checked", "Company name available, shares and registered office agreed", "Constitution or replaceable rules chosen", "ASIC registration lodged and certificate saved", "ABN, TFN and GST registered", "Company register, share certificates and consents prepared", "Handover pack sent to the client", "Company added as a new client with its jobs"],
   asic: ["Company statement reviewed", "Details updated with ASIC", "Annual fee paid or invoiced", "Solvency resolution signed"],
 };
 export const checklistFor = (service: string) => CHECKLISTS[service] ?? [];
