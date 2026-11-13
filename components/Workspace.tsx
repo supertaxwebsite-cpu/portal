@@ -24,6 +24,7 @@ import ClientPicker from "./ClientPicker";
 import RelatedClients from "./RelatedClients";
 import ProspectsView from "./Prospects";
 import ActivityLog from "./ActivityLog";
+import { STEPS } from "@/lib/checklists";
 import TeamBoard from "./TeamBoard";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import JobFiles from "./JobFiles";
@@ -906,7 +907,7 @@ export default function Workspace({ me }: { me: Profile }) {
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
       </WorkGate>
-      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -990,8 +991,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, initialTab, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; initialTab?: "queries"; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; initialTab?: "queries"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -1007,7 +1008,7 @@ function JobModal({ job, initialTab, presetClient, presetService, isStaff, leade
   const [busy, setBusy] = useState(false);
   // Team members see the job at a glance (no edit form): the manager has set it up.
   const brief = !!job && staffLock;
-  const [tab, setTab] = useState<"details" | "queries" | "history" | "files" | "email">(brief || initialTab === "queries" ? "queries" : "details");
+  const [tab, setTab] = useState<"details" | "queries" | "history" | "files" | "email">(brief || initialTab === "queries" || (job && STEPS[job.service]) ? "queries" : "details");
   const [openQs, setOpenQs] = useState(0);
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [sum, setSum] = useState<JobSummary | null>(null);
@@ -1094,13 +1095,13 @@ function JobModal({ job, initialTab, presetClient, presetService, isStaff, leade
       <header><h2>{readOnly ? "Job (read-only)" : brief ? "Job" : job ? "Edit job" : "New job"}</h2><button type="button" onClick={onClose}>Close</button></header>
       {job ? <div className="tabs" role="tablist">
         {brief ? null : <button type="button" role="tab" aria-selected={tab === "details"} className={tab === "details" ? "on" : ""} onClick={() => setTab("details")}>Details</button>}
-        <button type="button" role="tab" aria-selected={tab === "queries"} className={tab === "queries" ? "on" : ""} onClick={() => setTab("queries")}>{brief ? "Job" : "Checklist & queries"}{openQs ? <span className="navbadge">{openQs}</span> : null}</button>
+        <button type="button" role="tab" aria-selected={tab === "queries"} className={tab === "queries" ? "on" : ""} onClick={() => setTab("queries")}>{brief ? "Job" : job && STEPS[job.service] ? "Steps & queries" : "Checklist & queries"}{openQs ? <span className="navbadge">{openQs}</span> : null}</button>
         <button type="button" role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>History &amp; time{sum ? ` · ${sum.hours ? fmtHours(sum.hours) : "0h"}${sum.comments ? ` · ${sum.comments} comment${sum.comments === 1 ? "" : "s"}` : ""}` : ""}</button>
         <button type="button" role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}>Files{fileCount ? ` · ${fileCount}` : ""}</button>
         <button type="button" role="tab" aria-selected={tab === "email"} className={tab === "email" ? "on" : ""} onClick={() => setTab("email")}>Email client</button>
       </div> : null}
       {job && tab === "email" ? <div className="jobemailwrap"><JobEmail job={job} client={client} clients={allClients} meName={meName} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onSent={onClose} /></div> : null}
-      {job ? <div className="body" style={{ display: tab === "queries" ? "block" : "none" }}><JobBrief job={job} clientName={client?.name ?? ""} showInfo={brief} meId={meId} canAnswerAll={!isStaff} team={team} defaultTo={job.reviewer_id ?? leaderId} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onQueries={setOpenQs} /></div> : null}
+      {job ? <div className="body" style={{ display: tab === "queries" ? "block" : "none" }}><JobBrief job={job} clientName={client?.name ?? ""} showInfo={brief} meId={meId} canAnswerAll={!isStaff} team={team} defaultTo={job.reviewer_id ?? leaderId} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onQueries={setOpenQs} onNewClient={onNewClient} /></div> : null}
       {job ? <div style={{ display: tab === "files" ? "block" : "none" }}><JobFiles jobId={job.id} meId={meId} canDelete={canDelete} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onCount={setFileCount} /></div> : null}
       {job ? <div style={{ display: tab === "history" ? "block" : "none" }}><JobHistory jobId={job.id} readOnly={readOnly} meId={meId} canDelete={canDelete} supabase={supabase} personName={personName} say={say} onSummary={setSum} /></div> : null}
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>

@@ -510,3 +510,14 @@ table.prospects tr.muted td{opacity:.65}
 .wkbar i{display:block;height:5px;border-radius:3px;background:var(--surface-2);overflow:hidden}
 .wkbar b{display:block;height:100%;background:var(--accent)}
 .leaveform{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.stepbar{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;margin:0 0 10px}
+.stepbar i{display:block;height:100%;background:var(--ok)}
+ol.steps{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+ol.steps>li{border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+ol.steps>li.now{border-color:var(--accent);background:linear-gradient(90deg,var(--accent-soft),transparent 70%)}
+.stephead{display:flex;gap:10px;align-items:center}
+.stephead .note{margin-left:auto}
+.stephead .dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:12px;border:2px solid var(--line);color:var(--muted);flex:none}
+ol.steps>li.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+ol.steps>li.now .dot{border-color:var(--accent);color:var(--accent)}
+ol.steps .checklist{margin-top:6px}

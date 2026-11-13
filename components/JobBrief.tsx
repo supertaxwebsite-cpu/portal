@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Job, Person } from "@/lib/types";
 import { svcLabel, ST, fmtDate, daysFrom } from "@/lib/domain";
-import { checklistFor } from "@/lib/checklists";
+import { checklistFor, STEPS } from "@/lib/checklists";
 import type { JobFile } from "./JobFiles";
 
 type SB = ReturnType<typeof createClient>;
@@ -15,9 +15,9 @@ const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_")
 
 /** The job at a glance (for team members, instead of the edit form), its checklist,
  *  and internal queries: question on the left, the manager's reply beside it. */
-export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries }: {
+export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient }: {
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
-  supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void;
+  supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void; onNewClient?: () => void;
 }) {
   const [qs, setQs] = useState<Query[] | null>(null);
   const [checks, setChecks] = useState<Check[]>([]);
@@ -105,7 +105,24 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
       </div> : null}
       {showInfo && job.notes?.trim() ? <div className="briefnotes"><span className="lbl2">Notes from your manager</span><div>{job.notes}</div></div> : null}
 
-      {items.length ? <section className="briefsec">
+      {STEPS[job.service] ? (() => {
+        const steps = STEPS[job.service];
+        const nowIdx = steps.findIndex((s) => s.items.some((i) => !done.has(i)));
+        const allDone = items.filter((i) => done.has(i)).length;
+        return <section className="briefsec">
+          <h3>Steps <span className="note">{allDone} of {items.length} done</span></h3>
+          <div className="stepbar"><i style={{ width: `${(allDone / Math.max(1, items.length)) * 100}%` }} /></div>
+          <ol className="steps">{steps.map((s, n) => { const d = s.items.filter((i) => done.has(i)).length; const state = d === s.items.length ? "done" : n === nowIdx ? "now" : "";
+            return (
+              <li key={s.title} className={state}>
+                <div className="stephead"><span className="dot">{state === "done" ? "✓" : n + 1}</span><strong>{s.title}</strong><span className="note">{d} of {s.items.length}</span></div>
+                {state !== "done" || n === steps.length - 1 ? <ul className="checklist">{s.items.map((i) => { const c = done.get(i); return (
+                  <li key={i}><label className={c ? "done" : ""}><input type="checkbox" checked={!!c} disabled={readOnly || missing} onChange={() => toggle(i, !!c)} /> {i}</label>
+                    {c ? <span className="note">{personName(c.done_by) || "someone"} · {when(c.done_at)}</span> : null}</li>); })}</ul> : null}
+                {n === steps.length - 1 && job.service === "company_formation" && onNewClient && !readOnly ? <button type="button" className="primary" style={{ marginTop: 8 }} onClick={onNewClient}>Create the new company as a client</button> : null}
+              </li>); })}</ol>
+        </section>;
+      })() : items.length ? <section className="briefsec">
         <h3>Checklist <span className="note">{items.filter((i) => done.has(i)).length} of {items.length} done</span></h3>
         <ul className="checklist">{items.map((i) => { const c = done.get(i); return (
           <li key={i}><label className={c ? "done" : ""}><input type="checkbox" checked={!!c} disabled={readOnly || missing} onChange={() => toggle(i, !!c)} /> {i}</label>

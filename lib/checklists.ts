@@ -18,7 +18,19 @@ export const CHECKLISTS: Record<string, string[]> = {
   ato_payment: ["Amount and due date taken from the ATO account", "Payment reference (PRN) and BPAY / card details sent to the client", "Payment plan set up if they can't pay in full", "Client confirms it's paid", "Payment shows on the ATO account"],
   sgc: ["Employees and quarters with late or missed super listed", "Shortfall, interest and admin fee worked out", "SGC statement lodged by the due date", "Client told the amount and how to pay", "Late payment offset recorded (if any)"],
   ato_comm: ["Letter saved to Files and deadline noted", "Reply, objection or extension request prepared", "Penalty or interest remission asked for (if it fits)", "Copy sent to the client", "Followed up until the ATO confirms"],
-  company_formation: ["Directors' details and Director IDs checked", "Company name available, shares and registered office agreed", "Constitution or replaceable rules chosen", "ASIC registration lodged and certificate saved", "ABN, TFN and GST registered", "Company register, share certificates and consents prepared", "Handover pack sent to the client", "Company added as a new client with its jobs"],
+  company_formation: [] as string[],
   asic: ["Company statement reviewed", "Details updated with ASIC", "Annual fee paid or invoiced", "Solvency resolution signed"],
 };
+/** Jobs done in steps: each step has its own checklist. */
+export const STEPS: Record<string, { title: string; items: string[] }[]> = {
+  company_formation: [
+    { title: "Directors and shareholders", items: ["Directors' full names, addresses, dates and places of birth", "Director ID for every director", "Shareholders and how many shares each", "Signed consents to act as director"] },
+    { title: "Company name, office and rules", items: ["Name checked as available on ASIC", "Registered office and principal place of business", "Share classes and price per share", "Constitution or replaceable rules chosen"] },
+    { title: "ASIC registration", items: ["Form 201 lodged with ASIC", "ASIC fee paid", "Certificate of registration and ACN saved to Files"] },
+    { title: "Tax registrations", items: ["ABN registered", "TFN registered", "GST registered (if needed)", "PAYG withholding registered (if they'll have employees)"] },
+    { title: "Company register and handover", items: ["Company register, share certificates and minutes prepared", "Documents signed by directors", "Handover pack sent to the client", "ASIC annual review date noted"] },
+    { title: "Set up as a client", items: ["Company added as a new client", "Services ticked (BAS, company tax return, ASIC annual review)", "Bank feeds or bookkeeping set up"] },
+  ],
+};
+for (const [svc, steps] of Object.entries(STEPS)) CHECKLISTS[svc] = steps.flatMap((s) => s.items);
 export const checklistFor = (service: string) => CHECKLISTS[service] ?? [];
