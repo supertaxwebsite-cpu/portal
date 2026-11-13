@@ -533,3 +533,17 @@ ol.steps .checklist{margin-top:6px}
 .evlegend .ev.online{background:var(--info-soft);color:var(--info)}.evlegend .ev.team{background:var(--ok-soft);color:var(--ok)}.evlegend .ev.client{background:var(--warn-soft);color:var(--warn)}
 .rntypes{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-top:1px solid var(--line)}
 .rnote.cleared{opacity:.7}
+/* Jobs list (new design) */
+.wrap{max-width:1280px}
+.quickpills button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.quickpills button.on i{background:var(--brand-orange);color:#1b1104}
+.jobtable .jobname{font-weight:700;text-align:left}
+.stagecell{display:flex;flex-direction:column;gap:3px;min-width:80px}
+.stagedots{display:flex;gap:3px}
+.stagedots i{width:16px;height:5px;border-radius:3px;background:var(--surface-2)}
+.stagedots i.d{background:var(--ok)}.stagedots i.n{background:var(--accent)}
+.stagecell small{color:var(--muted);font-size:12px;line-height:1.2}
+.tleft{display:flex;flex-direction:column;gap:2px;white-space:nowrap}
+.tleft b{font-weight:700;font-size:13px;padding-bottom:3px;border-bottom:3px solid var(--line);align-self:flex-start}
+.tleft small{color:var(--muted);font-size:11.5px}
+.tleft.ok b{color:var(--ok);border-color:var(--ok)}.tleft.warn b{color:var(--warn);border-color:var(--brand-orange)}.tleft.danger b{color:var(--danger);border-color:var(--danger)}

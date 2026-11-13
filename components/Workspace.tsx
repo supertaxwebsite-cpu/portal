@@ -462,6 +462,20 @@ export default function Workspace({ me }: { me: Profile }) {
     } else if (j.lodged_on) note = <small className="muted">Lodged {fmtDate(j.lodged_on)}</small>;
     return <div className="due"><span className="mono">{fmtDate(j.due_date)}</span>{note}</div>;
   };
+  /** Where a job is in its life: preparation, review, signing, lodged. */
+  const STAGE_NAMES = ["Preparation", "Review", "Signing", "Lodged"];
+  const stageOf = (j: Job) => (!isOpen(j.status) ? 3 : j.status === "review" ? 1 : j.status === "to_lodge" || j.status === "sent_for_sign" ? 2 : 0);
+  const Stage = ({ j }: { j: Job }) => { const s = stageOf(j); const lbl = ST[j.status]?.label ?? ""; return (
+    <div className="stagecell" title={`Stage ${s + 1} of 4: ${STAGE_NAMES[s]}`}><div className="stagedots">{STAGE_NAMES.map((n, i) => <i key={n} className={i < s || (s === 3) ? "d" : i === s ? "n" : ""} />)}</div>
+      <small>{s === 0 && j.status !== "in_progress" && j.status !== "not_started" ? lbl : j.status === "done" ? "Completed" : STAGE_NAMES[s]}</small></div>); };
+  const TimeLeft = ({ j }: { j: Job }) => {
+    if (!isOpen(j.status)) return <div className="tleft ok"><b>{j.status === "done" ? "Completed" : "Lodged"}</b><small>{j.lodged_on ? fmtDate(j.lodged_on) : ""}</small></div>;
+    if (j.status === "sent_for_sign" && j.sign_sent_at) { const d = -daysFrom(j.sign_sent_at.slice(0, 10)); return <div className="tleft ok"><b>Sent {d ? `${d} day${d === 1 ? "" : "s"} ago` : "today"}</b><small>{j.due_date ? `Due ${fmtDate(j.due_date)}` : ""}</small></div>; }
+    if (!j.due_date) return <div className="tleft"><b className="muted">No due date</b></div>;
+    const d = daysFrom(j.due_date);
+    const cls = d < 0 ? "danger" : d <= 7 ? "warn" : "ok";
+    return <div className={`tleft ${cls}`}><b>{d < 0 ? `${-d} day${d === -1 ? "" : "s"} overdue` : d === 0 ? "Due today" : `${d} day${d === 1 ? "" : "s"} left`}</b><small>{fmtDate(j.due_date)}</small></div>;
+  };
   const statusCls = (j: Job) => { const s = ST[j.status] ?? ST.not_started; return s.open && j.due_date && daysFrom(j.due_date) < 0 ? "danger" : s.cls; };
   // Lodged and completed jobs are read-only for everyone except master admins.
   const closedFor = (j: Job) => !isOpen(j.status) && !isMaster;
@@ -656,9 +670,19 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead">
-          <div><h1>Jobs</h1><p>{me.role === "staff" ? "Your jobs and unassigned jobs. Open an unassigned job and click Take this job to start on it." : "Every piece of client work, with its period, due date, owner and status."}</p></div>
+          <div><h1>Jobs <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{openJobs.length.toLocaleString()} open</span></h1><p>{me.role === "staff" ? "Your jobs and unassigned jobs. Open an unassigned job and click Take this job to start on it." : "Every piece of client work, with its period, due date, owner and status."}</p></div>
           <div className="row"><button onClick={() => exportCsv(list)}>Export CSV</button><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
         </div>
+        <div className="quickpills">{([
+          ["All open", { status: "open" }, openJobs.length, ""],
+          ["ATO & SGC", { service: "ato_payment,sgc,ato_comm" }, openJobs.filter((j) => ["ato_payment", "sgc", "ato_comm"].includes(j.service)).length, ""],
+          ["Overdue", { due: "overdue" }, openJobs.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length, "hot"],
+          ...(me.role === "staff" ? [] : [["Unassigned", { assignee: "__none" }, openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).length, ""]]),
+          ["Ready for review or signing", { status: "review_any" }, openJobs.filter((j) => j.status === "review" || j.status === "to_lodge").length, ""],
+          ["Internal queries", { status: "internal_query" }, openJobs.filter((j) => j.status === "internal_query").length, "hot"],
+          ["Lodged this month", { status: "lodged" }, jobs.filter((j) => (j.lodged_on ?? "").startsWith(todayISO().slice(0, 7))).length, ""],
+        ] as [string, Partial<JobFilter>, number, string][]).map(([l, f, n, hot]) => { const on = JSON.stringify({ ...NO_FILTER, ...f }) === JSON.stringify(jf); return (
+          <button key={l} type="button" className={on ? "on" : undefined} onClick={() => setJf({ ...NO_FILTER, ...f })}>{l} <i className={hot && n ? "hot" : undefined}>{n}</i></button>); })}</div>
         <div className="toolbar">
           <input type="search" id="jf-q" style={{ minWidth: 240 }} placeholder="Search client, period or notes" aria-label="Search jobs" value={jf.q} onChange={set("q")} />
           <MultiPick id="jf-service" all="All services" value={jf.service} onChange={(v) => setJf({ ...jf, service: v })} options={SERVICES.map((s) => ({ v: s.id, l: s.label }))} />
@@ -687,15 +711,19 @@ export default function Workspace({ me }: { me: Profile }) {
             <div className="empty"><strong>{jobs.length ? "No jobs match these filters." : "No jobs yet."}</strong>{jobs.length ? "Clear a filter to see more." : "Use New job for one-off work, or Create jobs for a period to set up a whole quarter of BAS at once."}</div>
           ) : (
             <>
-              <table><thead><tr><H k="client">Client</H><H k="service">Service</H><H k="period">Period</H><H k="due">Due</H><H k="assigned">Assigned</H><H k="status">Status</H><th></th></tr></thead>
-                <tbody>{shown.map((j) => (
+              <table className="jobtable"><thead><tr><H k="client">Client · practice</H><H k="service">Job</H><th>Stage</th><H k="assigned">Assigned</H><th>Reviewer</th><H k="due">Due / time left</H><H k="status">Status</H><th></th></tr></thead>
+                <tbody>{shown.map((j) => { const c = clientById.get(j.client_id); return (
                   <tr key={j.id}>
-                    <td className="client"><button className="link" onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button>{j.priority === "high" ? <span className="prio" title="High priority">!</span> : null}<div className="note">{practiceOf(clientById.get(j.client_id))}</div></td>
-                    <td>{svcLabel(j.service)}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
-                    <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}{j.reviewer_id ? <div className="note">Review: {personName(j.reviewer_id)}</div> : null}</td>
+                    <td className="client"><button className="link" style={{ color: "var(--fg)" }} onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button><div className="note">{practiceOf(c)}{c?.entity ? ` · ${c.entity}` : ""}</div></td>
+                    <td><button className="link jobname" onClick={() => setModal({ kind: "job", job: j })}>{svcLabel(j.service)} · {j.period}</button>
+                      {j.priority === "high" ? <div><span className="pill danger">High</span></div> : null}</td>
+                    <td><Stage j={j} /></td>
+                    <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td>
+                    <td>{personName(j.reviewer_id) || <span className="muted">—</span>}</td>
+                    <td><TimeLeft j={j} /></td>
                     <td><StatusSelect j={j} /></td>
-                    <td><button onClick={() => setModal({ kind: "job", job: j })}>{closedFor(j) ? "View" : "Edit"}</button></td>
-                  </tr>))}</tbody></table>
+                    <td><button onClick={() => setModal({ kind: "job", job: j })}>{closedFor(j) ? "View" : "Open"}</button></td>
+                  </tr>); })}</tbody></table>
               <div className="count">{list.length} job{list.length === 1 ? "" : "s"}{list.length > 500 ? " · showing the first 500, narrow the filters to see the rest" : ""}</div>
             </>
           )}
