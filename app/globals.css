@@ -725,3 +725,45 @@ ol.tasks{list-style:none;margin:0;padding:0}
 .counts i.warn{background:var(--brand-orange)!important;color:#1b1104!important}
 .counts i.green{background:var(--ok)!important;color:#fff!important}
 @media (max-width:760px){.qpair{grid-template-columns:1fr;padding-left:16px}.taskbody,.task.add{padding-left:16px}}
+/* Overview: tiles with a line under, status chips in one row, attention list */
+.tile .note{font-size:12px}
+.tile.info .val{color:var(--accent)} .tile.lodg{border-top:3px solid var(--ok)} .tile.lodg .val{color:var(--ok)}
+@media (min-width:1100px){.statusrow{grid-template-columns:repeat(10,minmax(0,1fr))}}
+.attention .list li,.rtypes .list li{display:flex;align-items:center;gap:12px;flex-wrap:nowrap}
+.attention .grow,.rtypes .grow{flex:1;min-width:0}
+.attention .s{overflow:hidden;text-overflow:ellipsis}
+.ovbottom{align-items:start}
+/* Payroll table and side panels */
+.paytable .note.danger{color:var(--danger)}.paytable .note.warn{color:var(--warn)}.paytable .note.okc{color:var(--ok)}
+.paytable tr.running td{background:color-mix(in srgb,var(--brand-blue) 9%,transparent)}
+.paycoming li{display:flex;align-items:center;gap:12px;flex-wrap:nowrap}
+.caldate{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:44px;height:44px;border-radius:8px;background:var(--surface-2);flex:none;line-height:1.1}
+.caldate small{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}.caldate b{font-size:17px}
+.howpay{list-style:none;margin:0;padding:6px 16px 14px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+/* Prospects board */
+.paystat[role=button]{cursor:pointer}
+.pboard{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:start}
+.pcol{background:var(--surface-2);border-radius:12px;padding:10px;min-height:120px;display:flex;flex-direction:column;gap:8px}
+.pcol.dropok{outline:2px dashed var(--line)}
+.pcolh{display:flex;justify-content:space-between;gap:6px;font-size:13px;padding:0 2px 2px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:5px;cursor:pointer;font-size:12.5px}
+.pcard:hover{border-color:var(--accent)}
+.pcard .t{font-weight:700;font-size:13.5px}
+.ptags{display:flex;flex-wrap:wrap;gap:4px}
+.pcard .mono{font-size:12.5px}
+.pdue{font-weight:600}.pdue.late{color:var(--danger)}.pdue.today{color:var(--danger)}
+@media (max-width:1100px){.pboard{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:600px){.pboard{grid-template-columns:1fr}}
+/* Meetings layout */
+.quickbook{margin-bottom:16px}
+.quickbook .qbprev{border:1.5px dashed var(--accent);background:var(--accent-soft);border-radius:10px;padding:10px 14px}
+.calgrid .day.blank{background:transparent;border-color:transparent;cursor:default}
+.calgrid .day.today{outline:2px solid var(--accent);outline-offset:-2px}
+.upcoming li{display:flex;align-items:center;gap:12px;flex-wrap:nowrap}
+.uwhen{display:flex;flex-direction:column;width:70px;flex:none;font-size:13px}
+.roletable{width:100%;font-size:13px}
+.roletable th:not(:first-child),.roletable td:not(:first-child){text-align:center}
+.roletable .yes{color:var(--ok);font-weight:700}
+.upcoming li{flex-wrap:wrap}
+.upcoming li>.row{width:100%;justify-content:flex-end}
+.upcoming .uwhen{width:auto;flex-direction:row;gap:6px;align-items:baseline;width:100%}

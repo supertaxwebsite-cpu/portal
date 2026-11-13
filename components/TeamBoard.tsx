@@ -75,12 +75,6 @@ export default function TeamBoard({ supabase, rows, timers, jobById, clientName,
               </tr>);
           })}</tbody></table>
       </div>
-      {hours?.notes?.length ? (() => {
-        const month = todayISO().slice(0, 7);
-        const m = hours.notes!.filter((x) => x.created_at.slice(0, 7) === month);
-        const types = [...new Set(m.map((x) => x.category))].map((c) => ({ c, n: m.filter((x) => x.category === c).length })).sort((a, b) => b.n - a.n);
-        return types.length ? <div className="rntypes"><span className="note">Review notes this month by type:</span>{types.map((t) => <span key={t.c} className="pill warn">{t.c} {t.n}</span>)}</div> : null;
-      })() : null}
     </div>
   );
 }

@@ -32,6 +32,7 @@ import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
 import MyJobs, { fmtHours } from "./MyJobs";
 import StaffHome from "./StaffHome";
+import { NeedsAttention, ReviewByPerson, ReviewTypes } from "./OverviewPanels";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings";
@@ -122,6 +123,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jsort, setJsort] = useState<{ k: string; dir: 1 | -1 }>({ k: "due", dir: 1 });
   // Ticked rows on the Jobs list, for changing several jobs at once.
   const [jsel, setJsel] = useState<Set<string>>(new Set());
+  const [ovTab, setOvTab] = useState<"team" | "mine">("team"); // managers: whole team, or their own task list
   const [bulk, setBulk] = useState({ assignee: "", reviewer: "", status: "", due: "" });
   // Open internal queries, open review notes and files per job (the flags under each job name).
   const [flags, setFlags] = useState<Map<string, { q: number; rn: number; f: number }>>(new Map());
@@ -308,7 +310,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
   const navGo = (v: View) => {
     setJf(NO_FILTER); setJsort({ k: "due", dir: 1 });
-    setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick(""); setTeamFilter("");
+    setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick(""); setTeamFilter(""); setOvTab("team"); setJsel(new Set());
     setGsel(new Set()); setGstatus(""); setClientId(null); setNavTick((n) => n + 1);
     go(v);
   };
@@ -543,13 +545,17 @@ export default function Workspace({ me }: { me: Profile }) {
     const un = openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active));
     if (un.length && !seesOwnTeam) rows.push({ id: "__none", name: "Unassigned", title: "", js: un });
     const projected = projectedWork(clients);
-    const Tile = ({ lbl, n, cls, f }: { lbl: string; n: number; cls?: string; f: Partial<JobFilter> }) => (
-      <button className={`tile ${cls ?? ""}`} onClick={() => gotoJobs(f)}><span className="lbl">{lbl}</span><span className="val">{n}</span></button>
+    const Tile = ({ lbl, n, cls, f, sub }: { lbl: string; n: number; cls?: string; f: Partial<JobFilter>; sub?: string }) => (
+      <button className={`tile ${cls ?? ""}`} onClick={() => gotoJobs(f)}><span className="lbl">{lbl}</span><span className="val">{n}</span>{sub ? <span className="note">{sub}</span> : null}</button>
     );
-    if (me.role === "staff") {
+    const ym = (off: number) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + off); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+    const lastMonthLodged = jobs.filter((j) => (j.lodged_on ?? "").startsWith(ym(-1))).length;
+    const myOpen = openJobs.filter(myJobFilter);
+    const teamPill = me.role !== "staff" ? <div className="quickpills"><button type="button" onClick={() => setOvTab("team")}>← Team overview</button></div> : null;
+    if (me.role === "staff" || ovTab === "mine") {
       const ym = (off: number) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + off); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
       const closedIn = (m: string) => jobs.filter((j) => j.assignee_id === me.id && !isOpen(j.status) && (j.lodged_on ?? "").startsWith(m)).length;
-      return (
+      return (<>{teamPill}
         <StaffHome supabase={supabase} meId={me.id} firstName={me.full_name.split(" ")[0]} jobs={openJobs.filter(myJobFilter)} closedThisMonth={closedIn(ym(0))} closedLastMonth={closedIn(ym(-1))}
           running={running} busy={timerBusy} personName={personName} wasStarted={wasStarted}
           clientLine={(j) => { const c = clientById.get(j.client_id); return [clientName(j.client_id), `${practiceOf(c)}${c?.entity ? ` · ${c.entity}` : ""}`]; }}
@@ -559,13 +565,13 @@ export default function Workspace({ me }: { me: Profile }) {
           {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
             onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })} onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")}
             onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} onAnswer={() => {}} onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} /></div> : null}
-        </StaffHome>
+        </StaffHome></>
       );
     }
     return (
       <>
         <div className="pagehead">
-          <div><h1>Practice desk</h1><p>{greeting()} {me.full_name.split(" ")[0]}. {fmtDate(todayISO())} · {openJobs.length} open job{openJobs.length === 1 ? "" : "s"} across {clients.length} client{clients.length === 1 ? "" : "s"}{seesOwnTeam ? " · you see your own team" : ""}.</p></div>
+          <div><h1>Practice desk</h1><p>{greeting()} {me.full_name.split(" ")[0]}. {seesOwnTeam ? "Your team at a glance" : "The whole practice at a glance"} · {openJobs.length} open job{openJobs.length === 1 ? "" : "s"} across {clients.length} client{clients.length === 1 ? "" : "s"}.</p></div>
           <div className="row"><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
         </div>
         {!clients.length ? (
@@ -579,19 +585,19 @@ export default function Workspace({ me }: { me: Profile }) {
             <div className="side"><strong>Signed in as {roleLabel(me.role)}</strong><span className="note">{isMaster ? "Only you can add team members, change roles and switch access off." : canManage ? "Only master admins can delete clients and jobs." : "You can add and update clients and jobs."}</span></div>
           </div>
         ) : null}
-        <div className="quickpills">{[
-          { l: "My jobs", n: openJobs.filter((j) => j.assignee_id === me.id).length, f: { assignee: me.id } },
-          { l: "Ready for review or signing", n: review.length, f: { status: "review_any" } },
-          { l: "Internal queries", n: openJobs.filter((j) => j.status === "internal_query").length, f: { status: "internal_query" }, hot: true },
-          { l: "Query with client", n: openJobs.filter((j) => j.status === "client_query").length, f: { status: "client_query" } },
-          { l: "Sent for sign", n: openJobs.filter((j) => j.status === "sent_for_sign").length, f: { status: "sent_for_sign" } },
-        ].map((q) => <button key={q.l} type="button" onClick={() => gotoJobs(q.f)}>{q.l} <i className={q.hot && q.n ? "hot" : undefined}>{q.n}</i></button>)}</div>
+        <div className="quickpills">
+          <button type="button" className="on">Team</button>
+          <button type="button" onClick={() => setOvTab("mine")}>My tasks <i>{myOpen.length}</i></button>
+          <button type="button" onClick={() => setOvTab("mine")}>Waiting for my review <i>{openJobs.filter((j) => j.status === "review" && j.reviewer_id === me.id).length}</i></button>
+          <button type="button" onClick={() => gotoJobs({ status: "internal_query" })}>Queries to answer <i className={openJobs.some((j) => j.status === "internal_query") ? "hot" : undefined}>{openJobs.filter((j) => j.status === "internal_query").length}</i></button>
+          <button type="button" onClick={() => setOvTab("mine")}>Signing &amp; client queries <i>{myOpen.filter((j) => j.status === "to_lodge" || j.status === "sent_for_sign" || j.status === "client_query").length}</i></button>
+        </div>
         <div className="tiles">
-          <Tile lbl="Overdue" n={overdue.length} cls={overdue.length ? "danger" : ""} f={{ due: "overdue" }} />
-          <Tile lbl="Due in the next 7 days" n={week.length} cls={week.length ? "warn" : ""} f={{ due: "week" }} />
-          <Tile lbl="Waiting on client" n={waiting.length} f={{ status: "waiting" }} />
-          <Tile lbl="Ready for review or signing" n={review.length} f={{ status: "review_any" }} />
-          <Tile lbl="Lodged this month" n={lodged.length} f={{ status: "lodged" }} />
+          <Tile lbl="Overdue" n={overdue.length} cls={overdue.length ? "danger" : ""} f={{ due: "overdue" }} sub="Click to see them in Jobs" />
+          <Tile lbl="Due in the next 7 days" n={week.length} cls={week.length ? "warn" : ""} f={{ due: "week" }} sub="Click to see them in Jobs" />
+          <Tile lbl="Waiting on client" n={waiting.length} f={{ status: "waiting" }} sub={`+ ${openJobs.filter((j) => j.status === "client_query").length} client queries`} />
+          <Tile lbl="Ready for review or signing" n={review.length} cls="info" f={{ status: "review_any" }} sub={`${openJobs.filter((j) => j.status === "review").length} review · ${openJobs.filter((j) => j.status === "to_lodge").length} signing`} />
+          <Tile lbl="Lodged this month" n={lodged.length} cls="lodg" f={{ status: "lodged" }} sub={`Last month ${lastMonthLodged}`} />
         </div>
         <div className="panel" style={{ padding: "12px 14px", marginBottom: 16 }}>
           <div className="ph" style={{ padding: 0, marginBottom: 8 }}><h2>All jobs by status</h2><button className="link" onClick={() => gotoJobs({ status: "" })}>See all {jobs.length}</button></div>
@@ -600,40 +606,11 @@ export default function Workspace({ me }: { me: Profile }) {
         </div>
         {canSeeWorkload || seesOwnTeam ? <TeamBoard supabase={supabase} rows={rows} timers={teamRunning} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} meId={me.id}
           title={seesOwnTeam ? "My team board" : "Team board"} onOpen={(j) => openJob(j)} onViewTasks={(id) => gotoJobs({ assignee: id })} /> : null}
-        <Reminders jobs={openJobs} myId={me.id} showOwner={canManage} clientName={clientName} personName={personName} busy={timerBusy}
-          onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} onWaiting={followedUp} />
-        <div className="grid2">
+        <div className="grid2 ovbottom">
+          <NeedsAttention supabase={supabase} meId={me.id} canManage={canManage} jobs={openJobs} clientName={clientName} personName={personName}
+            onOpen={(j) => openJob(j)} onFollowedUp={followedUp} onProspects={() => go("prospects")} />
           <div className="section">
-            <MyJobs jobs={openJobs.filter(myJobFilter)}
-              onSigned={markSigned} onSentForSign={markSentForSign} onFollowedUp={followedUp} onComplete={completeNoSign} onHandSign={(j) => setModal({ kind: "handsign", job: j })}
-              onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={false} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
-              onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
-              meetings={myMeetings}
-              onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })}
-              onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")} running={running} clientName={clientName} busy={timerBusy}
-              reviewerName={me.reports_to ? personName(me.reports_to) : ""}
-              onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} wasStarted={wasStarted}
-              onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} />
-            <div className="panel">
-              <div className="ph"><h2>Needs attention</h2><span className="note">Your jobs: overdue, due this week or high priority</span></div>
-              {attention.length ? (
-                <ul className="list">{attention.map((j) => (
-                  <li key={j.id}><div style={{ minWidth: 0 }}><div className="t">{clientName(j.client_id)}</div><div className="s">{svcLabel(j.service)} · {j.period}{j.priority === "high" ? <> · <span style={{ color: "var(--danger)", fontWeight: 600 }}>High priority</span></> : null}</div></div>
-                    <div className="row"><Due j={j} /><button onClick={() => openJob(j)}>Open</button></div></li>
-                ))}</ul>
-              ) : <div className="empty"><strong>Nothing needs your attention.</strong>Your jobs that are overdue, due in the next 7 days or marked high priority show here.</div>}
-            </div>
-            {svcs.length ? (
-              <div className="panel"><div className="ph"><h2>Open work by service</h2></div>
-                <div style={{ overflowX: "auto", marginTop: 8 }}><table className="matrix"><thead><tr><th>Service</th>{cols.map((c) => <th key={c.id} style={{ textAlign: "right" }}>{c.label}</th>)}<th style={{ textAlign: "right" }}>Total</th></tr></thead>
-                  <tbody>{svcs.map((s) => { const js = openJobs.filter((j) => j.service === s.id); return (
-                    <tr key={s.id}><td>{s.label}</td>{cols.map((c) => { const n = js.filter((j) => j.status === c.id).length; return n
-                      ? <td key={c.id} className="num"><button onClick={() => gotoJobs({ service: s.id, status: c.id })}>{n}</button></td>
-                      : <td key={c.id} className="zero mono">0</td>; })}
-                      <td className="num"><button onClick={() => gotoJobs({ service: s.id })}><strong>{js.length}</strong></button></td></tr>); })}</tbody></table></div></div>
-            ) : null}
-          </div>
-          <div className="section">
+            <ReviewTypes supabase={supabase} personName={personName} visible={new Set(rows.map((r) => r.id))} />
             {projected.length ? (
               <div className="panel"><div className="ph"><h2>Projected work</h2><span className="note">Created automatically when the period ends</span></div>
                 <ul className="list">{projected.map((p) => (
@@ -1063,9 +1040,14 @@ export default function Workspace({ me }: { me: Profile }) {
               <div className="row">{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Edit</button> : null}<button onClick={() => gotoJobs({ assignee: p.id })}>View jobs</button></div>
             </div>); })}</div>
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Ask for team members to be allocated to you.</p> : null}
-        <div className="panel" id="roles" style={{ padding: 16, marginTop: 16 }}>
-          <h2>What each role can do</h2>
-          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> work on the jobs assigned to them and add and update clients and jobs. <strong>Team leaders</strong> also see their own team members here, with their timesheets, what they&apos;re working on now and their workload, and can book meetings. The <strong>Master admin</strong> sees everyone, adds people, sets roles and permissions (Edit), and is the only one who can delete clients and jobs. Click the <strong>Can delete notes</strong> or <strong>Sees team workload</strong> tags on a card to switch them, or use Edit for everything else.</p>
+        <div className="grid2" style={{ marginTop: 16 }}>
+          <div className="panel" id="roles">
+            <div className="ph"><h2>What each role can do</h2></div>
+            <table className="roletable"><thead><tr><th></th><th>Staff</th><th>Team leader</th><th>Master admin</th></tr></thead>
+              <tbody><tr><td>See and work on own jobs</td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Pick up unassigned jobs</td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>See clients</td><td>Allowed types</td><td>All</td><td>All</td></tr><tr><td>Create and assign jobs</td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Review and approve jobs</td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Management notes</td><td>If allowed</td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Book meetings, prospects</td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Team page and permissions</td><td><span className="muted">–</span></td><td>Own team</td><td><span className="yes">✓</span></td></tr><tr><td>Delete clients and jobs</td><td><span className="muted">–</span></td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td></tr></tbody></table>
+            <p className="note" style={{ margin: "8px 16px 14px" }}>Click the Can delete notes or Sees team workload tags on a card to switch them, or use Edit for everything else.</p>
+          </div>
+          <ReviewByPerson supabase={supabase} people={sorted.filter((p) => p.active && p.role === "staff")} />
         </div>
       </>
     );

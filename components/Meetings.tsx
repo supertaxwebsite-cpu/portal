@@ -51,29 +51,31 @@ export function MeetingsView({ meetings, meId, isMaster, personName, clientName,
   return (
     <>
       <div className="pagehead">
-        <div><h1>Meetings</h1><p>Book meetings, invite the team and get a reminder before each one. They also show in My jobs.</p></div>
+        <div><h1>Meetings</h1><p>Client meetings, Teams calls and team catch-ups, with a reminder before each one.</p></div>
         <div className="row">
-          {perm === "default" ? <button onClick={() => Notification.requestPermission().then(setPerm)}>Turn on desktop alerts</button> : null}
-          <button className="primary" onClick={() => onBook()}>Book a meeting</button>
+          <button onClick={() => shift(-1)} aria-label="Previous month">‹</button><strong style={{ minWidth: 130, textAlign: "center" }}>{MONTHS[month.getMonth()]} {month.getFullYear()}</strong><button onClick={() => shift(1)} aria-label="Next month">›</button>
+          <button onClick={() => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); }}>Today</button>
+          {perm === "default" ? <button onClick={() => Notification.requestPermission().then(setPerm)}>🔔 Turn on desktop alerts</button> : null}
+          <button className="primary" onClick={() => onBook()}>+ Book a meeting</button>
         </div>
       </div>
+      {quick ? <QuickBook {...quick} meId={meId} personName={personName} clientName={clientName} /> : null}
       <div className="meetgrid">
         <div className="panel cal">
           <div className="calhead">
-            <div className="row"><button onClick={() => shift(-1)} aria-label="Previous month">‹</button><button onClick={() => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); }}>Today</button><button onClick={() => shift(1)} aria-label="Next month">›</button></div>
-            <h2>{MONTHS[month.getMonth()]} {month.getFullYear()}</h2>
-            {isMaster ? <label className="row" style={{ gap: 6, fontSize: 13 }}><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only mine</label> : <span />}
+            <h2>{MONTHS[month.getMonth()]}</h2>
+            <div className="row evlegend" style={{ gap: 6, padding: 0 }}><span className="ev client">In the office</span><span className="ev online">Teams call</span><span className="ev team">Team</span><span className="note">· click a day to book</span>
+              {isMaster ? <label className="row" style={{ gap: 6, fontSize: 13, marginLeft: 8 }}><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only mine</label> : null}</div>
           </div>
           <div className="calgrid">
             {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="dow">{d}</div>)}
-            {days.map((d) => { const k = dayKey(d); const ms = byDay.get(k) ?? []; const out = d.getMonth() !== month.getMonth(); return (
+            {days.map((d) => { const k = dayKey(d); const ms = byDay.get(k) ?? []; const out = d.getMonth() !== month.getMonth(); if (out) return <div key={k} className="day blank" aria-hidden="true" />; return (
               <div key={k} className={`day${out ? " out" : ""}${k === today ? " today" : ""}`} onClick={() => onBook(k)} title="Book a meeting on this day">
-                <span className="dnum">{d.getDate()}</span>
+                <span className="dnum">{d.getDate()}{k === today ? " · Today" : ""}</span>
                 {ms.slice(0, 3).map((m) => <button key={m.id} className={`ev ${evKind(m)}${m.done ? " done" : ""}`} onClick={(e) => { e.stopPropagation(); onOpen(m); }}><b>{timeOf(m.starts_at)}</b> {m.title}</button>)}
                 {ms.length > 3 ? <span className="more">+{ms.length - 3} more</span> : null}
               </div>); })}
           </div>
-          <div className="evlegend"><span className="ev client">Client meeting</span><span className="ev online">Teams / online</span><span className="ev team">Team meeting</span><span className="note">Click a day to book</span></div>
         </div>
         <div className="meetside">
         {toWrap.length && onAfter ? <div className="panel">
@@ -90,16 +92,15 @@ export function MeetingsView({ meetings, meId, isMaster, personName, clientName,
             </li>))}</ul>
         </div> : null}
         <div className="panel">
-          <div className="ph"><h2>Upcoming</h2></div>
+          <div className="ph"><h2>Upcoming</h2><span className="note">Next meetings</span></div>
           {!upcoming.length ? <div className="empty"><strong>No upcoming meetings.</strong>Click a day on the calendar or Book a meeting.</div> : (
-            <ul className="list">{upcoming.map((m) => (
-              <li key={m.id}><div style={{ minWidth: 0 }}>
-                <div className="t"><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpen(m)}>{m.title}</button></div>
-                <div className="s">{dateOf(m.starts_at)} · {timeOf(m.starts_at)} · {m.duration_min} min{m.client_id ? ` · ${clientName(m.client_id)}` : ""}</div>
-                <div className="s">{[personName(m.owner_id), ...m.attendees.filter((a) => a !== m.owner_id).map((a) => personName(a))].filter(Boolean).join(", ")}</div>
-              </div>{isLink(m.location) ? <a className="btnlink" href={m.location} target="_blank" rel="noreferrer">Join</a> : null}</li>))}</ul>)}
+            <ul className="list upcoming">{upcoming.map((m) => (
+              <li key={m.id}><div className="uwhen"><b>{dayKey(new Date(m.starts_at)) === today ? "Today" : dateOf(m.starts_at)}</b><span className="note">{timeOf(m.starts_at)}</span></div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="t">{m.client_id ? `${clientName(m.client_id)} · ` : ""}{m.title}</div>
+                <div className="s">{isLink(m.location) ? "Teams" : m.location || "No place set"} · {m.duration_min} min · {[personName(m.owner_id), ...m.attendees.filter((a) => a !== m.owner_id).map((a) => personName(a))].filter(Boolean).map((x) => x.split(" ")[0]).join(", ")}</div>
+              </div><div className="row" style={{ flexWrap: "nowrap" }}>{isLink(m.location) ? <a className="btnlink" href={m.location} target="_blank" rel="noreferrer">Join</a> : null}<button type="button" onClick={() => onOpen(m)}>Change</button></div></li>))}</ul>)}
         </div>
-        {quick ? <QuickBook {...quick} meId={meId} personName={personName} clientName={clientName} /> : null}
         </div>
       </div>
     </>
@@ -130,10 +131,10 @@ function QuickBook({ clients, team, supabase, say, onSaved, onEdit, meId, person
     <div className="panel quickbook">
       <div className="ph"><h2>Quick book</h2><span className="note">Type it, we fill it in</span></div>
       <div className="qbbody">
-        <textarea id="qb-text" rows={3} value={text} placeholder={`e.g. ${EXAMPLES[0]}`} onChange={(e) => { setText(e.target.value); setD(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); understand(); } }} />
+        <div className="row" style={{ flexWrap: "nowrap" }}><input id="qb-text" style={{ flex: 1 }} value={text} placeholder={`e.g. ${EXAMPLES[1]}`} onChange={(e) => { setText(e.target.value); setD(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); understand(); } }} /><button className="primary" disabled={!text.trim()} onClick={understand}>Read it</button></div>
         {!d ? <>
-          <div className="row" style={{ justifyContent: "space-between" }}><span className="note">Client name, day and time is enough.</span><button className="primary" disabled={!text.trim()} onClick={understand}>Read it</button></div>
+          <span className="note">Client name, day and time is enough. Try:</span>
           <div className="qbex">{EXAMPLES.slice(1).map((x) => <button key={x} className="link" onClick={() => { setText(x); setD(parseMeeting(x, clients, team, meId)); }}>{x}</button>)}</div>
         </> : <>
           <dl className="qbprev">

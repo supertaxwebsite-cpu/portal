@@ -48,6 +48,8 @@ export default function ProspectsView({ supabase, meId, team, clients, canDelete
   const [owner, setOwner] = useState("");
   const [edit, setEdit] = useState<Prospect | "new" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"board" | "list">("board");
+  const [drag, setDrag] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.from("prospects").select("*").order("created_at", { ascending: false });
@@ -106,20 +108,73 @@ export default function ProspectsView({ supabase, meId, team, clients, canDelete
     onOpenClient((data as Client).id);
   }
 
+  const yearAgo = new Date(Date.now() - 365 * 864e5).toISOString();
+  const lastYear = all.filter((p) => p.created_at >= yearAgo);
+  const wonY = all.filter((p) => p.stage === "won" && p.updated_at >= yearAgo), lostY = all.filter((p) => p.stage === "lost" && p.updated_at >= yearAgo);
+  const avgDays = wonY.length ? Math.round(wonY.reduce((t, p) => t + (Date.parse(p.updated_at) - Date.parse(p.created_at)) / 864e5, 0) / wonY.length) : null;
+  const stale = open.filter((p) => p.stage === "proposal" && Date.now() - Date.parse(p.updated_at) > 7 * 864e5).length;
+  const sources = [...new Set(lastYear.map((p) => p.source || "Other"))].map((src) => ({ src, n: lastYear.filter((p) => (p.source || "Other") === src).length, won: lastYear.filter((p) => (p.source || "Other") === src && p.stage === "won").length })).sort((a, b) => b.n - a.n);
+  const maxSrc = Math.max(1, ...sources.map((x) => x.n));
+  const recent = (p: Prospect) => OPEN.has(p.stage) || Date.now() - Date.parse(p.updated_at) < 60 * 864e5;
+  const boardList = all.filter((p) => {
+    if (!recent(p)) return false;
+    if (owner === "__me" ? p.owner_id !== meId : owner && p.owner_id !== owner) return false;
+    if (stage === "due" && !(OPEN.has(p.stage) && p.follow_up && daysFrom(p.follow_up) <= 0)) return false;
+    const t = q.trim().toLowerCase();
+    return !t || [p.name, p.contact, p.email, p.phone, p.notes, p.source].join(" ").toLowerCase().includes(t);
+  });
+  const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join("").toUpperCase();
+  function exportCsv() {
+    const qq = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [["Name", "Practice", "Entity", "Contact", "Email", "Phone", "Services", "Fee", "Source", "Stage", "Follow up", "Owner", "Notes"],
+      ...all.map((p) => [p.name, p.practice, p.entity, p.contact, p.email, p.phone, p.services.map(svcLabel).join("; "), p.fee ?? "", p.source, stageLabel(p.stage), p.follow_up ?? "", personName(p.owner_id), p.notes])];
+    const blob = new Blob(["\ufeff" + rows.map((r) => r.map(qq).join(",")).join("\r\n")], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `prospects-${todayISO()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  }
+  function dropOn(st: string) {
+    const p = all.find((x) => x.id === drag); setDrag(null);
+    if (!p || p.stage === st || p.stage === "won") return;
+    if (st === "won") { convert(p); return; }
+    setStageOf(p, st);
+  }
+
   return (
     <>
       <div className="pagehead">
-        <div><h1>Prospects</h1><p>Possible new clients you&apos;re still talking to. They stay off the client list until you convert them.</p></div>
-        <div className="row"><button className="primary" disabled={missing} onClick={() => setEdit("new")}>Add prospect</button></div>
+        <div><h1>Prospects</h1><p>People who might become clients, from first enquiry to signed up. Drag a card to move it along.</p></div>
+        <div className="row"><button type="button" onClick={exportCsv} disabled={!all.length}>⬇ Export</button><button className="primary" disabled={missing} onClick={() => setEdit("new")}>+ Add prospect</button></div>
       </div>
       {missing ? <div className="panel" style={{ padding: 16, marginBottom: 16 }}><strong>One step to switch this on.</strong> Run the database update for prospects in Supabase, then refresh this page.</div> : null}
-      <div className="tiles" style={{ marginBottom: 16 }}>
-        <button type="button" className="tile" onClick={() => setStage("open")}><span className="lbl">Open prospects</span><span className="val">{open.length}</span></button>
-        <button type="button" className={`tile${due.length ? " danger" : ""}`} onClick={() => setStage("due")}><span className="lbl">Follow-ups due</span><span className="val">{due.length}</span></button>
-        <button type="button" className="tile" onClick={() => setStage("proposal")}><span className="lbl">Proposals out</span><span className="val">{open.filter((p) => p.stage === "proposal").length}</span></button>
-        <div className="tile"><span className="lbl">Fees in discussion</span><span className="val" style={{ fontSize: 22 }}>{money(pipeline)}</span></div>
-        <button type="button" className="tile" onClick={() => setStage("won")}><span className="lbl">Won this month</span><span className="val">{wonMonth.length}</span></button>
+      <div className="paysum">
+        <div role="button" tabIndex={0} className="paystat accent" onClick={() => setStage("open")}><span className="val">{open.length}</span><span className="lbl">Open prospects</span></div>
+        <div role="button" tabIndex={0} className="paystat danger" onClick={() => setStage("due")}><span className="val">{due.length}</span><span className="lbl">Follow-ups due</span></div>
+        <div role="button" tabIndex={0} className="paystat warn" onClick={() => setStage("proposal")}><span className="val">{open.filter((p) => p.stage === "proposal").length}</span><span className="lbl">Proposals out · {money(open.filter((p) => p.stage === "proposal").reduce((t, p) => t + (p.fee ?? 0), 0))}</span></div>
+        <div className="paystat accent"><span className="val">{money(pipeline)}</span><span className="lbl">Fees in discussion /yr</span></div>
+        <div role="button" tabIndex={0} className="paystat ok" onClick={() => setStage("won")}><span className="val">{wonMonth.length}</span><span className="lbl">Won this month{wonMonth.length ? ` · ${money(wonMonth.reduce((t, p) => t + (p.fee ?? 0), 0))}` : ""}</span></div>
       </div>
+      <div className="row" style={{ marginBottom: 12, justifyContent: "space-between" }}>
+        <div className="quickpills" style={{ margin: 0 }}>
+          <button type="button" className={mode === "board" ? "on" : undefined} onClick={() => setMode("board")}>Board</button>
+          <button type="button" className={mode === "list" ? "on" : undefined} onClick={() => setMode("list")}>List</button>
+          <button type="button" className={stage === "due" ? "on" : undefined} onClick={() => setStage(stage === "due" ? "open" : "due")}>Follow-up due <i className={due.length ? "hot" : undefined}>{due.length}</i></button>
+          <button type="button" className={owner === "__me" ? "on" : undefined} onClick={() => setOwner(owner === "__me" ? "" : "__me")}>Mine <i>{open.filter((p) => p.owner_id === meId).length}</i></button>
+        </div>
+        {mode === "board" ? <input type="search" placeholder="Search name, contact, email, phone or notes" aria-label="Search prospects" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 300 }} /> : null}
+      </div>
+      {mode === "board" && list ? <div className="pboard">{STAGES.map((st) => { const cards = boardList.filter((p) => p.stage === st.id); return (
+        <div key={st.id} className={`pcol${drag ? " dropok" : ""}`} onDragOver={(e) => { if (drag) e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); dropOn(st.id); }}>
+          <div className="pcolh"><b>{st.label}</b><span className="note">{cards.length} · {money(cards.reduce((t, p) => t + (p.fee ?? 0), 0))}</span></div>
+          {cards.map((p) => { const d = p.follow_up ? daysFrom(p.follow_up) : null; return (
+            <div key={p.id} className="pcard" draggable={p.stage !== "won"} onDragStart={() => setDrag(p.id)} onDragEnd={() => setDrag(null)} onClick={() => setEdit(p)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") setEdit(p); }}>
+              <div className="t">{p.name}</div>
+              <div className="note">{[p.contact, p.source].filter(Boolean).join(" · ")}</div>
+              {p.services.length ? <div className="ptags">{p.services.map((x) => <span key={x} className="tag">{svcLabel(x)}</span>)}</div> : null}
+              <div className="row" style={{ justifyContent: "space-between" }}><span className="mono">{p.fee != null ? `${money(Number(p.fee))} /yr` : "No fee yet"}</span>{p.owner_id ? <span className="av" title={personName(p.owner_id)}>{initials(personName(p.owner_id))}</span> : null}</div>
+              {OPEN.has(p.stage) && p.follow_up ? <div className={`pdue${d !== null && d < 0 ? " late" : d === 0 ? " today" : ""}`}>⏰ {d === 0 ? "Today" : d === -1 ? "Yesterday" : d !== null && d < -1 ? `${-d} days overdue` : fmtDate(p.follow_up)}</div> : null}
+              {p.stage === "won" ? <div className="note">Won {fmtDate(p.updated_at.slice(0, 10))}</div> : p.stage === "lost" ? <div className="note">Lost {fmtDate(p.updated_at.slice(0, 10))}{p.lost_reason ? ` · ${p.lost_reason}` : ""}</div> : null}
+            </div>); })}
+        </div>); })}</div> : null}
+      {mode === "list" ? <>
       <div className="toolbar">
         <input type="search" id="pq" placeholder="Search name, contact, email, phone or notes" aria-label="Search prospects" value={q} onChange={(e) => setQ(e.target.value)} />
         <select id="pstage" aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
@@ -149,6 +204,19 @@ export default function ProspectsView({ supabase, meId, team, clients, canDelete
                   : isOpen ? <button className="primary" disabled={busy} onClick={() => convert(p)}>Convert to client</button> : null}</td>
               </tr>;
             })}</tbody></table>)}
+      </div>
+      </> : null}
+      <div className="grid2" style={{ marginTop: 16 }}>
+        <div className="panel"><div className="ph"><h2>Where prospects come from</h2><span className="note">Last 12 months</span></div>
+          {sources.length ? <div className="leaveleft">{sources.map((x) => <div key={x.src} className="row"><span className="nm" style={{ width: 170 }}>{x.src}</span><i><b style={{ width: `${(x.n / maxSrc) * 100}%` }} /></i><span className="mono" style={{ width: 80 }}>{x.n} · {x.won} won</span></div>)}</div>
+            : <div className="empty">Sources show here once prospects are added.</div>}</div>
+        <div className="panel"><div className="ph"><h2>Win rate and speed</h2></div>
+          <dl className="people" style={{ padding: "4px 16px" }}>
+            <dt>Won vs lost (12 months)</dt><dd className="mono">{wonY.length} won · {lostY.length} lost{wonY.length + lostY.length ? ` · ${Math.round((wonY.length / (wonY.length + lostY.length)) * 100)}%` : ""}</dd>
+            <dt>Average days from enquiry to won</dt><dd className="mono">{avgDays === null ? "—" : `${avgDays} days`}</dd>
+            <dt>Proposals with no change after 7 days</dt><dd className="mono" style={{ color: stale ? "var(--danger)" : undefined }}>{stale}</dd>
+          </dl>
+          <p className="note" style={{ margin: "0 16px 14px" }}>When a prospect is won, Convert to client creates the client with their contact details and services. Drag a card onto Won to convert it.</p></div>
       </div>
       <p className="note" style={{ marginTop: 10 }}>Prospects are not counted in your client totals, jobs or workload. Don&apos;t store TFNs, passwords or bank details here.</p>
       {edit ? <ProspectModal p={edit === "new" ? null : edit} meId={meId} team={team} canDelete={canDelete} busy={busy} onClose={() => setEdit(null)}
