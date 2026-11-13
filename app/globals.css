@@ -573,3 +573,22 @@ dl.people dt{color:var(--muted);font-size:13px}dl.people dd{margin:0;text-align:
 ul.actions{list-style:none;margin:0;padding:0 14px 12px;display:grid;gap:8px}
 .jobhero .count i.blue{background:var(--accent)}.jobhero .count i.red{background:var(--danger)}.jobhero .count i.amber{background:#c77a0a}.jobhero .count i.green{background:var(--ok)}
 details#cl-closed>summary{list-style:none}details#cl-closed>summary::after{content:" ▸";color:var(--muted)}details#cl-closed[open]>summary::after{content:" ▾"}
+/* Team page (new design) */
+.teamtiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.tt{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:12px 16px;display:flex;flex-direction:column}
+.tt b{font-size:26px;line-height:1.2}.tt span{color:var(--muted);font-size:13px}
+.tt.green{border-left-color:var(--ok)}.tt.amber{border-left-color:var(--brand-orange)}
+.teamcards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:1000px){.teamcards{grid-template-columns:repeat(2,minmax(0,1fr))}.teamtiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.teamcards{grid-template-columns:1fr}}
+.mcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.mcard.off{opacity:.6}
+.mtop{display:flex;gap:10px;align-items:center}
+.av.big{width:38px;height:38px;font-size:12.5px;flex:none}
+.mnow{font-size:13px;color:var(--muted)}.mnow.on{color:var(--ok);font-weight:700}
+.mrow{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)}.mrow b{color:var(--fg)}
+.mbar{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}.mbar i{display:block;height:100%;background:var(--accent)}.mbar.red i{background:var(--danger)}
+.perms{display:flex;flex-wrap:wrap;gap:5px}
+.perm{font-size:11.5px;font-weight:600;padding:2px 7px;border-radius:5px;background:var(--surface-2);color:var(--muted);border:0}
+.perm.on{background:var(--ok-soft);color:var(--ok)}
+button.perm{cursor:pointer}

@@ -123,7 +123,8 @@ export default function Workspace({ me }: { me: Profile }) {
   const [cservice, setCservice] = useState("");
   const [centity, setCentity] = useState<string[]>([]);
   const [cpractice, setCpractice] = useState("");
-  const [cquick, setCquick] = useState(""); // quick filter on Clients: overdue, waiting, related, nojobs
+  const [cquick, setCquick] = useState("");
+  const [teamFilter, setTeamFilter] = useState(""); // quick filter on Clients: overdue, waiting, related, nojobs
   // Filters and sort on the Jobs and Clients lists are remembered on this computer
   // (across page reloads and visits) until Clear is pressed.
   const [filtersReady, setFiltersReady] = useState(false);
@@ -285,7 +286,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
   const navGo = (v: View) => {
     setJf(NO_FILTER); setJsort({ k: "due", dir: 1 });
-    setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick("");
+    setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick(""); setTeamFilter("");
     setGsel(new Set()); setGstatus(""); setClientId(null); setNavTick((n) => n + 1);
     go(v);
   };
@@ -904,33 +905,60 @@ export default function Workspace({ me }: { me: Profile }) {
 
   function TeamView() {
     const sorted = [...profiles].sort((a, b) => Number(b.id === me.id) - Number(a.id === me.id) || Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name));
+    const runningBy = new Map(teamRunning.map((t) => [t.user_id, t]));
+    const leaders = profiles.filter((p) => p.active && p.role === "manager" && profiles.some((x) => x.reports_to === p.id));
+    const openOf = (id: string) => openJobs.filter((j) => j.assignee_id === id);
+    const maxOpen = Math.max(1, ...sorted.map((p) => openOf(p.id).length));
+    const busiest = [...sorted].filter((p) => p.active).sort((a, b) => openOf(b.id).length - openOf(a.id).length)[0];
+    const FILTERS: [string, string, (p: Profile) => boolean][] = [
+      ["", "Everyone", () => true],
+      ...leaders.map((l) => [l.id, `${l.full_name.split(" ")[0]}'s team`, (p: Profile) => p.id === l.id || p.reports_to === l.id] as [string, string, (p: Profile) => boolean]),
+      ["__now", "Working now", (p: Profile) => runningBy.has(p.id)],
+      ["__off", "Access off", (p: Profile) => !p.active],
+    ];
+    const tf = FILTERS.find((f) => f[0] === teamFilter) ?? FILTERS[0];
+    const list = sorted.filter(tf[2]);
+    const ini = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join("").toUpperCase();
+    const roleCls = (r: string) => (r === "master" ? "danger" : r === "manager" ? "warn" : "info");
     return (
       <>
-        <div className="pagehead"><div><h1>Team</h1><p>{isMaster ? "Everyone who can sign in. You add people, set their role and manager, and switch access off." : "You and the team members allocated to you."}</p></div>
-          <div className="row"><a className="btn" href="#activity-log" onClick={(e) => { e.preventDefault(); document.getElementById("activity-log")?.scrollIntoView({ behavior: "smooth" }); }}>🕘 Activity log</a>{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>Add team member</button> : null}</div></div>
-        <div className="tablebox solo"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th title="Staff see only clients of these practices (plus jobs assigned to them)">Practices</th>{isMaster ? <th>Team leader</th> : null}<th title="Delete notes and comments. Only master admins can delete clients and jobs.">Can delete notes</th><th title="Can see Team workload and Working now on the Overview">Sees workload</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th></th></tr></thead>
-          <tbody>{sorted.map((p) => { const oj = openJobs.filter((j) => j.assignee_id === p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
-            <tr key={p.id}><td className="client">{p.full_name}{p.id === me.id ? " (you)" : ""}{p.title ? <div className="note">{p.title}</div> : null}</td>
-              <td>{p.email}</td>
-              <td><span className="role">{roleLabel(p.role)}</span>{!p.active ? <> <span className="pill danger">Access off</span></> : p.must_change_password ? <> <span className="pill warn">Hasn&apos;t signed in yet</span></> : null}</td>
-              <td>{p.role !== "staff" || !p.practices?.length ? <span className="note">All</span> : p.practices.join(", ")}</td>
-              {isMaster ? <td>{p.role === "staff" ? personName(p.reports_to ?? null) || <span className="note">Not allocated</span> : null}</td> : null}
-              <td>{p.role !== "staff" ? <span className="note">Always</span>
-                : (isMaster || p.reports_to === me.id) && p.active
-                  ? <button type="button" aria-pressed={!!p.can_delete} className={p.can_delete ? "primary" : undefined} title={p.can_delete ? "Click to take delete access away" : "Click to let them delete client notes and job comments"}
-                      onClick={async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete notes` : `${p.full_name} can now delete notes and comments`); }}>{p.can_delete ? "Yes" : "No"}</button>
-                  : p.can_delete ? "Yes" : "No"}</td>
-              <td>{p.role === "master" ? <span className="note">Always</span>
-                : isMaster && p.active
-                  ? <button type="button" aria-pressed={!!p.can_see_workload} className={p.can_see_workload ? "primary" : undefined} title={p.can_see_workload ? "Click to hide Team workload and Working now from them" : "Click to let them see Team workload and Working now"}
-                      onClick={async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); }}>{p.can_see_workload ? "Yes" : "No"}</button>
-                  : p.can_see_workload ? "Yes" : "No"}</td>
-              <td className="mono" style={{ textAlign: "right" }}>{oj.length}</td><td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : undefined }}>{od}</td>
-              <td style={{ textAlign: "right" }}>{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Manage</button> : null}</td></tr>); })}</tbody></table></div>
+        <div className="pagehead"><div><h1>Team</h1><p>Who&apos;s on the team, what they can see, and how busy they are.</p></div>
+          <div className="row"><a className="btn" href="#activity-log" onClick={(e) => { e.preventDefault(); document.getElementById("activity-log")?.scrollIntoView({ behavior: "smooth" }); }}>🕘 Activity log</a><a className="btn" href="#roles" onClick={(e) => { e.preventDefault(); document.getElementById("roles")?.scrollIntoView({ behavior: "smooth" }); }}>What each role can do</a>{isMaster ? <button className="primary" onClick={() => setModal({ kind: "member" })}>+ Add team member</button> : null}</div></div>
+        <div className="teamtiles">
+          <div className="tt blue"><b>{sorted.filter((p) => p.active).length}</b><span>Team members</span></div>
+          <div className="tt green"><b>{teamRunning.length}</b><span>Working on a job now</span></div>
+          <div className="tt blue"><b>{sorted.reduce((n, p) => n + openOf(p.id).length, 0)}</b><span>Open jobs across the team</span></div>
+          <div className="tt amber"><b>{busiest ? busiest.full_name.split(" ")[0] : "—"}</b><span>{busiest ? `Busiest · ${openOf(busiest.id).length} jobs, ${openOf(busiest.id).filter((j) => j.due_date && daysFrom(j.due_date) < 0).length} overdue` : "Busiest"}</span></div>
+        </div>
+        <div className="quickpills">{FILTERS.map(([k, l, f]) => { const n = sorted.filter(f).length; return k === "__off" && !n ? null : <button key={k || "all"} type="button" className={teamFilter === k ? "on" : undefined} onClick={() => setTeamFilter(k)}>{l} <i>{n}</i></button>; })}</div>
+        <div className="teamcards">{list.map((p) => {
+          const oj = openOf(p.id); const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length;
+          const t = runningBy.get(p.id); const tj = t?.job_id ? jobs.find((j) => j.id === t.job_id) : undefined;
+          const canToggleDelete = (isMaster || p.reports_to === me.id) && p.active && p.role === "staff";
+          const chip = (on: boolean, label: string, onClick?: () => void) => onClick
+            ? <button type="button" className={`perm${on ? " on" : ""}`} onClick={onClick} title="Click to change">{on ? "✓ " : ""}{label}</button>
+            : <span className={`perm${on ? " on" : ""}`}>{on ? "✓ " : ""}{label}</span>;
+          return (
+            <div key={p.id} className={`mcard${p.active ? "" : " off"}`}>
+              <div className="mtop"><span className="av big">{ini(p.full_name)}</span><div style={{ minWidth: 0 }}><b>{p.full_name}{p.id === me.id ? <span className="note"> (you)</span> : null}</b><div className="note">{p.title || p.email}</div></div>
+                <span className={`pill ${roleCls(p.role)}`} style={{ marginLeft: "auto" }}>{roleLabel(p.role)}</span></div>
+              <div className={`mnow${t ? " on" : ""}`}>{!p.active ? "Access switched off" : p.must_change_password ? "Hasn't signed in yet" : t ? <>● Working now · {tj ? `${clientName(tj.client_id)} · ${svcLabel(tj.service)}` : "a job"}</> : "Not on a job right now"}</div>
+              <div className="mrow"><span>Practices <b>{p.role !== "staff" || !p.practices?.length ? "All" : p.practices.join(", ")}</b></span></div>
+              <div className="mrow"><span>Team leader <b>{p.role === "staff" ? personName(p.reports_to ?? null) || "—" : "—"}</b></span><span>Clients <b>{p.role !== "staff" || !p.client_types?.length ? "All" : p.client_types.join(", ")}</b></span></div>
+              <div className="mrow"><span><b>{oj.length} open job{oj.length === 1 ? "" : "s"}</b></span><span style={{ color: od ? "var(--danger)" : "var(--muted)" }}>{od} overdue</span></div>
+              <div className={`mbar${od >= 3 ? " red" : ""}`}><i style={{ width: `${(oj.length / maxOpen) * 100}%` }} /></div>
+              <div className="perms">
+                {chip(p.role !== "staff" || !!p.can_delete, "Can delete notes", canToggleDelete ? async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete notes` : `${p.full_name} can now delete notes and comments`); } : undefined)}
+                {p.role === "staff" ? chip(!!p.can_pick_reviewer, "Chooses own reviewer") : null}
+                {p.role === "staff" ? chip(!!p.can_see_mgmt_notes, "Sees management notes") : chip(true, "Sees management notes")}
+                {chip(p.role === "master" || !!p.can_see_workload, "Sees team workload", isMaster && p.role !== "master" && p.active ? async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); } : undefined)}
+              </div>
+              <div className="row">{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Edit</button> : null}<button onClick={() => gotoJobs({ assignee: p.id })}>View jobs</button></div>
+            </div>); })}</div>
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Ask for team members to be allocated to you.</p> : null}
-        <div className="panel" style={{ padding: 16, marginTop: 16 }}>
+        <div className="panel" id="roles" style={{ padding: 16, marginTop: 16 }}>
           <h2>What each role can do</h2>
-          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> work on the jobs assigned to them and add and update clients and jobs. <strong>Team leaders</strong> also see their own team members here, with their timesheets, what they&apos;re working on now and their workload, and can book meetings. The <strong>Master admin</strong> sees everyone, adds people, sets roles and permissions (Manage), and is the only one who can delete clients and jobs. Use the <strong>Sees workload</strong> and <strong>Can delete notes</strong> buttons, or Manage, to give extra permissions to one person.</p>
+          <p className="note" style={{ margin: 0 }}><strong>Staff</strong> work on the jobs assigned to them and add and update clients and jobs. <strong>Team leaders</strong> also see their own team members here, with their timesheets, what they&apos;re working on now and their workload, and can book meetings. The <strong>Master admin</strong> sees everyone, adds people, sets roles and permissions (Edit), and is the only one who can delete clients and jobs. Click the <strong>Can delete notes</strong> or <strong>Sees team workload</strong> tags on a card to switch them, or use Edit for everything else.</p>
         </div>
       </>
     );
