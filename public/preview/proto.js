@@ -19,7 +19,9 @@
   let tt;
   function toast(m) {
     let t = $(".pt-toast"); if (!t) { t = document.createElement("div"); t.className = "pt-toast"; document.body.appendChild(t); }
-    t.textContent = m; t.style.opacity = 1; clearTimeout(tt); tt = setTimeout(() => (t.style.opacity = 0), 2600);
+    t.textContent = m; t.style.opacity = 1;
+    const log = $(".actlog");
+    if (log && !/^(Showing|Filter|.*: \d+ shown)/.test(m)) { const li = document.createElement("li"); li.innerHTML = `<span class="tm">just now</span><span class="av">${me.slice(0, 2).toUpperCase()}</span><span><span class="k st">You</span>${m.replace(/</g, "&lt;")}</span>`; log.prepend(li); } clearTimeout(tt); tt = setTimeout(() => (t.style.opacity = 0), 2600);
   }
   function modal(title, fields, ok, onOk) {
     const ov = document.createElement("div"); ov.className = "pt-ov";
@@ -103,6 +105,7 @@
 
   // ---------- saved-view tabs: filter the list ----------
   const FILTER = [
+    [/ATO/i, /ATO|SGC/], [/^Logins/, /Login/], [/Status changes/, /Status|Payroll|Leave/], [/Access and clients/, /Access|Client|Note/], [/^Files/, /File/],
     [/overdue/i, /overdue/i], [/unassigned|can take/i, /unassigned|take it/i], [/review note/i, /review note/i],
     [/waiting for (my )?review|to review/i, /review/i], [/quer/i, /quer/i], [/sign/i, /sign|client quer/i],
     [/waiting on client/i, /waiting on client|sign/i], [/related/i, /🔗|related/i], [/no open jobs/i, /no open/i],
@@ -161,12 +164,14 @@
     document.addEventListener("click", (e) => { if (!e.target.closest(".pop") && !e.target.closest("#grid .c")) pop.classList.add("pt-hide"); });
   }
 
+  document.addEventListener("click", (e) => { const t = e.target.closest(".tname[data-href]"); if (t) { e.stopImmediatePropagation(); location.href = t.dataset.href; } }, true);
   // ---------- buttons ----------
   let breakOn = false;
   const removeRow = (b, msg) => { const li = b.closest("li,tr"); if (li) { li.style.transition = "opacity .3s"; li.style.opacity = 0; setTimeout(() => li.remove(), 300); } toast(msg); };
   const timers = new WeakMap();
   document.addEventListener("click", (e) => {
     const b = e.target.closest("button,.btn,.crumb a"); if (!b || b.closest(".pt-md,.protobar")) return;
+    if (b.tagName === "A" && b.getAttribute("href")) return;
     const t = txt(b).replace(/IDEA \d/, "").trim(), row = b.closest("li,tr,.task");
     const rowName = row ? txt($("b,.t,.tname", row) || row).slice(0, 40) : "";
     if (/^← Jobs$/.test(t)) { location.href = isMgr ? "jobs.html" : "staff-jobs.html"; return; }
@@ -181,6 +186,7 @@
     if (/Columns/.test(t)) { modal("Show columns", `<label><input type="checkbox" checked style="width:auto"> Entity</label><label><input type="checkbox" checked style="width:auto"> Manager</label><label><input type="checkbox" style="width:auto"> ABN</label><label><input type="checkbox" style="width:auto"> Phone</label>`, "Apply", () => toast("Columns updated")); return; }
     if (/Create jobs for a period/.test(t)) { modal("Create jobs for a period", `<select><option>BAS</option><option>Payroll</option><option>Tax return</option></select><select><option>Q2 FY27 (Oct to Dec)</option><option>Q3 FY27 (Jan to Mar)</option></select><div>Creates one job for every client with this service.</div>`, "Create jobs", (v) => toast(`${v[0]} jobs created for ${v[1]}`)); return; }
     if (t === "Open day") { toast("Opens that person's day: log-ins and job times"); return; }
+    if (t === "Open" && b.closest("tr[data-href]")) { location.href = b.closest("tr[data-href]").dataset.href; return; }
     if (/^(Open|View tasks|Start review|Answer)$/.test(t)) { location.href = /^clients/.test(page) ? (isMgr ? "client.html" : "client-s.html") : jobPage; return; }
     if (t === "Start") { b.textContent = "Stop"; b.classList.add("pri"); let s = 0; timers.set(b, setInterval(() => { s++; b.title = s + "s"; }, 1000)); toast(`Timer started on ${rowName}`); return; }
     if (t === "Stop") { b.textContent = "Start"; b.classList.remove("pri"); clearInterval(timers.get(b)); toast(`Timer stopped. Time saved to ${rowName}`); return; }
@@ -211,11 +217,12 @@
     if (/\+ Add leave for someone/.test(t)) { modal("Add leave for someone", `<select>${TEAM.slice(0, 7).map((n) => `<option>${n}</option>`).join("")}</select><select><option>Unpaid leave</option><option>Sick</option><option>Personal</option></select><input placeholder="Dates, e.g. 1–3 Dec">`, "Add leave", (v) => toast(`${v[1]} added for ${v[0]}`)); return; }
     if (/Export|Download/.test(t)) { toast("In the real portal this downloads a spreadsheet"); return; }
     if (/Add note|Add confidential note/.test(t)) { const ta = b.closest("section,.card") && $("textarea", b.closest("section,.card")); modal(t.replace("+ ", ""), `<textarea placeholder="Type the note">${ta ? ta.value : ""}</textarea>`, "Save note", () => toast("Note saved")); return; }
-    if (/New job/.test(t)) { modal("New job", `<select><option>BAS</option><option>Tax return</option><option>SMSF</option><option>Payroll</option></select><select>${TEAM.map((n) => `<option>${n}</option>`).join("")}</select><input placeholder="Period, e.g. Q2 FY27">`, "Create job", (v) => toast(`${v[0]} job created and assigned to ${v[1]}`)); return; }
+    if (/New job/.test(t)) { modal("New job", `<select><option>BAS</option><option>Tax return</option><option>SMSF</option><option>Payroll</option><option>ATO payment</option><option>SGC request</option><option>ATO communication</option><option>Company formation</option></select><select>${TEAM.map((n) => `<option>${n}</option>`).join("")}</select><input placeholder="Period, e.g. Q2 FY27">`, "Create job", (v) => toast(`${v[0]} job created and assigned to ${v[1]}`)); return; }
     if (/Add client/.test(t)) { modal("Add client", `<input placeholder="Client name"><select><option>Individual</option><option>Company</option><option>Trust</option><option>SMSF</option></select>`, "Add client", (v) => toast(`${v[0] || "Client"} added`)); return; }
     if (/Apply to \d+ jobs/.test(t)) { toast("Changes applied to the selected jobs"); return; }
     if (t === "Clear") { $$(".pt-hide").forEach((x) => x.classList.remove("pt-hide")); $$(".chip.on").forEach((c) => c.classList.remove("on")); $$("input[type=search],input[type=text]").forEach((i) => (i.value = "")); toast("Filters cleared"); return; }
     if (/Edit job|Edit client/.test(t)) { toast(isMgr ? "Opens the edit form (managers and masters only)" : "Only managers can edit this"); return; }
+    if (t === "Create the client") { toast("Kaur Constructions Pty Ltd added as a client with BAS, company tax return and ASIC annual review jobs"); b.disabled = true; return; }
     if (/Explain/.test(t)) { modal("Explain this day", `<textarea placeholder="e.g. Left early for a doctor's appointment"></textarea>`, "Send to manager", () => toast("Sent to your manager")); return; }
     if (/^Processed, send for sign-off$|^Confirm super paid$|^STP lodged, finish$/.test(t)) { payAdvance(b); return; }
     if (t === "Undo") { toast("Super sign-off undone. Back to Processing."); return; }
