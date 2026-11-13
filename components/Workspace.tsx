@@ -24,7 +24,7 @@ import ClientPicker from "./ClientPicker";
 import RelatedClients from "./RelatedClients";
 import ProspectsView from "./Prospects";
 import ActivityLog from "./ActivityLog";
-import { STEPS } from "@/lib/checklists";
+import { CHECKLISTS, STEPS } from "@/lib/checklists";
 import TeamBoard from "./TeamBoard";
 import JobPage from "./JobPage";
 import JobHistory, { type JobSummary } from "./JobHistory";
@@ -120,6 +120,11 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jf, setJf] = useState<JobFilter>(NO_FILTER);
   // Jobs list sort: click a column heading; click again to reverse.
   const [jsort, setJsort] = useState<{ k: string; dir: 1 | -1 }>({ k: "due", dir: 1 });
+  // Ticked rows on the Jobs list, for changing several jobs at once.
+  const [jsel, setJsel] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState({ assignee: "", reviewer: "", status: "", due: "" });
+  // Open internal queries, open review notes and files per job (the flags under each job name).
+  const [flags, setFlags] = useState<Map<string, { q: number; rn: number; f: number }>>(new Map());
   const [cq, setCq] = useState("");
   const [cservice, setCservice] = useState("");
   const [centity, setCentity] = useState<string[]>([]);
@@ -197,6 +202,22 @@ export default function Workspace({ me }: { me: Profile }) {
 
   const isMaster = me.role === "master";
   const canManage = me.role === "master" || me.role === "manager";
+  useEffect(() => {
+    if (view !== "jobs" && view !== "clients") return;
+    let live = true;
+    (async () => {
+      const [q, rn, f] = await Promise.all([
+        supabase.from("job_queries").select("job_id").is("parent_id", null).is("answered_at", null).limit(5000),
+        supabase.from("review_notes").select("job_id").in("status", ["open", "fixed"]).limit(5000),
+        supabase.from("job_files").select("job_id").limit(10000),
+      ]);
+      const m = new Map<string, { q: number; rn: number; f: number }>();
+      const add = (rows: unknown, k: "q" | "rn" | "f") => ((rows as { job_id: string }[] | null) ?? []).forEach((r) => { const x = m.get(r.job_id) ?? { q: 0, rn: 0, f: 0 }; x[k]++; m.set(r.job_id, x); });
+      add(q.data, "q"); add(rn.data, "rn"); add(f.data, "f");
+      if (live) setFlags(m);
+    })();
+    return () => { live = false; };
+  }, [supabase, view, jobs]);
   const canSeeTeam = canManage;
   /** Team workload and Working now: master admins, plus anyone a master admin has allowed. */
   const canSeeWorkload = isMaster || !!me.can_see_workload;
@@ -634,6 +655,7 @@ export default function Workspace({ me }: { me: Profile }) {
       const has = (list: string, v: string | undefined | null) => !list || list.split(",").includes(v ?? "");
       if (!has(f.service, j.service)) return false;
       if (f.status === "review_any" && !(j.status === "review" || j.status === "to_lodge")) return false;
+      if (f.status === "has_notes" && !flags.get(j.id)?.rn) return false;
       if (ST[f.status] && j.status !== f.status) return false;
       if (f.client && (inGroup ? !inGroup.has(j.client_id) : j.client_id !== f.client)) return false;
       if (f.assignee === "__none") {
@@ -666,7 +688,7 @@ export default function Workspace({ me }: { me: Profile }) {
       }
       return true;
     }).sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999") || (clientById.get(a.client_id)?.name ?? "").localeCompare(clientById.get(b.client_id)?.name ?? ""));
-  }, [jf, jobs, openJobs, clientById, profileById, links]);
+  }, [jf, jobs, openJobs, clientById, profileById, links, flags]);
 
   function JobsView() {
     const set = (k: keyof JobFilter) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setJf({ ...jf, [k]: e.target.value });
@@ -692,7 +714,7 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead">
-          <div><h1>Jobs <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{openJobs.length.toLocaleString()} open</span></h1><p>{me.role === "staff" ? "Your jobs, plus unassigned jobs you can pick up with Take it." : "Every piece of client work, with its period, due date, owner and status."}</p></div>
+          <div><h1>Jobs <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{openJobs.length.toLocaleString()} open</span></h1><p>{me.role === "staff" ? "Your jobs, plus unassigned jobs you can pick up with Take it." : "Every job in the practice. Team leaders see their own team's jobs. Staff see only their own."}</p></div>
           <div className="row"><button onClick={() => exportCsv(list)}>Export CSV</button><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
         </div>
         <div className="quickpills">{(me.role === "staff" ? [
@@ -706,8 +728,9 @@ export default function Workspace({ me }: { me: Profile }) {
           ["ATO & SGC", { service: "ato_payment,sgc,ato_comm" }, openJobs.filter((j) => ["ato_payment", "sgc", "ato_comm"].includes(j.service)).length, ""],
           ["Overdue", { due: "overdue" }, openJobs.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length, "hot"],
           ["Unassigned", { assignee: "__none" }, openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).length, ""],
-          ["Ready for review or signing", { status: "review_any" }, openJobs.filter((j) => j.status === "review" || j.status === "to_lodge").length, ""],
-          ["Internal queries", { status: "internal_query" }, openJobs.filter((j) => j.status === "internal_query").length, "hot"],
+          ["Waiting for review", { status: "review" }, openJobs.filter((j) => j.status === "review").length, ""],
+          ["Open queries", { status: "internal_query" }, openJobs.filter((j) => j.status === "internal_query").length, "hot"],
+          ["Open review notes", { status: "has_notes" }, openJobs.filter((j) => flags.get(j.id)?.rn).length, "hot"],
           ["Lodged this month", { status: "lodged" }, jobs.filter((j) => (j.lodged_on ?? "").startsWith(todayISO().slice(0, 7))).length, ""],
         ] as [string, Partial<JobFilter>, number, string][]).map(([l, f, n, hot]) => { const on = JSON.stringify({ ...NO_FILTER, ...f }) === JSON.stringify(jf); return (
           <button key={l} type="button" className={on ? "on" : undefined} onClick={() => setJf({ ...NO_FILTER, ...f })}>{l} <i className={hot && n ? "hot" : undefined}>{n}</i></button>); })}</div>
@@ -739,23 +762,57 @@ export default function Workspace({ me }: { me: Profile }) {
             <div className="empty"><strong>{jobs.length ? "No jobs match these filters." : "No jobs yet."}</strong>{jobs.length ? "Clear a filter to see more." : "Use New job for one-off work, or Create jobs for a period to set up a whole quarter of BAS at once."}</div>
           ) : (
             <>
-              <table className="jobtable"><thead><tr><H k="client">Client · practice</H><H k="service">Job</H><th>Stage</th><H k="assigned">Assigned</H><th>Reviewer</th><H k="due">Due / time left</H><H k="status">Status</H><th></th></tr></thead>
-                <tbody>{shown.map((j) => { const c = clientById.get(j.client_id); return (
-                  <tr key={j.id}>
+              <table className="jobtable"><thead><tr>{canManage ? <th className="tick"><input type="checkbox" aria-label="Tick all shown" checked={shown.length > 0 && shown.every((j) => jsel.has(j.id))} onChange={(e) => setJsel(e.target.checked ? new Set(shown.map((j) => j.id)) : new Set())} /></th> : null}<H k="client">Client · practice</H><H k="service">Job</H><th>Stage</th><H k="assigned">Assigned</H><th>Reviewer</th><H k="due">Due / time left</H><H k="status">Status</H><th>Priority</th><th></th></tr></thead>
+                <tbody>{shown.map((j) => { const c = clientById.get(j.client_id); const fl = flags.get(j.id); return (
+                  <tr key={j.id} className={jsel.has(j.id) ? "picked" : undefined}>
+                    {canManage ? <td className="tick"><input type="checkbox" aria-label={`Tick ${clientName(j.client_id)} ${svcLabel(j.service)} ${j.period}`} checked={jsel.has(j.id)} onChange={(e) => { const n = new Set(jsel); if (e.target.checked) n.add(j.id); else n.delete(j.id); setJsel(n); }} /></td> : null}
                     <td className="client"><button className="link" style={{ color: "var(--fg)" }} onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button><div className="note">{practiceOf(c)}{c?.entity ? ` · ${c.entity}` : ""}</div></td>
                     <td><button className="link jobname" onClick={() => openJob(j)}>{svcLabel(j.service)} · {j.period}</button>
-                      {j.priority === "high" ? <div><span className="pill danger">High</span></div> : null}</td>
+                      {j.service === "company_formation" || fl?.q || fl?.rn || fl?.f ? <div className="jflags">
+                        {j.service === "company_formation" ? <span className="jf new">New company</span> : null}
+                        {fl?.q ? <span className="jf q">{fl.q} quer{fl.q === 1 ? "y" : "ies"}</span> : null}
+                        {fl?.rn ? <span className="jf rn">{fl.rn} review note{fl.rn === 1 ? "" : "s"}</span> : null}
+                        {fl?.f ? <span className="jf f" title={`${fl.f} file${fl.f === 1 ? "" : "s"}`}>📎 {fl.f}</span> : null}
+                      </div> : null}</td>
                     <td><Stage j={j} /></td>
-                    <td>{personName(j.assignee_id) || (me.role === "staff" && isOpen(j.status) ? <button type="button" title="Make this job yours" onClick={() => save(() => supabase.from("jobs").update({ assignee_id: me.id }).eq("id", j.id), "The job is yours. It's in My tasks now")}>Take it</button> : <span className="muted">Unassigned</span>)}</td>
-                    <td>{personName(j.reviewer_id) || <span className="muted">—</span>}</td>
+                    <td title={personName(j.assignee_id)}>{personName(j.assignee_id).split(" ")[0] || (me.role === "staff" && isOpen(j.status) ? <button type="button" title="Make this job yours" onClick={() => save(() => supabase.from("jobs").update({ assignee_id: me.id }).eq("id", j.id), "The job is yours. It's in My tasks now")}>Take it</button> : <span className="muted">Unassigned</span>)}</td>
+                    <td title={personName(j.reviewer_id)}>{personName(j.reviewer_id).split(" ")[0] || <span className="muted">—</span>}</td>
                     <td><TimeLeft j={j} /></td>
                     <td><StatusSelect j={j} /></td>
+                    <td>{j.priority === "high" ? <span className="pill danger">High</span> : null}</td>
                     <td><button onClick={() => openJob(j)}>{closedFor(j) ? "View" : "Open"}</button></td>
                   </tr>); })}</tbody></table>
+              {canManage && jsel.size ? <div className="bulkbar">
+                <strong>{jsel.size} selected</strong>
+                <label>Assign to<select id="bk-assignee" value={bulk.assignee} onChange={(e) => setBulk({ ...bulk, assignee: e.target.value })}><option value="">Choose…</option><option value="__none">Nobody</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
+                <label>Reviewer<select id="bk-reviewer" value={bulk.reviewer} onChange={(e) => setBulk({ ...bulk, reviewer: e.target.value })}><option value="">Choose…</option><option value="__none">Nobody</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
+                <label>Status<select id="bk-status" value={bulk.status} onChange={(e) => setBulk({ ...bulk, status: e.target.value })}><option value="">Choose…</option>{STATUSES.filter((x) => isMaster || x.open).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
+                <label>Due date<input id="bk-due" type="date" value={bulk.due} onChange={(e) => setBulk({ ...bulk, due: e.target.value })} /></label>
+                <span style={{ flex: 1 }} />
+                <button type="button" className="link" style={{ color: "#fff" }} onClick={() => setJsel(new Set())}>Clear</button>
+                <button type="button" className="primary" disabled={!bulk.assignee && !bulk.reviewer && !bulk.status && !bulk.due} onClick={async () => {
+                  const patch: Record<string, unknown> = {};
+                  if (bulk.assignee) patch.assignee_id = bulk.assignee === "__none" ? null : bulk.assignee;
+                  if (bulk.reviewer) patch.reviewer_id = bulk.reviewer === "__none" ? null : bulk.reviewer;
+                  if (bulk.status) patch.status = bulk.status;
+                  if (bulk.due) patch.due_date = bulk.due;
+                  const ids = [...jsel].filter((id) => { const j = jobs.find((x) => x.id === id); return j && !closedFor(j); });
+                  if (!ids.length) { say("Only a master admin can change lodged or completed jobs", true); return; }
+                  if (await save(() => supabase.from("jobs").update(patch).in("id", ids), `${ids.length} job${ids.length === 1 ? "" : "s"} updated`)) { setJsel(new Set()); setBulk({ assignee: "", reviewer: "", status: "", due: "" }); }
+                }}>Apply to {jsel.size} job{jsel.size === 1 ? "" : "s"}</button>
+              </div> : null}
               <div className="count">{list.length} job{list.length === 1 ? "" : "s"}{list.length > 500 ? " · showing the first 500, narrow the filters to see the rest" : ""}</div>
             </>
           )}
         </div>
+        <div className="panel newtypes">
+          <div className="ph"><h2>New job types</h2><span className="note">Choose them in New job. Each comes with its own checklist.</span></div>
+          <div className="ntgrid">{([["ato_payment", "🏦", "Help a client pay the ATO: the amount, how and by when."], ["sgc", "🧾", "Late or missed super: work out the charge and lodge the statement."], ["ato_comm", "✉️", "An ATO letter or portal message that needs action."], ["company_formation", "🏢", "Set up a new company from start to handover."]] as [string, string, string][]).map(([id, icon, blurb]) => (
+            <div key={id} className="nt"><strong>{icon} {svcLabel(id)}</strong><p className="note">{blurb}</p>
+              <ol>{(STEPS[id] ? STEPS[id].map((x) => x.title) : CHECKLISTS[id] ?? []).map((x) => <li key={x}>{x}</li>)}</ol>
+              <button type="button" className="link" onClick={() => setModal({ kind: "job", service: id })}>+ Start one in New job</button></div>))}</div>
+        </div>
+        <p className="note" style={{ margin: "10px 2px 0" }}>Stage bar: green = done, blue = current (Preparation → Review → Signing → Lodge). Flags show open internal queries, review notes and file counts. Click a job to open its job page.</p>
       </>
     );
   }
