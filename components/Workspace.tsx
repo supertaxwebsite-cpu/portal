@@ -24,10 +24,11 @@ import ClientPicker from "./ClientPicker";
 import RelatedClients from "./RelatedClients";
 import ProspectsView from "./Prospects";
 import ActivityLog from "./ActivityLog";
+import TeamBoard from "./TeamBoard";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
-import MyJobs, { TeamRunning, fmtHours } from "./MyJobs";
+import MyJobs, { fmtHours } from "./MyJobs";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings";
@@ -86,6 +87,8 @@ async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ da
     if (!data || data.length < PAGE) return out;
   }
 }
+
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 
 export default function Workspace({ me }: { me: Profile }) {
   const supabase = useMemo(() => createClient(), []);
@@ -497,7 +500,6 @@ export default function Workspace({ me }: { me: Profile }) {
     const rows = team.filter((p) => !seesOwnTeam || myTeam.has(p.id)).map((p) => ({ id: p.id, name: p.full_name, title: p.title, js: openJobs.filter((j) => j.assignee_id === p.id) }));
     const un = openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active));
     if (un.length && !seesOwnTeam) rows.push({ id: "__none", name: "Unassigned", title: "", js: un });
-    const max = Math.max(1, ...rows.map((r) => r.js.length));
     const projected = projectedWork(clients);
     const Tile = ({ lbl, n, cls, f }: { lbl: string; n: number; cls?: string; f: Partial<JobFilter> }) => (
       <button className={`tile ${cls ?? ""}`} onClick={() => gotoJobs(f)}><span className="lbl">{lbl}</span><span className="val">{n}</span></button>
@@ -505,7 +507,7 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead">
-          <div><h1>Practice overview</h1><p>{fmtDate(todayISO())} · {openJobs.length} open job{openJobs.length === 1 ? "" : "s"} across {clients.length} client{clients.length === 1 ? "" : "s"}</p></div>
+          <div><h1>Practice desk</h1><p>{greeting()} {me.full_name.split(" ")[0]}. {fmtDate(todayISO())} · {openJobs.length} open job{openJobs.length === 1 ? "" : "s"} across {clients.length} client{clients.length === 1 ? "" : "s"}{seesOwnTeam ? " · you see your own team" : ""}.</p></div>
           <div className="row"><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
         </div>
         {!clients.length ? (
@@ -519,6 +521,13 @@ export default function Workspace({ me }: { me: Profile }) {
             <div className="side"><strong>Signed in as {roleLabel(me.role)}</strong><span className="note">{isMaster ? "Only you can add team members, change roles and switch access off." : canManage ? "Only master admins can delete clients and jobs." : "You can add and update clients and jobs."}</span></div>
           </div>
         ) : null}
+        <div className="quickpills">{[
+          { l: "My jobs", n: openJobs.filter((j) => j.assignee_id === me.id).length, f: { assignee: me.id } },
+          { l: "Ready for review or signing", n: review.length, f: { status: "review_any" } },
+          { l: "Internal queries", n: openJobs.filter((j) => j.status === "internal_query").length, f: { status: "internal_query" }, hot: true },
+          { l: "Query with client", n: openJobs.filter((j) => j.status === "client_query").length, f: { status: "client_query" } },
+          { l: "Sent for sign", n: openJobs.filter((j) => j.status === "sent_for_sign").length, f: { status: "sent_for_sign" } },
+        ].map((q) => <button key={q.l} type="button" onClick={() => gotoJobs(q.f)}>{q.l} <i className={q.hot && q.n ? "hot" : undefined}>{q.n}</i></button>)}</div>
         <div className="tiles">
           <Tile lbl="Overdue" n={overdue.length} cls={overdue.length ? "danger" : ""} f={{ due: "overdue" }} />
           <Tile lbl="Due in the next 7 days" n={week.length} cls={week.length ? "warn" : ""} f={{ due: "week" }} />
@@ -531,6 +540,8 @@ export default function Workspace({ me }: { me: Profile }) {
           <div className="statusrow">{STATUSES.map((st) => { const n = jobs.filter((j) => j.status === st.id).length; return (
             <button key={st.id} className="statuschip" onClick={() => gotoJobs({ status: st.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>); })}</div>
         </div>
+        {canSeeWorkload || seesOwnTeam ? <TeamBoard supabase={supabase} rows={rows} timers={teamRunning} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} meId={me.id}
+          title={seesOwnTeam ? "My team board" : "Team board"} onOpen={(j) => setModal({ kind: "job", job: j })} onViewTasks={(id) => gotoJobs({ assignee: id })} /> : null}
         <Reminders jobs={openJobs} myId={me.id} showOwner={canManage} clientName={clientName} personName={personName} busy={timerBusy}
           onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} onWaiting={followedUp} />
         <div className="grid2">
@@ -565,13 +576,6 @@ export default function Workspace({ me }: { me: Profile }) {
             ) : null}
           </div>
           <div className="section">
-            {canSeeWorkload || seesOwnTeam ? <TeamRunning timers={teamRunning} jobHours={jobHours} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} personName={personName}
-              onOpen={(j) => setModal({ kind: "job", job: j })} /> : null}
-            {canSeeWorkload || seesOwnTeam ? <div className="panel"><div className="ph"><h2>{seesOwnTeam ? "My team's workload" : "Team workload"}</h2><span className="note">Open jobs · <span style={{ color: "var(--danger)" }}>overdue</span></span></div>
-              <div style={{ overflowX: "auto", marginTop: 8 }}><table className="workload"><tbody>{rows.map((r) => { const od = r.js.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; const n = r.js.length; return (
-                <tr key={r.id}><td style={{ width: "40%" }}><button className="link" style={{ color: "var(--fg)" }} onClick={() => gotoJobs({ assignee: r.id })}>{r.name}</button>{r.title ? <div className="note">{r.title}</div> : null}</td>
-                  <td><div className="bar" title={`${n} open, ${od} overdue`}><i className="d" style={{ width: `${(od / max) * 100}%` }} /><i className="o" style={{ width: `${((n - od) / max) * 100}%` }} /></div></td>
-                  <td className="mono" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{n}{od ? <> · <span style={{ color: "var(--danger)" }}>{od}</span></> : null}</td></tr>); })}</tbody></table></div></div> : null}
             {projected.length ? (
               <div className="panel"><div className="ph"><h2>Projected work</h2><span className="note">Created automatically when the period ends</span></div>
                 <ul className="list">{projected.map((p) => (

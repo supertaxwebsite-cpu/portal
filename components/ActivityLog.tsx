@@ -86,9 +86,7 @@ export default function ActivityLog({ supabase, jobs, clients, people, onOpenJob
     <div className="section" id="activity-log" style={{ marginTop: 24 }}>
       <div className="pagehead"><div><h2 style={{ fontSize: 20, margin: 0 }}>🕘 Activity log</h2><p>Who did what across the practice: status changes, assignments, comments, queries and log-ins.</p></div></div>
       <div className="toolbar" style={{ flexWrap: "wrap" }}>
-        {TYPES.map((t) => <button key={t.id || "all"} type="button" className={type === t.id ? "primary" : undefined} onClick={() => setType(t.id)}>{t.label} <span className="note">{count(t.id)}</span></button>)}
-      </div>
-      <div className="toolbar">
+        <div className="row" style={{ width: "100%" }}>{TYPES.map((t) => <button key={t.id || "all"} type="button" className={type === t.id ? "primary" : undefined} onClick={() => setType(t.id)}>{t.label} <span className="note">{count(t.id)}</span></button>)}</div>
         <input type="search" aria-label="Search the log" placeholder="Search client, person or text…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 220 }} />
         <select aria-label="Person" value={who} onChange={(e) => setWho(e.target.value)}><option value="">Everyone</option>{people.filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>
         <select aria-label="When" value={days} onChange={(e) => setDays(Number(e.target.value))}>{DAYS.map((d) => <option key={d.v} value={d.v}>{d.l}</option>)}</select>
