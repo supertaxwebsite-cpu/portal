@@ -24,10 +24,16 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 export const involves = (m: Meeting, id: string) => m.owner_id === id || m.attendees.includes(id);
 
 /* ---------- Meetings page: month calendar + upcoming list ---------- */
-export function MeetingsView({ meetings, meId, isMaster, personName, clientName, onBook, onOpen, quick }: {
+/** Colour of a meeting on the calendar: online call, client meeting in the office, or a team meeting. */
+const evKind = (m: Meeting) => (isLink(m.location) || /teams|zoom|meet\b|call/i.test(`${m.location} ${m.title}`) ? "online" : m.client_id ? "client" : "team");
+
+export function MeetingsView({ meetings, meId, isMaster, personName, clientName, onBook, onOpen, quick, onAfter, onFollowUp }: {
   meetings: Meeting[]; meId: string; isMaster: boolean; personName: (id: string | null) => string; clientName: (id: string) => string;
   onBook: (date?: string) => void; onOpen: (m: Meeting) => void; quick?: QuickProps;
+  /** Save notes after a meeting (to the client's notes) and mark it done. */
+  onAfter?: (m: Meeting, notes: string) => Promise<boolean>; onFollowUp?: (m: Meeting) => void;
 }) {
+  const [after, setAfter] = useState<Record<string, string>>({});
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [mine, setMine] = useState(!isMaster ? true : false);
   const [perm, setPerm] = useState<string>(() => (typeof Notification === "undefined" ? "unsupported" : Notification.permission));
@@ -38,6 +44,9 @@ export function MeetingsView({ meetings, meId, isMaster, personName, clientName,
   const today = dayKey(new Date());
   const now = Date.now();
   const upcoming = list.filter((m) => !m.done && new Date(m.starts_at).getTime() + m.duration_min * 60000 >= now).slice(0, 12);
+  // Meetings in the last 7 days that are over but not marked done: type quick notes.
+  const toWrap = list.filter((m) => !m.done && m.owner_id === meId && new Date(m.starts_at).getTime() + m.duration_min * 60000 < now && now - new Date(m.starts_at).getTime() < 7 * 864e5)
+    .sort((a, b) => b.starts_at.localeCompare(a.starts_at)).slice(0, 5);
   const shift = (n: number) => setMonth(new Date(month.getFullYear(), month.getMonth() + n, 1));
   return (
     <>
@@ -60,12 +69,27 @@ export function MeetingsView({ meetings, meId, isMaster, personName, clientName,
             {days.map((d) => { const k = dayKey(d); const ms = byDay.get(k) ?? []; const out = d.getMonth() !== month.getMonth(); return (
               <div key={k} className={`day${out ? " out" : ""}${k === today ? " today" : ""}`} onClick={() => onBook(k)} title="Book a meeting on this day">
                 <span className="dnum">{d.getDate()}</span>
-                {ms.slice(0, 3).map((m) => <button key={m.id} className={`ev${m.done ? " done" : ""}`} onClick={(e) => { e.stopPropagation(); onOpen(m); }}><b>{timeOf(m.starts_at)}</b> {m.title}</button>)}
+                {ms.slice(0, 3).map((m) => <button key={m.id} className={`ev ${evKind(m)}${m.done ? " done" : ""}`} onClick={(e) => { e.stopPropagation(); onOpen(m); }}><b>{timeOf(m.starts_at)}</b> {m.title}</button>)}
                 {ms.length > 3 ? <span className="more">+{ms.length - 3} more</span> : null}
               </div>); })}
           </div>
+          <div className="evlegend"><span className="ev client">Client meeting</span><span className="ev online">Teams / online</span><span className="ev team">Team meeting</span><span className="note">Click a day to book</span></div>
         </div>
-        <div className="meetside"><div className="panel">
+        <div className="meetside">
+        {toWrap.length && onAfter ? <div className="panel">
+          <div className="ph"><h2>After the meeting</h2><span className="note">Notes go to the client</span></div>
+          <ul className="list">{toWrap.map((m) => (
+            <li key={m.id} style={{ display: "block" }}>
+              <div className="t">{m.title}</div>
+              <div className="s">{dateOf(m.starts_at)} · {timeOf(m.starts_at)}{m.client_id ? ` · ${clientName(m.client_id)}` : ""}</div>
+              <textarea aria-label="Meeting notes" style={{ marginTop: 6, minHeight: 54 }} placeholder={m.client_id ? "Quick notes, e.g. wants an SMSF set up before 30 June" : "Quick notes (saved on the meeting)"} value={after[m.id] ?? ""} onChange={(e) => setAfter({ ...after, [m.id]: e.target.value })} />
+              <div className="row" style={{ marginTop: 6 }}>
+                <button type="button" className="primary" onClick={async () => { if (await onAfter(m, after[m.id] ?? "")) setAfter({ ...after, [m.id]: "" }); }}>{(after[m.id] ?? "").trim() ? "Save notes, mark done" : "Mark done"}</button>
+                {m.client_id && onFollowUp ? <button type="button" onClick={() => onFollowUp(m)}>Create follow-up job</button> : null}
+              </div>
+            </li>))}</ul>
+        </div> : null}
+        <div className="panel">
           <div className="ph"><h2>Upcoming</h2></div>
           {!upcoming.length ? <div className="empty"><strong>No upcoming meetings.</strong>Click a day on the calendar or Book a meeting.</div> : (
             <ul className="list">{upcoming.map((m) => (

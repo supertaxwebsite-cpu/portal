@@ -905,7 +905,20 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "team" && canSeeTeam ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => setModal({ kind: "job", job: j })} /></> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
-        quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }} /> : null}
+        quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }}
+        onFollowUp={(m) => setModal({ kind: "job", clientId: m.client_id ?? undefined })}
+        onAfter={async (m, text) => {
+          const t = text.trim();
+          if (t && m.client_id) {
+            const { error } = await supabase.from("client_notes").insert({ client_id: m.client_id, author_id: me.id, category: "general", body: `Meeting ${fmtDate(m.starts_at.slice(0, 10))} (${m.title}): ${t}`, pinned: false });
+            if (error) { say(`Notes not saved: ${error.message}`, true); return false; }
+          }
+          const { error } = await supabase.from("meetings").update({ done: true, ...(t && !m.client_id ? { notes: [m.notes, t].filter(Boolean).join("\n") } : {}) }).eq("id", m.id);
+          if (error) { say(`Not saved: ${error.message}`, true); return false; }
+          say(t ? (m.client_id ? "Notes saved to the client and meeting marked done" : "Notes saved and meeting marked done") : "Meeting marked done");
+          load();
+          return true;
+        }} /> : null}
       </WorkGate>
       {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
