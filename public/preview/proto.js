@@ -45,7 +45,9 @@
     else if (/Status/i.test(label)) list = ["Choose…", ...STATUS];
     else if (/Due/i.test(label)) list = ["Keep", "Move 1 week", "Move 2 weeks", "Pick a date"];
     else if (/^All|^Any/.test(v)) list = [v, "Supertax", "Mentor Group", "Individual", "Company", "Trust", "SMSF", "Partnership"];
-    else if (/Late \(automatic\)/.test(v)) list = [v, "Working day", "Half day", "Leave", "Sick"];
+    else if (/Late \(automatic\)/.test(v)) list = [v, "Working day", "Half day", "Unpaid leave", "Sick"];
+    else if (v === "General") list = ["General", "Phone call", "Email", "Documents", "Reminder"];
+    else if (/^Open: /.test(v)) list = [v, "Fixed, waiting for check", "Closed"];
     if (list) { s.innerHTML = list.map((o) => `<option${o === v ? " selected" : ""}>${o}</option>`).join(""); }
   });
   document.addEventListener("change", (e) => {
@@ -114,6 +116,14 @@
     if (!rows.length) rows = $$("tbody tr");
     return rows;
   }
+  $$(".tabs span").forEach((tb) => tb.addEventListener("click", () => {
+    $$(".tabs span").forEach((x) => x.classList.remove("on")); tb.classList.add("on");
+    const n = txt(tb);
+    if (/Month grid/.test(n)) { flash($("#grid")); toast("Month grid: everyone, every day"); }
+    else if (/Leave calendar/.test(n)) { flash($("#grid")); toast("Leave calendar: only the leave squares, months ahead"); }
+    else if (/Requests/.test(n)) { const h = [...document.querySelectorAll(".card h2")].find((x) => /approval/.test(x.textContent)); flash(h && h.parentElement); toast("Requests waiting for you"); }
+    else if (/own timesheet/.test(n)) { toast("Opening your own timesheet"); setTimeout(() => (location.href = "ts-staff.html"), 500); }
+  }));
   $$(".tab").forEach((tab) => tab.addEventListener("click", () => {
     const bar = tab.parentElement; $$(".tab", bar).forEach((t) => t.classList.remove("on")); tab.classList.add("on");
     const name = txt(tab).replace(/\d[\d,]*$/, "").trim();
@@ -148,8 +158,7 @@
       pop.style.left = Math.min(r.left - sec.left + 24, sec.width - 290) + "px"; pop.style.top = r.top - sec.top + 24 + "px"; pop.classList.remove("pt-hide");
       e.stopPropagation();
     }));
-    pop.addEventListener("click", (e) => e.stopPropagation());
-    document.addEventListener("click", () => pop.classList.add("pt-hide"));
+    document.addEventListener("click", (e) => { if (!e.target.closest(".pop") && !e.target.closest("#grid .c")) pop.classList.add("pt-hide"); });
   }
 
   // ---------- buttons ----------
@@ -161,6 +170,16 @@
     const t = txt(b).replace(/IDEA \d/, "").trim(), row = b.closest("li,tr,.task");
     const rowName = row ? txt($("b,.t,.tname", row) || row).slice(0, 40) : "";
     if (/^← Jobs$/.test(t)) { location.href = isMgr ? "jobs.html" : "staff-jobs.html"; return; }
+    if (/^← Clients$/.test(t)) { location.href = isMgr ? "clients.html" : "clients-s.html"; return; }
+    if (t === "Sign out") { toast("Signed out"); setTimeout(() => (location.href = "index.html"), 500); return; }
+    if (/Email client/.test(t)) { modal("Email the client", `<input value="To: client@example.com.au"><input value="Subject: Documents needed for your BAS"><textarea>Hi, could you please send the fuel tax invoices for the quarter? Thanks.</textarea>`, "Send email", () => toast("Email sent. A copy is saved on the job.")); return; }
+    if (/Files|All files/.test(t)) { modal("Files", `<div>📎 query-sheet.xlsx · Naval · 12 Nov<br>📎 client-query-list.xlsx · Harshad · 12 Nov<br>📎 bank-statements-Q4.pdf · client · 2 Nov</div><input type="file">`, "Upload", () => toast("File uploaded")); return; }
+    if (/Related clients/.test(t)) { location.href = isMgr ? "client.html" : "client-s.html"; return; }
+    if (/Link a client/.test(t)) { modal("Link a related client", `<input placeholder="Search clients"><select><option>Director of</option><option>Trustee of</option><option>Spouse</option><option>Same family group</option></select>`, "Link", () => toast("Clients linked")); return; }
+    if (/Finish the group/.test(t)) { toast("Opens all the group's open jobs together, so they can be finished in one go"); return; }
+    if (/Import from CSV/.test(t)) { modal("Import clients", `<div>Use the template so the columns match.</div><input type="file" accept=".csv,.xlsx">`, "Import", () => toast("Clients imported")); return; }
+    if (/Columns/.test(t)) { modal("Show columns", `<label><input type="checkbox" checked style="width:auto"> Entity</label><label><input type="checkbox" checked style="width:auto"> Manager</label><label><input type="checkbox" style="width:auto"> ABN</label><label><input type="checkbox" style="width:auto"> Phone</label>`, "Apply", () => toast("Columns updated")); return; }
+    if (/Create jobs for a period/.test(t)) { modal("Create jobs for a period", `<select><option>BAS</option><option>Payroll</option><option>Tax return</option></select><select><option>Q2 FY27 (Oct to Dec)</option><option>Q3 FY27 (Jan to Mar)</option></select><div>Creates one job for every client with this service.</div>`, "Create jobs", (v) => toast(`${v[0]} jobs created for ${v[1]}`)); return; }
     if (t === "Open day") { toast("Opens that person's day: log-ins and job times"); return; }
     if (/^(Open|View tasks|Start review|Answer)$/.test(t)) { location.href = /^clients/.test(page) ? (isMgr ? "client.html" : "client-s.html") : jobPage; return; }
     if (t === "Start") { b.textContent = "Stop"; b.classList.add("pri"); let s = 0; timers.set(b, setInterval(() => { s++; b.title = s + "s"; }, 1000)); toast(`Timer started on ${rowName}`); return; }
@@ -179,17 +198,17 @@
     if (/Raise internal query/.test(t)) {
       modal("Raise internal query", `<select><option>Harshad</option><option>Hardeep</option></select><textarea placeholder="What's the query?"></textarea><input type="file">`, "Send query", (v) => toast(`Query sent to ${v[0]}. They get a notification.`)); return;
     }
-    if (/Apply for leave/.test(t)) { const f = [...document.querySelectorAll(".card h2")].find((h) => /Apply for leave/.test(h.textContent)); flash(f && f.parentElement); return; }
+    if (/Apply for leave/.test(t)) { const f = [...document.querySelectorAll(".card h2")].find((h) => /Apply for leave/.test(h.textContent)); flash(f && f.parentElement); toast("Fill in the form on the right"); return; }
     if (/Send to manager for approval/.test(t)) {
       const ul = [...document.querySelectorAll(".card h2")].find((h) => /My requests/.test(h.textContent)); const list = ul && ul.parentElement.querySelector("ul");
-      if (list) { const li = document.createElement("li"); li.innerHTML = `<span>🌴</span><div><b>21–24 Dec</b> · Annual, 4 days<div class="s">Sent just now</div></div><span class="acts"><span class="pill p-warn">Waiting</span><button class="btn sm">Cancel</button></span>`; list.prepend(li); flash(li); }
+      if (list) { const li = document.createElement("li"); li.innerHTML = `<span>🌴</span><div><b>21–24 Dec</b> · Unpaid leave, 4 days<div class="s">Sent just now</div></div><span class="acts"><span class="pill p-warn">Waiting</span><button class="btn sm">Cancel</button></span>`; list.prepend(li); flash(li); }
       toast("Leave request sent to Harshad"); return;
     }
     if (/Start break/.test(t) || /End break/.test(t)) { breakOn = !breakOn; b.innerHTML = breakOn ? "▶ End break" : "☕ Start break"; toast(breakOn ? "On break. The idle pop-up won't show." : "Back from break"); return; }
-    if (/Log out for the day/.test(t)) { toast("Logged out at " + new Date().toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }) + ". See you tomorrow!"); b.disabled = true; return; }
+    if (/Log out for the day/.test(t)) { modal("Log out early?", `<div>You've worked <b>5h 12m</b> today. Your suggested log-out time is <b>4:38 pm</b>, so you're 3h 03m short of 8h 15m.</div><textarea placeholder="Reason for leaving early (goes to your manager)"></textarea>`, "Log out anyway", () => { toast("Logged out. Your manager sees the reason."); b.disabled = true; }); return; }
     if (t === "‹" || t === "›") { toast("The sample data only has November 2026"); return; }
     if (/Mark sick/.test(t)) { const c = b.closest(".chip"); if (c) { c.className = "chip off"; b.remove(); $(".s", c).textContent = "sick leave today"; } toast("Marked as sick leave for today"); return; }
-    if (/\+ Add leave for someone/.test(t)) { modal("Add leave for someone", `<select>${TEAM.slice(0, 7).map((n) => `<option>${n}</option>`).join("")}</select><select><option>Annual leave</option><option>Sick</option><option>Personal</option><option>Unpaid</option></select><input placeholder="Dates, e.g. 1–3 Dec">`, "Add leave", (v) => toast(`${v[1]} added for ${v[0]}`)); return; }
+    if (/\+ Add leave for someone/.test(t)) { modal("Add leave for someone", `<select>${TEAM.slice(0, 7).map((n) => `<option>${n}</option>`).join("")}</select><select><option>Unpaid leave</option><option>Sick</option><option>Personal</option></select><input placeholder="Dates, e.g. 1–3 Dec">`, "Add leave", (v) => toast(`${v[1]} added for ${v[0]}`)); return; }
     if (/Export|Download/.test(t)) { toast("In the real portal this downloads a spreadsheet"); return; }
     if (/Add note|Add confidential note/.test(t)) { const ta = b.closest("section,.card") && $("textarea", b.closest("section,.card")); modal(t.replace("+ ", ""), `<textarea placeholder="Type the note">${ta ? ta.value : ""}</textarea>`, "Save note", () => toast("Note saved")); return; }
     if (/New job/.test(t)) { modal("New job", `<select><option>BAS</option><option>Tax return</option><option>SMSF</option><option>Payroll</option></select><select>${TEAM.map((n) => `<option>${n}</option>`).join("")}</select><input placeholder="Period, e.g. Q2 FY27">`, "Create job", (v) => toast(`${v[0]} job created and assigned to ${v[1]}`)); return; }
@@ -207,14 +226,14 @@
     if (t === "View jobs") { location.href = "jobs.html"; return; }
     if (t === "Reset password") { toast("A new temporary password is shown once for you to pass on"); return; }
     if (/Add team member/.test(t)) { openDrawer("new team member"); return; }
-    if (/What each role can do/.test(t)) { flash($(".matrix")); return; }
+    if (/What each role can do/.test(t)) { flash($(".matrix")); toast("What each role can do"); return; }
     if (/Add prospect/.test(t)) { modal("Add prospect", `<input placeholder="Name"><input placeholder="Contact person"><select><option>Referral from a client</option><option>Website</option><option>Google</option><option>Social media</option><option>Walk-in or phone call</option></select><input placeholder="Fee quoted per year, e.g. 3500">`, "Add prospect", (v) => addProspect(v)); return; }
     if (t === "Read it") { const o = $("#qbout"); o.classList.remove("pt-hide"); flash(o); toast("Read it. Check the details, then Book it."); return; }
     if (t === "Book it") { const d = $('.md[data-day="17"]'); if (d) { const e = document.createElement("span"); e.className = "ev t"; e.textContent = "10:30 Teams · Deepa Shah"; d.appendChild(e); flash(d); } toast("Meeting booked. Invites sent and a reminder set."); return; }
     if (t === "Change details" || (t === "Change" && b.closest(".list"))) { modal("Change meeting", `<input value="${t === "Change" ? rowName : "Call with Deepa Shah"}"><input type="datetime-local"><select><option>In the office</option><option>Microsoft Teams</option><option>Phone</option></select>`, "Save", () => toast("Meeting updated")); return; }
     if (t === "Join") { toast("Opens the Teams call in a new tab"); return; }
     if (/Book a meeting/.test(t)) { bookDay(""); return; }
-    if (t === "Today" && $(".mcal")) { flash($(".md.now")); return; }
+    if (t === "Today" && $(".mcal")) { flash($(".md.now")); toast("Today: 2 meetings"); return; }
     if (/desktop alerts/.test(t)) { toast("Desktop alerts on. You'll get a pop-up 10 minutes before each meeting."); return; }
     if (/New payroll client/.test(t)) { modal("New payroll client", `<input placeholder="Client"><select><option>Weekly</option><option>Fortnightly</option><option>Monthly</option></select><input type="date"><select>${TEAM.map((n) => `<option>${n}</option>`).join("")}</select>`, "Create", (v) => toast(`${v[1]} payroll set up. A job is created on each pay day.`)); return; }
     toast(`In the real portal: ${t}`);

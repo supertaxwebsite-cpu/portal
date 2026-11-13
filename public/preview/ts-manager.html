@@ -100,11 +100,11 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 <section class="card"><h2>Right now · Fri 13 Nov, 10:50 am <span class="note">6 of 8 in · 1 on leave · 1 not logged in</span></h2><div class="now">
 <span class="chip in"><span class="av">NA</span>Naval <span class="s">in 7:38 · on Patel Family Trust</span></span>
 <span class="chip in"><span class="av">JS</span>Jas <span class="s">in 7:30 · on Lee SMSF</span></span>
-<span class="chip late"><span class="av">RY</span>Riya <span class="s">late 8:05 · approval asked</span></span>
+<span class="chip late"><span class="av">RY</span>Riya <span class="s">late 8:05 · log out 5:05 pm · approval asked</span></span>
 <span class="chip in"><span class="av">AM</span>Aman <span class="s">in 7:41 · ☕ on break 6m</span></span>
 <span class="chip in"><span class="av">KR</span>Kiran <span class="s">in 7:35 · no job running 14m</span></span>
 <span class="chip in"><span class="av">SN</span>Sneha <span class="s">in 7:44 · on BAS Q1</span></span>
-<span class="chip off"><span class="av">PR</span>Priya <span class="s">🌴 annual leave</span></span>
+<span class="chip off"><span class="av">PR</span>Priya <span class="s">🌴 unpaid leave</span></span>
 <span class="chip no"><span class="av">MK</span>Mehul <span class="s">not logged in yet</span> <button class="btn sm">Mark sick</button></span>
 </div></section>
 
@@ -129,11 +129,11 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 
 <div class="grid2" style="margin-top:14px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
 <section class="card"><h2>Waiting for your approval <span class="note">3</span></h2><ul class="list">
-<li><div class="av">NA</div><div><b>Naval</b> · Annual leave, Fri 27 Nov half day pm<div class="s">"School concert" · 10.5 days left · nobody else off</div></div><span class="acts"><button class="btn sm ok">Approve</button><button class="btn sm no">Reject</button></span></li>
-<li><div class="av">SN</div><div><b>Sneha</b> · Annual leave, 21–24 Dec (4 days)<div class="s">⚠ Priya and Naval also off 23–24 Dec · cover: Kiran</div></div><span class="acts"><button class="btn sm ok">Approve</button><button class="btn sm no">Reject</button></span></li>
+<li><div class="av">NA</div><div><b>Naval</b> · Unpaid leave, Fri 27 Nov half day pm<div class="s">"School concert" · 10.5 days left · nobody else off</div></div><span class="acts"><button class="btn sm ok">Approve</button><button class="btn sm no">Reject</button></span></li>
+<li><div class="av">SN</div><div><b>Sneha</b> · Unpaid leave, 21–24 Dec (4 days)<div class="s">⚠ Priya and Naval also off 23–24 Dec · cover: Kiran</div></div><span class="acts"><button class="btn sm ok">Approve</button><button class="btn sm no">Reject</button></span></li>
 <li><div class="av">RY</div><div><b>Riya</b> · Late start today 8:05 am<div class="s">"Car wouldn't start"</div></div><span class="acts"><button class="btn sm ok">Approve</button><button class="btn sm no">Reject</button></span></li>
 </ul></section>
-<section class="card"><h2>Leave balances <span class="note">Annual leave left this year</span></h2><div class="bars" id="bars"></div>
+<section class="card"><h2>Sick / personal leave left <span class="note">10 days a year each</span></h2><div class="bars" id="bars"></div>
 <div class="note" style="padding:0 16px 12px">Set each person's yearly allowance in Team → Edit member. Leave builds up monthly, or all on 1 Jan, your choice.</div></section>
 </div>
 
@@ -166,8 +166,8 @@ ppl.forEach(([n,a],i)=>{h+=`<tr><td class="n"><span style="display:flex;gap:6px;
  const jobs=[90,84,79,88,71,92,87,83][i], ex=[2.5,4,0,1,0,6,0.5,0][i];
  h+=`<td class="tot">${days}</td><td class="tot">${hrs}</td><td class="tot" style="color:${c.L?'var(--warn)':'inherit'}">${c.L}</td><td class="tot">${c.H}</td><td class="tot" style="color:${lv?'var(--danger)':'inherit'}">${lv}</td><td class="tot" style="color:${jobs<80?'var(--danger)':'inherit'}">${jobs}%</td><td class="tot">${ex}</td></tr>`});
 g.innerHTML=h+'</tbody>';
-const bl=[['Naval',10.5],['Jas',14],['Riya',8],['Aman',17],['Kiran',3.5],['Sneha',12],['Priya',5],['Mehul',9]];
-document.getElementById('bars').innerHTML=bl.map(([n,v])=>`<div class="r"><span>${n}</span><span class="t"><i style="width:${v/20*100}%;background:${v<5?'var(--danger)':'var(--accent)'}"></i></span><span class="mono">${v} d</span></div>`).join('');
+const bl=[['Naval',7],['Jas',9],['Riya',6],['Aman',10],['Kiran',2.5],['Sneha',8],['Priya',8],['Mehul',4]];
+document.getElementById('bars').innerHTML=bl.map(([n,v])=>`<div class="r"><span>${n}</span><span class="t"><i style="width:${v/10*100}%;background:${v<3?'var(--danger)':'var(--accent)'}"></i></span><span class="mono">${v} d</span></div>`).join('');
 </script><style>.protobar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;gap:6px;align-items:center;background:#07121f;color:#e6eef6;border-radius:999px;padding:6px 8px 6px 16px;box-shadow:0 10px 30px rgba(7,18,31,.35);font:600 13px Manrope,system-ui,sans-serif;white-space:nowrap}
 .protobar a{color:#e6eef6;text-decoration:none;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.08)}.protobar a:hover{background:rgba(255,255,255,.18)}.protobar a.sw{background:#f59a22;color:#1b1104}.protobar .who{color:#8fa3b8;margin-right:6px}
 nav a[href]{cursor:pointer;text-decoration:none}.tname{cursor:pointer}.tname:hover{text-decoration:underline;color:var(--accent)}body{padding-bottom:70px}</style>

@@ -69,7 +69,7 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg span{flex:1;text-align:center;padding:6px 4px;font-weight:700;font-size:12.5px;border-right:1px solid var(--line)}.seg span:last-child{border-right:0}.seg span.on{background:var(--accent-soft);color:var(--accent)}
 .warnbox{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:600}
 .okbox{background:var(--ok-soft);color:var(--ok);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:600}
-</style></head><body>
+.suggest{margin-top:6px;background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:4px 9px;font-size:12.5px;font-weight:700;display:inline-block}.suggest b{color:var(--fg)}</style></head><body>
 <header><div class="w"><img src="logo.webp" alt=""><small>PRACTICE DESK</small>
 <nav><a href="home.html">Overview</a> <a href="staff-jobs.html">Jobs</a> <a href="payroll-s.html">Payroll</a> <a href="clients-s.html">Clients</a> <a href="ts-staff.html" class="on">Timesheet</a></nav>
 <div class="me"><div class="bell">🔔</div><b>Naval</b><button class="btn ghost" style="color:#fff;border-color:#2a3b50">Sign out</button></div></div></header>
@@ -77,7 +77,7 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 <div class="top"><div><h1>My timesheet</h1><div class="note" style="font-size:13.5px">Your log-in times, hours, leave and job time for the month.</div></div>
 <div class="monthsel"><button class="btn sm">‹</button><b>November 2026</b><button class="btn sm">›</button><button class="btn">⬇ Download my month</button><button class="btn pri">+ Apply for leave</button></div></div>
 
-<section class="card today"><div><div class="lbl">Today · Fri 13 Nov</div><div class="clock">5h 12m</div><div class="note">Logged in 7:38 am · on time</div></div>
+<section class="card today"><div><div class="lbl">Today · Fri 13 Nov</div><div class="clock">5h 12m</div><div class="note">Logged in 7:38 am · 8 min after 7:30</div><div class="suggest">🕓 Suggested log out <b>4:38 pm</b></div></div>
 <div><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700"><span>Worked 5h 12m of 8h 15m</span><span style="color:var(--accent)">On jobs 4h 40m (90%)</span></div>
 <div class="prog"><i style="width:65%"></i><span class="job" style="width:58%"></span></div>
 <div class="note" style="margin-top:6px">▶ Running now: <b style="color:var(--fg)">Patel Family Trust · ITR 2026</b> · 1h 05m. 45 min break not taken yet.</div></div>
@@ -96,47 +96,47 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 <section class="card"><h2>November at a glance <span class="note">Click a day to see its log-ins and jobs</span></h2>
 <div class="cal" id="cal"></div>
 <div class="legend"><span><i style="background:var(--ok)"></i>Present</span><span><i style="background:#c77a0a"></i>Late</span><span><i style="background:var(--info)"></i>Half day</span><span><i style="background:var(--danger)"></i>Leave</span><span><i style="background:repeating-linear-gradient(135deg,var(--danger) 0 3px,#fff 3px 6px)"></i>Booked leave</span><span><i style="background:#6b4bb3"></i>Public holiday</span></div>
-<div class="note" style="padding:0 16px 12px">Office hours: Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break, so 8h 15m a day. Sunday is off. Late = log in after 7:45 am.</div></section>
+<div class="note" style="padding:0 16px 12px">Office hours: Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break, so 8h 15m a day. Sunday is off. Late = log in after 7:45 am. If you start after 7:30, your suggested log-out time moves later so you still work 8h 15m.</div></section>
 
 <section class="card" style="margin-top:14px"><h2>Day by day <span class="note">Log in, log out, breaks and job time</span></h2>
 <table><thead><tr><th>Date</th><th>Logged in</th><th>Logged out</th><th>Break <span class="idea">IDEA 4</span></th><th>Hours</th><th>On jobs <span class="idea">IDEA 1</span></th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></section>
 </div>
 
 <div class="side">
-<section class="card"><h2>My leave balance <span class="note">2026 year</span></h2><div class="lv">
-<div class="row"><span><b style="font-family:inherit">Annual leave</b></span><span class="note">20 days a year</span></div>
-<div class="lvbar"><i style="width:32.5%;background:var(--danger)"></i><i style="width:10%;background:repeating-linear-gradient(135deg,var(--danger) 0 3px,#f6c9c3 3px 6px)"></i></div>
-<div class="row"><span class="note">Taken 6.5 · Booked 2 · Waiting 1</span><span><b>10.5</b> left</span></div>
-<div class="row" style="margin-top:8px"><span><b style="font-family:inherit">Sick / personal</b></span><span class="note">10 days a year</span></div>
+<section class="card"><h2>My leave this year <span class="note">2026</span></h2><div class="lv">
+<div class="row"><span><b style="font-family:inherit">Sick / personal</b></span><span class="note">10 days a year</span></div>
 <div class="lvbar"><i style="width:30%;background:#c77a0a"></i></div>
 <div class="row"><span class="note">Taken 3</span><span><b>7</b> left</span></div>
-<div class="row" style="margin-top:8px"><span><b style="font-family:inherit">Unpaid / other</b></span><span><b>0</b> taken</span></div>
+<div class="row" style="margin-top:8px"><span><b style="font-family:inherit">Unpaid leave</b></span><span class="note">No limit, needs approval</span></div>
+<div class="lvbar"><i style="width:20%;background:var(--danger)"></i><i style="width:10%;background:repeating-linear-gradient(135deg,var(--danger) 0 3px,#f6c9c3 3px 6px)"></i></div>
+<div class="row"><span class="note">Taken 4 · Booked 2 · Waiting 0.5</span><span><b>6.5</b> days</span></div>
+<div class="note" style="margin-top:6px">There is no annual leave. Time off you plan ahead is unpaid leave.</div>
 </div></section>
 
 <section class="card"><h2>Apply for leave</h2><div class="form">
-<label>Type<div class="seg"><span class="on">Annual</span><span>Sick</span><span>Personal</span><span>Unpaid</span></div></label>
+<label>Type<div class="seg"><span class="on">Unpaid</span><span>Sick</span><span>Personal</span></div></label>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label>From<div class="in">Mon 21 Dec 2026</div></label><label>To<div class="in">Thu 24 Dec 2026</div></label></div>
 <label>Length<div class="seg"><span class="on">Full days</span><span>Half day (am)</span><span>Half day (pm)</span></div></label>
 <label>Reason (optional)<div class="in" style="font-weight:500;color:var(--muted)">Family trip before Christmas</div></label>
-<div class="okbox">4 working days. You'll have 6.5 days of annual leave left.</div>
+<div class="okbox">4 working days of unpaid leave (Mon to Thu).</div>
 <div class="warnbox">⚠ Priya is also off 23–24 Dec. <span class="idea">IDEA 2</span></div>
 <label>Who covers my urgent jobs? <span class="idea" style="justify-self:start;margin:0">IDEA 3</span><div class="in">Jas</div></label>
 <button class="btn pri">Send to manager for approval</button>
 <div class="note">Your manager gets a notification. Approved leave shows on your calendar and the team's.</div></div></section>
 
 <section class="card"><h2>My requests</h2><ul class="list">
-<li><span>🌴</span><div><b>24–25 Nov</b> · Annual, 2 days<div class="s">Approved by Harshad on 5 Nov</div></div><span class="acts"><span class="pill p-ok">Approved</span></span></li>
-<li><span>🌴</span><div><b>27 Nov</b> · Annual, half day pm<div class="s">Sent 12 Nov</div></div><span class="acts"><span class="pill p-warn">Waiting</span><button class="btn sm">Cancel</button></span></li>
+<li><span>🌴</span><div><b>24–25 Nov</b> · Unpaid leave, 2 days<div class="s">Approved by Harshad on 5 Nov</div></div><span class="acts"><span class="pill p-ok">Approved</span></span></li>
+<li><span>🌴</span><div><b>27 Nov</b> · Unpaid leave, half day pm<div class="s">Sent 12 Nov</div></div><span class="acts"><span class="pill p-warn">Waiting</span><button class="btn sm">Cancel</button></span></li>
 <li><span>⏰</span><div><b>4 Nov</b> · Late start 7:58 am<div class="s">"Train delay on the Western line"</div></div><span class="acts"><span class="pill p-ok">Late approved</span></span></li>
 </ul></section>
 
 <section class="card"><h2>Who's off this week <span class="idea">IDEA 2</span></h2><ul class="list">
-<li><div class="av">PR</div><div><b>Priya</b><div class="s">Annual leave · Thu 12 – Fri 13 Nov</div></div></li>
+<li><div class="av">PR</div><div><b>Priya</b><div class="s">Unpaid leave · Thu 12 – Fri 13 Nov</div></div></li>
 <li><div class="av">MK</div><div><b>Mehul</b><div class="s">Sick · today</div></div></li></ul></section>
 </div></div>
 </main>
 <script>
-const st={2:['pres','7:28','4:31',8.30,7.6],3:['pres','7:30','4:35',8.33,7.4],4:['late','7:58','4:45',8.03,7.0],5:['pres','7:26','4:30',8.32,7.5],6:['leave','Sick leave'],7:['pres','7:32','4:30',8.22,7.4],9:['pres','7:29','4:33',8.32,7.3],10:['half','7:41','12:05',4.4,4.0],11:['pres','7:36','4:40',8.32,7.8],12:['pres','7:33','4:30',8.2,6.9],13:['now','7:38','',5.2,4.7],24:['booked','Annual leave'],25:['booked','Annual leave'],27:['bookedp','Half day pm · waiting']};
+const st={2:['pres','7:28','4:31',8.30,7.6],3:['pres','7:30','4:35',8.33,7.4],4:['late','7:58','4:45',8.03,7.0],5:['pres','7:26','4:30',8.32,7.5],6:['leave','Sick leave'],7:['pres','7:32','4:30',8.22,7.4],9:['pres','7:29','4:33',8.32,7.3],10:['half','7:41','12:05',4.4,4.0],11:['pres','7:36','4:40',8.32,7.8],12:['pres','7:33','4:30',8.2,6.9],13:['now','7:38','',5.2,4.7],24:['booked','Unpaid leave'],25:['booked','Unpaid leave'],27:['bookedp','Half day pm · waiting']};
 const cal=document.getElementById('cal');['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(w=>cal.innerHTML+=`<div class="wd">${w}</div>`);
 for(let i=0;i<6;i++)cal.innerHTML+='<div class="day out"></div>';
 for(let d=1;d<=30;d++){const dow=(d+5)%7;const we=dow===6;const s=st[d];let cls='day',body='';
@@ -156,7 +156,7 @@ const h=x=>{const H=Math.floor(x),M=Math.round((x-H)*60);return H+'h '+String(M)
  if(s[0]==='leave'){stat='<span class="pill p-danger">Sick leave</span>'}
  else{inn=s[1]+' am';out=s[2]?s[2]+' pm':'<span style="color:var(--ok);font-weight:700">Still in</span>';br=d===13?'not yet':s[0]==='half'?'—':'45m';hr=h(s[3]);jb=h(s[4])+' <span class="note">('+Math.round(s[4]/s[3]*100)+'%)</span>';
   stat={pres:'<span class="pill p-ok">Present</span>',late:'<span class="pill p-warn">Late · approved</span>',half:'<span class="pill p-info">Half day</span>',now:'<span class="pill p-ok">Working</span>'}[s[0]];
-  if(d===10)act='<button class="btn sm">Explain</button>';if(d===12)act='<span class="note">Forgot to stop a job? <a style="color:var(--accent);font-weight:700">Fix time</a></span>'}
+  if(d===10)act='<button class="btn sm">Explain</button>';if(d===4)act='<span class="note">Suggested log out was 4:58 pm · left 13 min early</span>';if(d===12)act='<span class="note">Forgot to stop a job? <a style="color:var(--accent);font-weight:700">Fix time</a></span>'}
  rows.innerHTML+=`<tr><td><b>${dn(d)} ${d} Nov</b></td><td class="m">${inn}</td><td class="m">${out}</td><td class="m">${br}</td><td class="m">${hr}</td><td class="m">${jb}</td><td>${stat}</td><td>${act}</td></tr>`});
 </script><style>.protobar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;gap:6px;align-items:center;background:#07121f;color:#e6eef6;border-radius:999px;padding:6px 8px 6px 16px;box-shadow:0 10px 30px rgba(7,18,31,.35);font:600 13px Manrope,system-ui,sans-serif;white-space:nowrap}
 .protobar a{color:#e6eef6;text-decoration:none;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.08)}.protobar a:hover{background:rgba(255,255,255,.18)}.protobar a.sw{background:#f59a22;color:#1b1104}.protobar .who{color:#8fa3b8;margin-right:6px}
