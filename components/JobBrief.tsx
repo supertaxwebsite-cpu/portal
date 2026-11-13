@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Job, Person } from "@/lib/types";
@@ -16,7 +17,8 @@ const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_")
 
 /** The job at a glance (for team members, instead of the edit form), its checklist,
  *  and internal queries: question on the left, the manager's reply beside it. */
-export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient }: {
+export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, tasks }: {
+  tasks?: { prep: ReactNode; after: ReactNode };
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
   supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void; onNewClient?: () => void;
 }) {
@@ -29,6 +31,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const [reply, setReply] = useState<Record<string, string>>({});
   const [replyFile, setReplyFile] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [q, c, f] = await Promise.all([
@@ -95,18 +98,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const replies = (qs ?? []).filter((q) => q.parent_id);
   const d = job.due_date ? daysFrom(job.due_date) : null;
 
-  return (
-    <div className="jobbrief" onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault(); }}>
-      {showInfo ? <div className="briefline">
-        <strong>{clientName}</strong><span>{svcLabel(job.service)} {job.period}</span>
-        <span className={d !== null && d < 0 ? "danger" : ""}>Due {job.due_date ? fmtDate(job.due_date) : "not set"}{d !== null && d < 0 ? ` (${-d} days overdue)` : ""}</span>
-        {job.priority === "high" ? <span className="pill danger">High priority</span> : null}
-        <span className={`pill ${ST[job.status]?.cls ?? ""}`}>{ST[job.status]?.label ?? job.status}</span>
-        <span className="note">Assigned {personName(job.assignee_id) || "nobody"} · Reviewer {personName(job.reviewer_id ?? null) || "none"}{job.needs_signature === false ? " · No client signature needed" : ""}</span>
-      </div> : null}
-      {showInfo && job.notes?.trim() ? <div className="briefnotes"><span className="lbl2">Notes from your manager</span><div>{job.notes}</div></div> : null}
-
-      {STEPS[job.service] ? (() => {
+  const checklistEl = (<>
+        {STEPS[job.service] ? (() => {
         const steps = STEPS[job.service];
         const nowIdx = steps.findIndex((s) => s.items.some((i) => !done.has(i)));
         const allDone = items.filter((i) => done.has(i)).length;
@@ -130,6 +123,63 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
             {c ? <span className="note">{personName(c.done_by) || "someone"} · {when(c.done_at)}</span> : null}</li>); })}</ul>
       </section> : null}
 
+  </>);
+  const askForm = (<div className="qnew">
+            <div className="row" style={{ gap: 8 }}><label className="f" style={{ minWidth: 220 }}>Ask<select id="q-ask-to" value={ask.to} onChange={(e) => setAsk({ ...ask, to: e.target.value })}>
+              <option value="">Choose who answers…</option>{team.filter((p) => p.id !== meId).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label></div>
+            <textarea id="q-ask-body" placeholder="What's the query? e.g. Client has fuel receipts without tax invoices, can we claim the GST?" value={ask.body} onChange={(e) => setAsk({ ...ask, body: e.target.value })} />
+            <div className="row">{pickFile(setAskFile, askFile, "q-ask-file")}<span style={{ flex: 1 }} />
+              <button type="button" className="primary" disabled={busy || !ask.body.trim() || !ask.to} onClick={async () => { if (await post({ body: ask.body, to_id: ask.to }, askFile)) { setAsk({ ...ask, body: "" }); setAskFile(null); say(`Query sent to ${personName(ask.to)}`); } }}>Send query</button></div>
+            <span className="note">{showInfo ? "The job stays with you. " : ""}{ask.to ? `${personName(ask.to)} gets a notification and answers here.` : "They get a notification and answer here."}</span>
+          </div>);
+  const ansCol = (q: Query, rs: Query[], mine: boolean) => (<div className="qcol ans">{rs.length ? rs.map((r) => (
+                  <div key={r.id}><div className="qhead"><span className="pill ok">Response</span> {personName(r.author_id) || "Someone"} · {when(r.created_at)}</div>
+                    <div className="qbody">{r.body}</div>{fileChip(r.file_id)}</div>))
+                  : mine && !readOnly ? <div className="qreply">
+                    <textarea aria-label="Your response" placeholder="Type the response…" value={reply[q.id] ?? ""} onChange={(e) => setReply({ ...reply, [q.id]: e.target.value })} />
+                    <div className="row">{pickFile((f) => setReplyFile({ ...replyFile, [q.id]: f }), replyFile[q.id] ?? null, `qr-file-${q.id}`)}<span style={{ flex: 1 }} />
+                      <button type="button" className="primary" disabled={busy || !(reply[q.id] ?? "").trim()} onClick={async () => { if (await post({ body: reply[q.id] ?? "", parent_id: q.id }, replyFile[q.id] ?? null)) { setReply({ ...reply, [q.id]: "" }); setReplyFile({ ...replyFile, [q.id]: null }); say("Response sent"); } }}>Send response</button></div>
+                  </div> : <div className="note qwait">Waiting for {personName(q.to_id) || "a manager"} to respond.</div>}</div>);
+
+  if (tasks) return (
+    <div className="jobbrief" onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault(); }}>
+      <ol className="tasks">
+        <li className={`task prep${job.status === "in_progress" || job.status === "not_started" ? " now" : ""}`}>{tasks.prep}<div className="taskbody">{checklistEl}</div></li>
+        {questions.map((q) => {
+          const rs = replies.filter((r) => r.parent_id === q.id);
+          const mine = q.to_id === meId || canAnswerAll || (!q.to_id && q.author_id !== meId);
+          const answered = rs.length > 0 || !!q.answered_at;
+          return (
+            <li key={q.id} className={`task iq${answered ? " answered" : ""}`}>
+              <div className="taskhead"><span className="tdot">{answered ? "✓" : "?"}</span>
+                <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Internal query · {personName(q.author_id) || "Someone"} → {personName(q.to_id) || "a manager"}</div>
+                  <div className="tks">Raised {when(q.created_at)}{rs[0] ? ` · answered ${when(rs[0].created_at)}` : ""}</div></div>
+                <span className={`pill ${answered ? "ok" : "danger"}`}>{answered ? "Answered" : "Open"}</span></div>
+              <div className="qpair">
+                <div className="qcol ask"><div className="qhead"><span className="pill danger">Query</span> {personName(q.author_id) || "Someone"}</div><div className="qbody">{q.body}</div>{fileChip(q.file_id)}</div>
+                {ansCol(q, rs, mine)}
+              </div>
+            </li>); })}
+        <ReviewNotes asTasks job={job} meId={meId} canAnswerAll={canAnswerAll} readOnly={readOnly} supabase={supabase} personName={personName} say={say} />
+        {!readOnly && !missing ? <li className="task add">{askOpen ? askForm : <button type="button" onClick={() => setAskOpen(true)}>? Raise an internal query</button>}</li> : null}
+        {tasks.after}
+      </ol>
+    </div>
+  );
+
+  return (
+    <div className="jobbrief" onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault(); }}>
+      {showInfo ? <div className="briefline">
+        <strong>{clientName}</strong><span>{svcLabel(job.service)} {job.period}</span>
+        <span className={d !== null && d < 0 ? "danger" : ""}>Due {job.due_date ? fmtDate(job.due_date) : "not set"}{d !== null && d < 0 ? ` (${-d} days overdue)` : ""}</span>
+        {job.priority === "high" ? <span className="pill danger">High priority</span> : null}
+        <span className={`pill ${ST[job.status]?.cls ?? ""}`}>{ST[job.status]?.label ?? job.status}</span>
+        <span className="note">Assigned {personName(job.assignee_id) || "nobody"} · Reviewer {personName(job.reviewer_id ?? null) || "none"}{job.needs_signature === false ? " · No client signature needed" : ""}</span>
+      </div> : null}
+      {showInfo && job.notes?.trim() ? <div className="briefnotes"><span className="lbl2">Notes from your manager</span><div>{job.notes}</div></div> : null}
+
+      {checklistEl}
+
       <ReviewNotes job={job} meId={meId} canAnswerAll={canAnswerAll} readOnly={readOnly} supabase={supabase} personName={personName} say={say} />
 
       <section className="briefsec">
@@ -142,23 +192,9 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
               <li key={q.id}>
                 <div className="qcol ask"><div className="qhead"><span className="pill danger">Query</span> {personName(q.author_id) || "Someone"}{q.to_id ? ` → ${personName(q.to_id)}` : ""} · {when(q.created_at)}</div>
                   <div className="qbody">{q.body}</div>{fileChip(q.file_id)}</div>
-                <div className="qcol ans">{rs.length ? rs.map((r) => (
-                  <div key={r.id}><div className="qhead"><span className="pill ok">Response</span> {personName(r.author_id) || "Someone"} · {when(r.created_at)}</div>
-                    <div className="qbody">{r.body}</div>{fileChip(r.file_id)}</div>))
-                  : mine && !readOnly ? <div className="qreply">
-                    <textarea aria-label="Your response" placeholder="Type the response…" value={reply[q.id] ?? ""} onChange={(e) => setReply({ ...reply, [q.id]: e.target.value })} />
-                    <div className="row">{pickFile((f) => setReplyFile({ ...replyFile, [q.id]: f }), replyFile[q.id] ?? null, `qr-file-${q.id}`)}<span style={{ flex: 1 }} />
-                      <button type="button" className="primary" disabled={busy || !(reply[q.id] ?? "").trim()} onClick={async () => { if (await post({ body: reply[q.id] ?? "", parent_id: q.id }, replyFile[q.id] ?? null)) { setReply({ ...reply, [q.id]: "" }); setReplyFile({ ...replyFile, [q.id]: null }); say("Response sent"); } }}>Send response</button></div>
-                  </div> : <div className="note qwait">Waiting for {personName(q.to_id) || "a manager"} to respond.</div>}</div>
+                {ansCol(q, rs, mine)}
               </li>); })}</ul> : <p className="note" style={{ margin: "0 0 10px" }}>No queries on this job yet.</p>}
-          {!readOnly ? <div className="qnew">
-            <div className="row" style={{ gap: 8 }}><label className="f" style={{ minWidth: 220 }}>Ask<select id="q-ask-to" value={ask.to} onChange={(e) => setAsk({ ...ask, to: e.target.value })}>
-              <option value="">Choose who answers…</option>{team.filter((p) => p.id !== meId).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label></div>
-            <textarea id="q-ask-body" placeholder="What's the query? e.g. Client has fuel receipts without tax invoices, can we claim the GST?" value={ask.body} onChange={(e) => setAsk({ ...ask, body: e.target.value })} />
-            <div className="row">{pickFile(setAskFile, askFile, "q-ask-file")}<span style={{ flex: 1 }} />
-              <button type="button" className="primary" disabled={busy || !ask.body.trim() || !ask.to} onClick={async () => { if (await post({ body: ask.body, to_id: ask.to }, askFile)) { setAsk({ ...ask, body: "" }); setAskFile(null); say(`Query sent to ${personName(ask.to)}`); } }}>Send query</button></div>
-            <span className="note">{showInfo ? "The job stays with you. " : ""}{ask.to ? `${personName(ask.to)} gets a notification and answers here.` : "They get a notification and answer here."}</span>
-          </div> : null}
+          {!readOnly ? askForm : null}
         </>}
       </section>
     </div>

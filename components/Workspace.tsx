@@ -1083,7 +1083,9 @@ export default function Workspace({ me }: { me: Profile }) {
         return <JobPage key={jp.id} job={jp} client={clientById.get(jp.client_id)} meId={me.id} team={team} canAnswerAll={me.role !== "staff"} canDelete={canDelete}
           readOnly={!isOpen(jp.status) && !isMaster} supabase={supabase} personName={personName} say={say} statusEl={<StatusSelect j={jp} />} hours={jobHours[jp.id] ?? 0}
           running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
-          onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => setModal({ kind: "client" })} />;
+          onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => setModal({ kind: "client" })}
+          flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
+          onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
