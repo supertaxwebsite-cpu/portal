@@ -16,16 +16,18 @@ const monday = () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay(
 const workDaysSoFar = () => { const t = new Date(); let n = 0; for (let d = 1; d <= t.getDate(); d++) if (new Date(t.getFullYear(), t.getMonth(), d).getDay() !== 0) n++; return n; };
 
 interface Stats { firstIn: string | null; daysAt: number; week: number; notes: { job_id: string }[] | null }
-type Kind = "all" | "overdue" | "review" | "sign" | "notes";
+type Kind = "all" | "overdue" | "iq" | "review" | "sign" | "notes";
 
 /** Staff home: today's log-in and suggested log-out, this month's numbers, and the task list, most urgent first. */
 export default function StaffHome({ supabase, meId, firstName, jobs, closedThisMonth, closedLastMonth, running, busy, clientLine, personName, wasStarted,
-  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onReplied, onAnswer, onPayroll, statusEl, children }: {
+  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, children }: {
   supabase: SB; meId: string; firstName: string; jobs: Job[]; closedThisMonth: number; closedLastMonth: number; running: JobTimer | null; busy: boolean;
   clientLine: (j: Job) => [string, string]; personName: (id: string | null) => string; wasStarted: (j: Job) => boolean;
   onOpen: (j: Job) => void; onStart: (j: Job) => void; onStop: () => void; onApprove: (j: Job) => void; onSendBack: (j: Job) => void;
   onSentForSign: (j: Job) => void; onSigned: (j: Job) => void; onReplied: (j: Job) => void; onAnswer: (j: Job) => void; onPayroll: () => void;
   statusEl: (j: Job) => ReactNode; children?: ReactNode;
+  /** Jobs with an internal query raised to me and not answered yet: job id → who asked. */
+  askedBy?: Map<string, string | null>;
 }) {
   const [s, setS] = useState<Stats | null>(null);
   const [kind, setKind] = useState<Kind>("all");
@@ -56,6 +58,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
   const isReview = (j: Job) => j.status === "review" && (j.reviewer_id === meId || (!j.reviewer_id && j.assignee_id === meId));
   const isSign = (j: Job) => j.status === "to_lodge" || j.status === "sent_for_sign" || j.status === "client_query";
   const over = (j: Job) => !!j.due_date && daysFrom(j.due_date) < 0;
+  const asked = (j: Job) => !!askedBy?.has(j.id);
   const noteJobs = new Set((s?.notes ?? []).map((n) => n.job_id));
   const ordered = [...jobs].sort((a, b) => (a.id === running?.job_id ? -1 : b.id === running?.job_id ? 1 : 0)
     || Number(over(b)) - Number(over(a)) || Number(b.priority === "high") - Number(a.priority === "high") || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
@@ -63,6 +66,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
   const PILLS: [Kind, string, (j: Job) => boolean, boolean][] = [
     ["all", "All", () => true, false],
     ["overdue", "Overdue", over, true],
+    ["iq", "Internal queries to me", asked, true],
     ["review", "To review", isReview, false],
     ["sign", "Signing & client queries", isSign, false],
     ...(s?.notes ? [["notes", "Review notes", (j: Job) => noteJobs.has(j.id), true] as [Kind, string, (j: Job) => boolean, boolean]] : []),
@@ -77,8 +81,9 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
 
   const sub = (j: Job) => {
     if (running?.job_id === j.id) return <><span className="runtxt">● Running {elapsed(running.started_at, now)}</span> · {ST[j.status]?.label}</>;
+    if (asked(j)) return `Internal query from ${personName(askedBy!.get(j.id) ?? null) || "someone"}: answer it on the job`;
     if (isReview(j)) return j.assignee_id && j.assignee_id !== meId ? `Prepared by ${personName(j.assignee_id)}` : "Review";
-    if (j.status === "internal_query") return j.assignee_id !== meId ? `With ${personName(j.assignee_id)} for an internal query` : `Internal query from ${personName(j.query_from ?? null)}`;
+    if (j.status === "internal_query") return j.assignee_id !== meId ? `With ${personName(j.assignee_id)} for an internal query` : j.query_from ? `Internal query from ${personName(j.query_from)}` : "Internal query raised: waiting for the answer";
     if (j.status === "to_lodge") return "Approved: send it to the client for signing";
     if (j.status === "sent_for_sign" || j.status === "client_query") {
       const d = j.sign_sent_at ? Math.floor((now - Date.parse(j.sign_sent_at)) / 864e5) : 0;
@@ -96,6 +101,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     ? <button type="button" disabled={busy} onClick={onStop}>Stop</button>
     : <button type="button" className="primary" disabled={busy} onClick={() => onStart(j)}>{label}</button>;
   const action = (j: Job) => {
+    if (asked(j) && j.assignee_id !== meId && !isReview(j)) return <button type="button" className="primary" onClick={() => onOpen(j)}>Answer</button>;
     if (isReview(j)) return <>{timer(j, "Start review")}{j.service === "payroll" ? <button type="button" onClick={onPayroll}>Sign off in Payroll</button> : <>
       <button type="button" disabled={busy} onClick={() => onSendBack(j)}>Send back</button>
       <button type="button" className="primary" disabled={busy} onClick={() => onApprove(j)}>{j.needs_signature === false ? "Approve & complete" : "Approve"}</button></>}</>;

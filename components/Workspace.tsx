@@ -325,7 +325,9 @@ export default function Workspace({ me }: { me: Profile }) {
   const personName = (id: string | null) => (id ? profileById.get(id)?.full_name ?? "Former staff" : "");
   const clientName = (id: string) => clientById.get(id)?.name ?? "Deleted client";
   const openJobs = useMemo(() => jobs.filter((j) => isOpen(j.status)), [jobs]);
-  const myQueries = useMyQueries(supabase, me.id, openJobs, me.role !== "staff" && view === "overview");
+  const myQueries = useMyQueries(supabase, me.id, openJobs, view === "overview" || view === "jobs");
+  // Jobs with an internal query raised to me that I haven't answered: they show in My tasks until I respond.
+  const askedBy = useMemo(() => new Map(myQueries.map(({ q, j }) => [j.id, q.author_id])), [myQueries]);
 
   /** Run a database write; show a friendly message either way. */
   async function save(fn: () => PromiseLike<{ error: { message: string; code?: string } | null }>, ok?: string): Promise<boolean> {
@@ -385,6 +387,22 @@ export default function Workspace({ me }: { me: Profile }) {
     () => (running && running.job_id !== j.id ? `Started ${clientName(j.client_id)}. The previous job's time is on your timesheet.` : `Started ${clientName(j.client_id)}`));
   const stopJob = () => timerCall(() => supabase.rpc("stop_job"), (h) => `Added ${fmtHours(Number(h))} to your timesheet`);
   const myReviewer = (j: Job) => j.reviewer_id ?? me.reports_to ?? null;
+  /** A query was raised on a job I'm preparing: stop my timer and move the job to Internal query or Query with client. */
+  async function queryRaised(j: Job, kind: "internal" | "client") {
+    if (running?.job_id === j.id) await stopJob();
+    const status: StatusId = kind === "client" ? "client_query" : "internal_query";
+    if (j.status === status || !["not_started", "in_progress", "waiting", "internal_query", "client_query"].includes(j.status)) return;
+    const { error } = await supabase.from("jobs").update({ status }).eq("id", j.id);
+    if (error) say(`The query was sent, but the status didn't change: ${error.message}`, true); else await load();
+  }
+  /** The last open internal query on a job was answered: the job goes back to In progress for the preparer. */
+  async function queryAnswered(j: Job, stillOpen: number) {
+    if (stillOpen) return;
+    const cur = jobs.find((x) => x.id === j.id) ?? j;
+    if (cur.status !== "internal_query") return;
+    const { error } = await supabase.from("jobs").update({ status: "in_progress" }).eq("id", j.id);
+    if (!error) await load();
+  }
   async function myStatus(j: Job, status: StatusId) {
     if (me.role === "staff" && status === "review") { await submitForReview(j); return; }
     if (running?.job_id === j.id && (!isOpen(status) || status === "client_query") && !(await stopJob())) return;
@@ -424,7 +442,7 @@ export default function Workspace({ me }: { me: Profile }) {
     if (j.status === "to_lodge") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id;
     if (j.status === "sent_for_sign" || j.status === "client_query") return false;
     if (j.status === "review") return j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id);
-    return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query");
+    return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query") || askedBy.has(j.id);
   };
   async function markSentForSign(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
@@ -573,7 +591,7 @@ export default function Workspace({ me }: { me: Profile }) {
           clientLine={(j) => { const c = clientById.get(j.client_id); return [clientName(j.client_id), `${practiceOf(c)}${c?.entity ? ` · ${c.entity}` : ""}`]; }}
           onOpen={(j) => openJob(j)} onStart={startJob} onStop={stopJob} onApprove={approveReview} onSendBack={sendBackReview} onSentForSign={markSentForSign}
           onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} onPayroll={() => go("payroll")}
-          statusEl={(j) => <StatusSelect j={j} />}>
+          statusEl={(j) => <StatusSelect j={j} />} askedBy={askedBy}>
           {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
             onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })} onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")}
             onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} onAnswer={() => {}} onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} /></div> : null}
@@ -1095,7 +1113,7 @@ export default function Workspace({ me }: { me: Profile }) {
           running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => setModal({ kind: "client" })}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
-          onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} />;
+          onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onRaised={queryRaised} onAnswered={queryAnswered} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
@@ -1120,7 +1138,7 @@ export default function Workspace({ me }: { me: Profile }) {
           return true;
         }} /> : null}
       </WorkGate>
-      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onRaised={queryRaised} onAnswered={queryAnswered} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -1204,8 +1222,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onRaised, onAnswered, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -1314,7 +1332,7 @@ function JobModal({ job, initialTab, onNewClient, presetClient, presetService, i
         <button type="button" role="tab" aria-selected={tab === "email"} className={tab === "email" ? "on" : ""} onClick={() => setTab("email")}>Email client</button>
       </div> : null}
       {job && tab === "email" ? <div className="jobemailwrap"><JobEmail job={job} client={client} clients={allClients} meName={meName} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onSent={onClose} /></div> : null}
-      {job ? <div className="body" style={{ display: tab === "queries" ? "block" : "none" }}><JobBrief job={job} clientName={client?.name ?? ""} showInfo={brief} meId={meId} canAnswerAll={!isStaff} team={team} defaultTo={job.reviewer_id ?? leaderId} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onQueries={setOpenQs} onNewClient={onNewClient} /></div> : null}
+      {job ? <div className="body" style={{ display: tab === "queries" ? "block" : "none" }}><JobBrief job={job} clientName={client?.name ?? ""} showInfo={brief} meId={meId} canAnswerAll={!isStaff} team={team} defaultTo={job.reviewer_id ?? leaderId} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onQueries={setOpenQs} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} /></div> : null}
       {job ? <div style={{ display: tab === "files" ? "block" : "none" }}><JobFiles jobId={job.id} meId={meId} canDelete={canDelete} readOnly={readOnly} supabase={supabase} personName={personName} say={say} onCount={setFileCount} /></div> : null}
       {job ? <div style={{ display: tab === "history" ? "block" : "none" }}><JobHistory jobId={job.id} readOnly={readOnly} meId={meId} canDelete={canDelete} supabase={supabase} personName={personName} say={say} onSummary={setSum} /></div> : null}
       <div className="body" style={{ display: tab === "details" ? undefined : "none" }}>

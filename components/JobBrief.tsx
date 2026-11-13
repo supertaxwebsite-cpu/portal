@@ -17,10 +17,14 @@ const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_")
 
 /** The job at a glance (for team members, instead of the edit form), its checklist,
  *  and internal queries: question on the left, the manager's reply beside it. */
-export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, tasks }: {
+export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, tasks }: {
   tasks?: { prep: ReactNode; after: ReactNode };
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
   supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void; onNewClient?: () => void;
+  /** A query was raised on this job: stop the timer and move the job to Internal query or Query with client. */
+  onRaised?: (j: Job, kind: "internal" | "client") => void;
+  /** A response was sent; stillOpen is how many internal queries on the job are still unanswered. */
+  onAnswered?: (j: Job, stillOpen: number) => void;
 }) {
   const [qs, setQs] = useState<Query[] | null>(null);
   const [checks, setChecks] = useState<Check[]>([]);
@@ -31,6 +35,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const [reply, setReply] = useState<Record<string, string>>({});
   const [replyFile, setReplyFile] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
+  const [askKind, setAskKind] = useState<"internal" | "client">("internal");
   const [askOpen, setAskOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -71,7 +76,20 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     const { error } = await supabase.from("job_queries").insert({ job_id: job.id, author_id: meId, ...row, body: row.body.trim(), file_id: fileId });
     setBusy(false);
     if (error) { say(`Not sent: ${error.message}`, true); return false; }
+    if (row.parent_id) {
+      const stillOpen = questions.filter((q) => q.id !== row.parent_id && !q.answered_at && !replies.some((r) => r.parent_id === q.id)).length;
+      onAnswered?.(job, stillOpen);
+    } else onRaised?.(job, "internal");
     await load(); return true;
+  }
+  async function postClientQuery(body: string) {
+    if (!body.trim()) { say("Type the query first.", true); return false; }
+    setBusy(true);
+    const { error } = await supabase.from("job_activity").insert({ job_id: job.id, actor_id: meId, kind: "comment", body: `Client query: ${body.trim()}` });
+    setBusy(false);
+    if (error) { say(`Not saved: ${error.message}`, true); return false; }
+    onRaised?.(job, "client");
+    return true;
   }
   async function toggle(item: string, on: boolean) {
     const { error } = on
@@ -125,12 +143,23 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
 
   </>);
   const askForm = (<div className="qnew">
+            <div className="qkind" role="radiogroup" aria-label="Type of query">
+              <button type="button" role="radio" aria-checked={askKind === "internal"} className={askKind === "internal" ? "on" : undefined} onClick={() => setAskKind("internal")}>Internal query<span>to a team member</span></button>
+              <button type="button" role="radio" aria-checked={askKind === "client"} className={askKind === "client" ? "on" : undefined} onClick={() => setAskKind("client")}>Client query<span>to the client</span></button>
+            </div>
+            {askKind === "internal" ? <>
             <div className="row" style={{ gap: 8 }}><label className="f" style={{ minWidth: 220 }}>Ask<select id="q-ask-to" value={ask.to} onChange={(e) => setAsk({ ...ask, to: e.target.value })}>
               <option value="">Choose who answers…</option>{team.filter((p) => p.id !== meId).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label></div>
             <textarea id="q-ask-body" placeholder="What's the query? e.g. Client has fuel receipts without tax invoices, can we claim the GST?" value={ask.body} onChange={(e) => setAsk({ ...ask, body: e.target.value })} />
             <div className="row">{pickFile(setAskFile, askFile, "q-ask-file")}<span style={{ flex: 1 }} />
-              <button type="button" className="primary" disabled={busy || !ask.body.trim() || !ask.to} onClick={async () => { if (await post({ body: ask.body, to_id: ask.to }, askFile)) { setAsk({ ...ask, body: "" }); setAskFile(null); say(`Query sent to ${personName(ask.to)}`); } }}>Send query</button></div>
-            <span className="note">{showInfo ? "The job stays with you. " : ""}{ask.to ? `${personName(ask.to)} gets a notification and answers here.` : "They get a notification and answer here."}</span>
+              <button type="button" className="primary" disabled={busy || !ask.body.trim() || !ask.to} onClick={async () => { if (await post({ body: ask.body, to_id: ask.to }, askFile)) { setAsk({ ...ask, body: "" }); setAskFile(null); setAskOpen(false); say(`Query sent to ${personName(ask.to)}. Your timer stopped and the job is now Internal query`); } }}>Send internal query</button></div>
+            <span className="note">{ask.to ? `Only ${personName(ask.to)} can respond. ` : "Only the person you pick can respond. "}Your timer stops and the job moves to Internal query until they answer.</span>
+            </> : <>
+            <textarea id="q-ask-client" placeholder="What did you ask the client? e.g. Please send the bank statements for September and October." value={ask.body} onChange={(e) => setAsk({ ...ask, body: e.target.value })} />
+            <div className="row"><span style={{ flex: 1 }} />
+              <button type="button" className="primary" disabled={busy || !ask.body.trim()} onClick={async () => { if (await postClientQuery(ask.body)) { setAsk({ ...ask, body: "" }); setAskOpen(false); say("Client query noted. Your timer stopped and the job is now Query with client"); } }}>Mark query sent to client</button></div>
+            <span className="note">Send the query to the client by email as usual. This notes it on the job history, stops your timer and moves the job to Query with client. You get a bell reminder if there&apos;s no reply in 2 days.</span>
+            </>}
           </div>);
   const ansCol = (q: Query, rs: Query[], mine: boolean) => (<div className="qcol ans">{rs.length ? rs.map((r) => (
                   <div key={r.id}><div className="qhead"><span className="pill ok">Response</span> {personName(r.author_id) || "Someone"} · {when(r.created_at)}</div>
@@ -147,7 +176,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
         <li className={`task prep${job.status === "in_progress" || job.status === "not_started" ? " now" : ""}`}>{tasks.prep}<div className="taskbody">{checklistEl}</div></li>
         {questions.map((q) => {
           const rs = replies.filter((r) => r.parent_id === q.id);
-          const mine = q.to_id === meId || canAnswerAll || (!q.to_id && q.author_id !== meId);
+          // Only the person the query was raised to can respond. A query to "a manager" (nobody named) can be answered by any manager.
+          const mine = q.to_id ? q.to_id === meId : canAnswerAll || q.author_id !== meId;
           const answered = rs.length > 0 || !!q.answered_at;
           return (
             <li key={q.id} className={`task iq${answered ? " answered" : ""}`}>
@@ -161,7 +191,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
               </div>
             </li>); })}
         <ReviewNotes asTasks job={job} meId={meId} canAnswerAll={canAnswerAll} readOnly={readOnly} supabase={supabase} personName={personName} say={say} />
-        {!readOnly && !missing ? <li className="task add">{askOpen ? askForm : <button type="button" onClick={() => setAskOpen(true)}>? Raise an internal query</button>}</li> : null}
+        {!readOnly && !missing ? <li className="task add">{askOpen ? askForm : <button type="button" onClick={() => setAskOpen(true)}>? Raise a query (internal or client)</button>}</li> : null}
         {tasks.after}
       </ol>
     </div>
@@ -187,7 +217,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
         {missing ? <p className="note">Run the database update for job queries in Supabase to switch these on.</p> : <>
           {questions.length ? <ul className="qthread">{questions.map((q) => {
             const rs = replies.filter((r) => r.parent_id === q.id);
-            const mine = q.to_id === meId || canAnswerAll || (!q.to_id && q.author_id !== meId);
+            // Only the person the query was raised to can respond. A query to "a manager" (nobody named) can be answered by any manager.
+          const mine = q.to_id ? q.to_id === meId : canAnswerAll || q.author_id !== meId;
             return (
               <li key={q.id}>
                 <div className="qcol ask"><div className="qhead"><span className="pill danger">Query</span> {personName(q.author_id) || "Someone"}{q.to_id ? ` → ${personName(q.to_id)}` : ""} · {when(q.created_at)}</div>
