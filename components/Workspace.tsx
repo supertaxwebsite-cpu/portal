@@ -60,7 +60,7 @@ const CLIENT_COLS = [
   { id: "address", label: "Address" }, { id: "services", label: "Services" }, { id: "manager", label: "Manager" },
   { id: "open", label: "Open jobs" },
 ];
-const DEFAULT_CLIENT_COLS = ["practice", "entity", "abn", "services", "manager", "open"];
+const DEFAULT_CLIENT_COLS = ["practice", "services", "manager", "open"];
 
 interface JobFilter { q: string; service: string; status: string; assignee: string; due: string; client: string; group: string; practice: string; entity: string; fy: string; quarter: string }
 const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", group: "", practice: "", entity: "", fy: "", quarter: "" };
@@ -123,6 +123,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [cservice, setCservice] = useState("");
   const [centity, setCentity] = useState<string[]>([]);
   const [cpractice, setCpractice] = useState("");
+  const [cquick, setCquick] = useState(""); // quick filter on Clients: overdue, waiting, related, nojobs
   // Filters and sort on the Jobs and Clients lists are remembered on this computer
   // (across page reloads and visits) until Clear is pressed.
   const [filtersReady, setFiltersReady] = useState(false);
@@ -146,7 +147,7 @@ export default function Workspace({ me }: { me: Profile }) {
   }, [filtersReady, jf, jsort, cq, cservice, centity, cpractice]);
   // Which columns the Clients list shows; remembered on this computer.
   const [ccols, setCcolsState] = useState<string[]>(DEFAULT_CLIENT_COLS);
-  useEffect(() => { try { const s = JSON.parse(localStorage.getItem("pd-client-cols") ?? "null"); if (Array.isArray(s)) setCcolsState(s.filter((x) => CLIENT_COLS.some((c) => c.id === x))); } catch { /* ignore */ } }, []);
+  useEffect(() => { try { const s = JSON.parse(localStorage.getItem("pd-client-cols-v2") ?? "null"); if (Array.isArray(s)) setCcolsState(s.filter((x) => CLIENT_COLS.some((c) => c.id === x))); } catch { /* ignore */ } }, []);
   // Columns menu closes on a click outside it or Esc; wide tables can be dragged sideways with the mouse.
   useEffect(() => {
     const closeMenus = (e: Event) => {
@@ -185,7 +186,7 @@ export default function Workspace({ me }: { me: Profile }) {
       document.removeEventListener("mousedown", down); document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up);
     };
   }, []);
-  const setCcols = (c: string[]) => { setCcolsState(c); try { localStorage.setItem("pd-client-cols", JSON.stringify(c)); } catch { /* ignore */ } };
+  const setCcols = (c: string[]) => { setCcolsState(c); try { localStorage.setItem("pd-client-cols-v2", JSON.stringify(c)); } catch { /* ignore */ } };
   const [clientId, setClientId] = useState<string | null>(null);
   const [jobPageId, setJobPageId] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
@@ -284,7 +285,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
   const navGo = (v: View) => {
     setJf(NO_FILTER); setJsort({ k: "due", dir: 1 });
-    setCq(""); setCpractice(""); setCservice(""); setCentity([]);
+    setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick("");
     setGsel(new Set()); setGstatus(""); setClientId(null); setNavTick((n) => n + 1);
     go(v);
   };
@@ -746,9 +747,27 @@ export default function Workspace({ me }: { me: Profile }) {
     links.forEach((l) => { linkCount.set(l.client_id, (linkCount.get(l.client_id) ?? 0) + 1); linkCount.set(l.related_id, (linkCount.get(l.related_id) ?? 0) + 1); });
     const openBy = new Map<string, Job[]>();
     openJobs.forEach((j) => openBy.set(j.client_id, [...(openBy.get(j.client_id) ?? []), j]));
+    const QUICK: [string, string, (c: Client) => boolean][] = [
+      ["", "All clients", () => true],
+      ["overdue", "With overdue work", (c) => (openBy.get(c.id) ?? []).some((j) => j.due_date && daysFrom(j.due_date) < 0)],
+      ["waiting", "Waiting on client", (c) => (openBy.get(c.id) ?? []).some((j) => j.status === "waiting" || j.status === "client_query" || j.status === "sent_for_sign")],
+      ["related", "Related groups", (c) => !!linkCount.get(c.id)],
+      ["nojobs", "No open jobs", (c) => !(openBy.get(c.id) ?? []).length],
+    ];
+    const qf = QUICK.find((x) => x[0] === cquick)?.[2] ?? (() => true);
+    const base = list;
+    const shownC = base.filter(qf);
+    const nextDue = (c: Client) => (openBy.get(c.id) ?? []).filter((j) => j.due_date).sort((a, b) => a.due_date!.localeCompare(b.due_date!))[0];
+    function exportClients() {
+      const q = (v: unknown) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const rows = [["Client", "Practice", "Entity", "ABN", "Contact", "Email", "Phone", "Services", "Manager", "Open jobs"], ...shownC.map((c) => [c.name, practiceOf(c), c.entity, c.abn, c.contact, c.email, c.phone, c.services.map(svcLabel).join("; "), personName(c.manager_id), (openBy.get(c.id) ?? []).length])];
+      const blob = new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `supertax-clients-${todayISO()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
     return (
       <>
-        <div className="pagehead"><div><h1>Clients</h1><p>Who you act for and which services you provide each of them.</p></div><div className="row">{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}<button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button></div></div>
+        <div className="pagehead"><div><h1>Clients <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{clients.length.toLocaleString()}</span></h1><p>Who you act for, what you do for them, and what&apos;s open right now.</p></div><div className="row"><button onClick={exportClients} disabled={!shownC.length}>⬇ Export</button>{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}<button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button></div></div>
+        <div className="quickpills">{QUICK.map(([k, l, f]) => { const n = base.filter(f).length; return <button key={k || "all"} type="button" className={cquick === k ? "on" : undefined} onClick={() => setCquick(k)}>{l} <i className={k === "overdue" && n ? "hot" : undefined}>{n.toLocaleString()}</i></button>; })}</div>
         <div className="toolbar">
           <input type="search" id="cq" placeholder="Search name, ABN, contact, email, phone or address" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
           <select id="cpractice" aria-label="Practice" value={cpractice} onChange={(e) => setCpractice(e.target.value)}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
@@ -757,7 +776,7 @@ export default function Workspace({ me }: { me: Profile }) {
             {CLIENT_COLS.map((col) => <label key={col.id}><input type="checkbox" checked={show(col.id)} onChange={(e) => setCcols(e.target.checked ? CLIENT_COLS.map((x) => x.id).filter((x) => x === col.id || ccols.includes(x)) : ccols.filter((x) => x !== col.id))} /> {col.label}</label>)}
             <button type="button" className="link" onClick={() => setCcols(DEFAULT_CLIENT_COLS)}>Reset to default</button>
           </div></details>
-          {filtered ? <button onClick={() => { setCq(""); setCpractice(""); setCservice(""); setCentity([]); }}>Clear</button> : null}
+          {filtered || cquick ? <button onClick={() => { setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick(""); }}>Clear</button> : null}
           <span className="clientcount"><strong>{list.length.toLocaleString()}</strong> {filtered ? `of ${clients.length.toLocaleString()} ` : ""}client{list.length === 1 ? "" : "s"}</span>
         </div>
         <div className="toolbar entity-filter" role="group" aria-label="Show entity types" style={{ borderRadius: 0, borderTop: "1px solid var(--line)", gap: 6 }}>
@@ -767,11 +786,11 @@ export default function Workspace({ me }: { me: Profile }) {
           {centity.length ? <button type="button" className="link" onClick={() => setCentity([])}>Show all</button> : <span className="note">All types shown. Tick to narrow down.</span>}
         </div>
         <div className="tablebox dragscroll" id="clients-table">
-          {!list.length ? <div className="empty"><strong>{clients.length ? "No clients match." : "No clients yet."}</strong>{clients.length ? "Try another search." : "Add your first client, then tick the services you do for them."}</div> : (
+          {!shownC.length ? <div className="empty"><strong>{clients.length ? "No clients match." : "No clients yet."}</strong>{clients.length ? "Try another search." : "Add your first client, then tick the services you do for them."}</div> : (
             <>
-              <table className="clienttable"><thead><tr><th>Client</th>{CLIENT_COLS.filter((col) => show(col.id)).map((col) => <th key={col.id} style={col.id === "open" ? { textAlign: "right" } : undefined}>{col.label}</th>)}</tr></thead>
-                <tbody>{list.map((c) => { const oj = openBy.get(c.id) ?? []; const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
-                  <tr key={c.id}><td className="client"><button className="link clip" title={c.name} onClick={() => openClient(c.id)}>{c.name}</button>{linkCount.get(c.id) ? <span className="linkmark" title={`Linked to ${linkCount.get(c.id)} related client${linkCount.get(c.id) === 1 ? "" : "s"}`}>🔗 {linkCount.get(c.id)}</span> : null}{c.contact && !show("contact") ? <div className="note clip" title={c.contact}>{c.contact}</div> : null}</td>
+              <table className="clienttable"><thead><tr><th>Client</th>{CLIENT_COLS.filter((col) => show(col.id)).map((col) => <th key={col.id} style={col.id === "open" ? { textAlign: "right" } : undefined}>{col.label}</th>)}<th>Next due</th><th></th></tr></thead>
+                <tbody>{shownC.map((c) => { const oj = openBy.get(c.id) ?? []; const od = oj.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length; return (
+                  <tr key={c.id}><td className="client"><button className="link clip" style={{ color: "var(--fg)", fontWeight: 700 }} title={c.name} onClick={() => openClient(c.id)}>{c.name}</button>{linkCount.get(c.id) ? <span className="linkmark" title={`Linked to ${linkCount.get(c.id)} related client${linkCount.get(c.id) === 1 ? "" : "s"}`}>🔗 {linkCount.get(c.id)}</span> : null}<div className="note clip">{c.entity}{c.abn ? ` · ABN ${c.abn}` : ""}</div></td>
                     {show("practice") ? <td>{practiceOf(c)}</td> : null}
                     {show("entity") ? <td>{c.entity}</td> : null}
                     {show("abn") ? <td className="mono nowrap">{c.abn}</td> : null}
@@ -781,8 +800,10 @@ export default function Workspace({ me }: { me: Profile }) {
                     {show("address") ? <td><span className="clip w-address" title={c.address ?? ""}>{c.address}</span></td> : null}
                     {show("services") ? <td><span className="clip w-svc" title={c.services.map(svcLabel).join(", ")}>{c.services.map((s) => <span key={s} className="tag">{svcLabel(s)}{s === "bas" && c.bas_freq !== "quarterly" ? ` (${c.bas_freq})` : ""}{s === "payroll" && c.payroll_freq ? ` (${c.payroll_freq})` : ""}</span>)}</span></td> : null}
                     {show("manager") ? <td className="nowrap">{personName(c.manager_id)}</td> : null}
-                    {show("open") ? <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td> : null}</tr>); })}</tbody></table>
-              <div className="count row" style={{ justifyContent: "space-between" }}><span>{list.length} client{list.length === 1 ? "" : "s"}</span>
+                    {show("open") ? <td className="mono" style={{ textAlign: "right" }}>{oj.length}{od ? <> <span className="pill danger">{od} overdue</span></> : null}</td> : null}
+                    <td>{(() => { const nj = nextDue(c); if (!nj) return <div className="tleft ok"><b>{oj.length ? "No due date" : "No open jobs"}</b></div>; const d = daysFrom(nj.due_date!); return <div className={`tleft ${d < 0 ? "danger" : d <= 7 ? "warn" : "ok"}`}><b>{fmtDate(nj.due_date).replace(/ \d{4}$/, "")} · {d < 0 ? `${-d} days over` : d === 0 ? "today" : `${d} days`}</b></div>; })()}</td>
+                    <td><button type="button" onClick={() => openClient(c.id)}>Open</button></td></tr>); })}</tbody></table>
+              <div className="count row" style={{ justifyContent: "space-between" }}><span>Showing {shownC.length.toLocaleString()} of {clients.length.toLocaleString()} · 🔗 related clients</span>
                 {ccols.length > 6 ? <span className="scrollhint">Drag the table sideways to see more columns
                   <button type="button" aria-label="Scroll left" onClick={() => document.getElementById("clients-table")?.scrollBy({ left: -400, behavior: "smooth" })}>◀</button>
                   <button type="button" aria-label="Scroll right" onClick={() => document.getElementById("clients-table")?.scrollBy({ left: 400, behavior: "smooth" })}>▶</button></span> : null}</div>
