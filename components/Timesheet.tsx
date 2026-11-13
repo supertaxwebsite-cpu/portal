@@ -17,13 +17,13 @@ const hrs = (n: number) => `${Number(n.toFixed(2))} h`;
 // Log in after 7:45 am = Late; a past working day with no timesheet = Leave;
 // a finished day under 6 hours logged in = Half day; logging out before the suggested time = Left early.
 const OFFICE_TZ = "Asia/Kolkata";
-const START = 7 * 60 + 30;
+export const START = 7 * 60 + 30;
 const LATE_AFTER = 7 * 60 + 45;
 const HALF_DAY_MIN = 6 * 60;
 const SHIFT_MIN = 9 * 60; // 8h 15m work + 45 min break
 const WORK_DAY_H = 8.25;
 const EARLY_GRACE_MIN = 5;
-const officeMinutes = (ts: string) => {
+export const officeMinutes = (ts: string) => {
   const parts = new Intl.DateTimeFormat("en-AU", { timeZone: OFFICE_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ts));
   const n = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
   return n("hour") * 60 + n("minute");
@@ -32,7 +32,7 @@ const addDays = (d: string, n: number) => { const [y, m, dd] = d.split("-").map(
 /** A working day: Monday to Saturday (Sunday is off). */
 const isWeekday = (d: string) => { const [y, m, dd] = d.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay(); return w >= 1 && w <= 6; };
 /** When someone should log out: 9 hours after they started (or after 7:30 am if they came in early). */
-const suggestedOut = (firstIn: string) => {
+export const suggestedOut = (firstIn: string) => {
   const t = Date.parse(firstIn);
   const base = Math.max(t, t - (officeMinutes(firstIn) - START) * 60000);
   return new Date(base + SHIFT_MIN * 60000).toISOString();

@@ -31,6 +31,7 @@ import JobHistory, { type JobSummary } from "./JobHistory";
 import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
 import MyJobs, { fmtHours } from "./MyJobs";
+import StaffHome from "./StaffHome";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
 type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings";
@@ -524,6 +525,22 @@ export default function Workspace({ me }: { me: Profile }) {
     const Tile = ({ lbl, n, cls, f }: { lbl: string; n: number; cls?: string; f: Partial<JobFilter> }) => (
       <button className={`tile ${cls ?? ""}`} onClick={() => gotoJobs(f)}><span className="lbl">{lbl}</span><span className="val">{n}</span></button>
     );
+    if (me.role === "staff") {
+      const ym = (off: number) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + off); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+      const closedIn = (m: string) => jobs.filter((j) => j.assignee_id === me.id && !isOpen(j.status) && (j.lodged_on ?? "").startsWith(m)).length;
+      return (
+        <StaffHome supabase={supabase} meId={me.id} firstName={me.full_name.split(" ")[0]} jobs={openJobs.filter(myJobFilter)} closedThisMonth={closedIn(ym(0))} closedLastMonth={closedIn(ym(-1))}
+          running={running} busy={timerBusy} personName={personName} wasStarted={wasStarted}
+          clientLine={(j) => { const c = clientById.get(j.client_id); return [clientName(j.client_id), `${practiceOf(c)}${c?.entity ? ` · ${c.entity}` : ""}`]; }}
+          onOpen={(j) => openJob(j)} onStart={startJob} onStop={stopJob} onApprove={approveReview} onSendBack={sendBackReview} onSentForSign={markSentForSign}
+          onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} onPayroll={() => go("payroll")}
+          statusEl={(j) => <StatusSelect j={j} />}>
+          {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
+            onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })} onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")}
+            onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} onAnswer={() => {}} onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} /></div> : null}
+        </StaffHome>
+      );
+    }
     return (
       <>
         <div className="pagehead">
@@ -568,7 +585,7 @@ export default function Workspace({ me }: { me: Profile }) {
           <div className="section">
             <MyJobs jobs={openJobs.filter(myJobFilter)}
               onSigned={markSigned} onSentForSign={markSentForSign} onFollowedUp={followedUp} onComplete={completeNoSign} onHandSign={(j) => setModal({ kind: "handsign", job: j })}
-              onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={me.role === "staff"} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
+              onApprove={approveReview} onSendBack={sendBackReview} onOpenClient={openClient} isStaff={false} onPayroll={() => go("payroll")} myId={me.id} personName={personName}
               onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })}
               meetings={myMeetings}
               onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })}
@@ -675,14 +692,20 @@ export default function Workspace({ me }: { me: Profile }) {
     return (
       <>
         <div className="pagehead">
-          <div><h1>Jobs <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{openJobs.length.toLocaleString()} open</span></h1><p>{me.role === "staff" ? "Your jobs and unassigned jobs. Open an unassigned job and click Take this job to start on it." : "Every piece of client work, with its period, due date, owner and status."}</p></div>
+          <div><h1>Jobs <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{openJobs.length.toLocaleString()} open</span></h1><p>{me.role === "staff" ? "Your jobs, plus unassigned jobs you can pick up with Take it." : "Every piece of client work, with its period, due date, owner and status."}</p></div>
           <div className="row"><button onClick={() => exportCsv(list)}>Export CSV</button><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
         </div>
-        <div className="quickpills">{([
+        <div className="quickpills">{(me.role === "staff" ? [
+          ["My open jobs", { assignee: me.id }, openJobs.filter((j) => j.assignee_id === me.id).length, ""],
+          ["Overdue", { due: "overdue" }, openJobs.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length, "hot"],
+          ["Unassigned I can take", { assignee: "__none" }, openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).length, ""],
+          ["Ready for review or signing", { status: "review_any" }, openJobs.filter((j) => j.status === "review" || j.status === "to_lodge").length, ""],
+          ["Internal queries", { status: "internal_query" }, openJobs.filter((j) => j.status === "internal_query").length, "hot"],
+        ] as [string, Partial<JobFilter>, number, string][] : [
           ["All open", { status: "open" }, openJobs.length, ""],
           ["ATO & SGC", { service: "ato_payment,sgc,ato_comm" }, openJobs.filter((j) => ["ato_payment", "sgc", "ato_comm"].includes(j.service)).length, ""],
           ["Overdue", { due: "overdue" }, openJobs.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length, "hot"],
-          ...(me.role === "staff" ? [] : [["Unassigned", { assignee: "__none" }, openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).length, ""]]),
+          ["Unassigned", { assignee: "__none" }, openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).length, ""],
           ["Ready for review or signing", { status: "review_any" }, openJobs.filter((j) => j.status === "review" || j.status === "to_lodge").length, ""],
           ["Internal queries", { status: "internal_query" }, openJobs.filter((j) => j.status === "internal_query").length, "hot"],
           ["Lodged this month", { status: "lodged" }, jobs.filter((j) => (j.lodged_on ?? "").startsWith(todayISO().slice(0, 7))).length, ""],
@@ -723,7 +746,7 @@ export default function Workspace({ me }: { me: Profile }) {
                     <td><button className="link jobname" onClick={() => openJob(j)}>{svcLabel(j.service)} · {j.period}</button>
                       {j.priority === "high" ? <div><span className="pill danger">High</span></div> : null}</td>
                     <td><Stage j={j} /></td>
-                    <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td>
+                    <td>{personName(j.assignee_id) || (me.role === "staff" && isOpen(j.status) ? <button type="button" title="Make this job yours" onClick={() => save(() => supabase.from("jobs").update({ assignee_id: me.id }).eq("id", j.id), "The job is yours. It's in My tasks now")}>Take it</button> : <span className="muted">Unassigned</span>)}</td>
                     <td>{personName(j.reviewer_id) || <span className="muted">—</span>}</td>
                     <td><TimeLeft j={j} /></td>
                     <td><StatusSelect j={j} /></td>

@@ -592,3 +592,23 @@ details#cl-closed>summary{list-style:none}details#cl-closed>summary::after{conte
 .perm{font-size:11.5px;font-weight:600;padding:2px 7px;border-radius:5px;background:var(--surface-2);color:var(--muted);border:0}
 .perm.on{background:var(--ok-soft);color:var(--ok)}
 button.perm{cursor:pointer}
+/* Staff home: My tasks */
+.staffhead{align-items:flex-end;gap:12px;flex-wrap:wrap}
+.loginbar{background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);border-radius:10px;padding:8px 14px;margin:0 0 14px;font-size:13.5px}
+.loginbar b{color:var(--fg)}
+.loginbar:not(.late){background:var(--surface-2);border-color:var(--line);color:var(--muted)}
+.stattiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px}
+.stattiles .panel{padding:14px 16px;display:flex;flex-direction:column;gap:6px;margin:0}
+.stattiles .lbl{font-size:13px;color:var(--muted)}
+.stattiles .val{font-family:var(--mono,ui-monospace,monospace);font-size:24px;font-weight:600}
+.stattiles .val.danger{color:var(--danger)}
+.stattiles .val small{font-size:12.5px;color:var(--muted);font-weight:500;margin-left:6px}
+.stattiles .bar{display:block;height:7px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+.stattiles .bar b{display:block;height:100%;background:linear-gradient(90deg,var(--brand-orange),#7fc24b)}
+.tasklist .jobtable tr.running td{background:color-mix(in srgb,var(--brand-blue) 9%,transparent)}
+.tasklist .jobtable tr.over td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
+.tasklist .runtxt{color:var(--ok);font-weight:600}
+.rank{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700}
+.rank.hot{background:var(--danger)}
+@media (max-width:900px){.stattiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.stattiles{grid-template-columns:1fr}}

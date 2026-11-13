@@ -15,7 +15,8 @@ function Due({ date }: { date: string | null }) {
 }
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onSentForSign, onFollowedUp, onHandSign, onComplete, onAnswer, onOpen, onSeeAll }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onSentForSign, onFollowedUp, onHandSign, onComplete, onAnswer, onOpen, onSeeAll, title = "My jobs" }: {
+  title?: string;
   jobs: Job[];
   meetings?: Meeting[];
   onOpenMeeting?: (m: Meeting) => void;
@@ -51,7 +52,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
   const shown = list.slice(0, 10);
   return (
     <div className="panel myjobs">
-      <div className="ph"><h2>My jobs</h2>{jobs.length ? <button className="link" onClick={onSeeAll}>See all {jobs.length}</button> : null}</div>
+      <div className="ph"><h2>{title}</h2>{jobs.length ? <button className="link" onClick={onSeeAll}>See all {jobs.length}</button> : null}</div>
       {meetings.length ? <ul className="list">{meetings.map((m) => { const at = new Date(m.starts_at).getTime(); const nowOn = at <= now && now < at + m.duration_min * 60000; return (
         <li key={m.id} className={`meetrow${nowOn ? " running" : ""}`}><span className="num">{meetings.indexOf(m) + 1}</span><div style={{ minWidth: 0 }}>
           <div className="t"><span className="pill accent">Meeting</span><button className="link" style={{ color: "var(--fg)", fontWeight: 600 }} onClick={() => onOpenMeeting?.(m)}>{m.title}</button></div>
@@ -129,7 +130,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
         })}</ul>)}
       {running && !jobs.some((j) => j.id === running.job_id) ? (
         <div className="note" style={{ padding: "8px 14px" }}>A job is running ({elapsed(running.started_at, now)}). <button className="link" onClick={onStop}>Stop it</button></div>) : null}
-      <div className="note" style={{ padding: "8px 14px 12px" }}>Start a job when you begin; Stop or Submit for review adds the time to your timesheet.</div>
+      {jobs.length ? <div className="note" style={{ padding: "8px 14px 12px" }}>Start a job when you begin; Stop or Submit for review adds the time to your timesheet.</div> : null}
     </div>
   );
 }
