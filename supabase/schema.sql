@@ -2442,3 +2442,54 @@ create table if not exists public.login_codes (
 );
 alter table public.login_codes enable row level security;
 revoke all on public.login_codes from anon, authenticated;
+-- ============================================================
+-- Book leave ahead (Nov 2026). Add-only: one new table.
+-- Staff book unpaid, sick or personal leave (full day, or half day am/pm) for one day or a range.
+-- Their team leader or a master admin approves it. No annual leave.
+-- ============================================================
+create table if not exists public.leave_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
+  start_date date not null,
+  end_date date not null,
+  kind text not null check (kind in ('unpaid', 'sick', 'personal')),
+  part text not null default 'full' check (part in ('full', 'am', 'pm')),
+  reason text not null default '' check (length(reason) <= 1000),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  decided_by uuid references public.profiles (id) on delete set null,
+  decided_at timestamptz,
+  created_at timestamptz not null default now(),
+  check (end_date >= start_date and end_date - start_date <= 60),
+  check (part = 'full' or start_date = end_date)
+);
+create index if not exists leave_requests_user_idx on public.leave_requests (user_id, start_date);
+alter table public.leave_requests enable row level security;
+revoke all on public.leave_requests from anon;
+
+-- Who may approve someone's leave: a master admin, or their team leader.
+create or replace function public.can_approve_leave(target uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and target <> auth.uid() and (
+    public.my_role() = 'master'
+    or (public.my_role() = 'manager' and exists (select 1 from public.profiles where id = target and reports_to = auth.uid())));
+$$;
+revoke all on function public.can_approve_leave(uuid) from public, anon;
+grant execute on function public.can_approve_leave(uuid) to authenticated;
+
+drop policy if exists "see leave" on public.leave_requests;
+create policy "see leave" on public.leave_requests for select to authenticated using (public.can_view_person(user_id));
+drop policy if exists "book own leave" on public.leave_requests;
+create policy "book own leave" on public.leave_requests for insert to authenticated
+  with check (user_id = auth.uid() and status = 'pending' and decided_by is null and public.is_active_member());
+drop policy if exists "cancel own pending leave" on public.leave_requests;
+create policy "cancel own pending leave" on public.leave_requests for delete to authenticated
+  using ((user_id = auth.uid() and (status = 'pending' or start_date > (now() at time zone 'Asia/Kolkata')::date)) or public.my_role() = 'master');
+drop policy if exists "approve leave" on public.leave_requests;
+create policy "approve leave" on public.leave_requests for update to authenticated
+  using (public.can_approve_leave(user_id)) with check (public.can_approve_leave(user_id));
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.leave_requests; exception when duplicate_object then null; end;
+  end if;
+end $$;

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, Person, Profile, TimeEntry } from "@/lib/types";
 import ClientPicker from "./ClientPicker";
+import { MyLeave, TeamLeave, leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
 import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
@@ -40,10 +41,10 @@ const suggestedOut = (firstIn: string) => {
 export interface Override { user_id: string; work_date: string; status: "present" | "leave" | "half_day"; note: string }
 export interface LateRequest { user_id: string; work_date: string; reason: string; status: "pending" | "approved" | "rejected" }
 
-export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean; early: number; suggested: string; override?: Override["status"]; request?: LateRequest["status"]; lateExcused: boolean }
+export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean; early: number; suggested: string; booked?: LeaveReq["kind"]; bookedPart?: LeaveReq["part"]; override?: Override["status"]; request?: LateRequest["status"]; lateExcused: boolean }
 
 function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string; created_at?: string }[], from: string, to: string, now: number,
-  overrides: Override[] = [], requests: LateRequest[] = []): Day[] {
+  overrides: Override[] = [], requests: LateRequest[] = [], leaves: LeaveReq[] = []): Day[] {
   const ids = new Set(people.map((p) => p.id));
   const map = new Map<string, Day>();
   const get = (user: string, date: string) => {
@@ -65,6 +66,11 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
     const start = p.created_at && p.created_at.slice(0, 10) > from ? p.created_at.slice(0, 10) : from;
     for (let d = start; d <= to && d < today; d = addDays(d, 1)) if (isWeekday(d)) get(p.id, d);
   });
+  // Approved leave: the booked days show with their leave type.
+  const booked = new Map<string, LeaveReq>();
+  leaves.filter((l) => l.status === "approved" && ids.has(l.user_id)).forEach((l) => {
+    for (let d = l.start_date > from ? l.start_date : from; d <= l.end_date && d <= to && d <= today; d = addDays(d, 1)) if (isWeekday(d)) { get(l.user_id, d); booked.set(`${d}|${l.user_id}`, l); }
+  });
   overrides.filter((o) => ids.has(o.user_id) && o.work_date >= from && o.work_date <= to).forEach((o) => { get(o.user_id, o.work_date); });
   const ov = new Map(overrides.map((o) => [`${o.work_date}|${o.user_id}`, o.status]));
   const rq = new Map(requests.map((r) => [`${r.work_date}|${r.user_id}`, r.status]));
@@ -75,16 +81,17 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
     const wasLate = !!d.first && officeMinutes(d.first) > LATE_AFTER;
     const lateExcused = wasLate && request === "approved";
     // A master admin's status change wins over the automatic Leave / Half day marks.
-    const leave = override ? override === "leave" : d.h === 0 && d.date < today;
-    const half = override ? override === "half_day" : !d.open && d.m > 0 && d.m < HALF_DAY_MIN;
+    const bk = booked.get(k);
+    const leave = override ? override === "leave" : bk ? bk.part === "full" : d.h === 0 && d.date < today;
+    const half = override ? override === "half_day" : bk && bk.part !== "full" ? true : !d.open && d.m > 0 && d.m < HALF_DAY_MIN;
     const suggested = d.first ? suggestedOut(d.first) : "";
     const earlyMin = !override && !half && !d.open && d.last && suggested ? Math.round((Date.parse(suggested) - Date.parse(d.last)) / 60000) : 0;
-    return { ...d, override, request, lateExcused, late: wasLate && !lateExcused, leave, half, suggested, early: earlyMin > EARLY_GRACE_MIN ? earlyMin : 0 };
+    return { ...d, booked: bk?.kind, bookedPart: bk?.part, override, request, lateExcused, late: wasLate && !lateExcused, leave, half, suggested, early: earlyMin > EARLY_GRACE_MIN ? earlyMin : 0 };
   });
 }
 
 const Status = ({ d }: { d: Day }) => (
-  <>{d.leave ? <span className="pill danger">Leave</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day</span> : null} {d.early ? <span className="pill warn" title={`Suggested log out was ${time(d.suggested)}`}>Left {hm(d.early)} early</span> : null}
+  <>{d.leave ? <span className={`pill ${d.booked ? "info" : "danger"}`}>{d.booked ? leaveLabel(d.booked) : "Leave"}</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day{d.booked && !d.leave ? ` · ${leaveLabel(d.booked)}` : ""}</span> : null} {d.early ? <span className="pill warn" title={`Suggested log out was ${time(d.suggested)}`}>Left {hm(d.early)} early</span> : null}
     {!d.leave && !d.late && !d.half && !d.early ? <span className="pill ok">{d.open ? "Working" : d.override === "present" ? "Working day" : "Present"}</span> : null}
     {d.lateExcused ? <> <span className="pill ok">Late approved</span></> : null}
     {d.override ? <span className="note" title="Changed by your manager"> ✎</span> : null}</>
@@ -107,6 +114,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [missing, setMissing] = useState(false);
   const [overrides, setOverrides] = useState<Override[]>([]);
   const [requests, setRequests] = useState<LateRequest[]>([]);
+  const [leaves, setLeaves] = useState<LeaveReq[]>([]);
+  const [leaveMissing, setLeaveMissing] = useState(false);
 
   const monthStart = todayISO().slice(0, 8) + "01";
   const lo = [day, from, monthStart].sort()[0];
@@ -129,6 +138,10 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     ]);
     setOverrides(o.error ? [] : (o.data as Override[]));
     setRequests(r.error ? [] : (r.data as LateRequest[]));
+    // Booked leave: anything that ends on or after the earliest date shown (so future leave shows too).
+    const lv = await supabase.from("leave_requests").select("*").gte("end_date", lo).order("start_date");
+    setLeaveMissing(!!lv.error && /does not exist|schema cache|leave_requests/i.test(lv.error.message));
+    setLeaves(lv.error ? [] : (lv.data as LeaveReq[]));
   }, [supabase, lo, hi, me.id]);
 
   useEffect(() => {
@@ -138,6 +151,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
       .on("postgres_changes", { event: "*", schema: "public", table: "timesheet_entries" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance_overrides" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "late_requests" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "leave_requests" }, () => load())
       .subscribe();
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => { clearInterval(t); supabase.removeChannel(ch); };
@@ -174,14 +188,17 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     return <div className="panel empty"><strong>Timesheets aren&apos;t switched on yet.</strong>Ask your manager to switch them on.</div>;
   }
 
-  const myMonth = buildDays(att, entries, [me], monthStart, todayISO(), now, overrides, requests);
+  const myMonth = buildDays(att, entries, [me], monthStart, todayISO(), now, overrides, requests, leaves);
+  const monthEnd = addDays(addDays(monthStart, 32).slice(0, 8) + "01", -1);
+  const myLeaveMonth = leaves.filter((l) => l.user_id === me.id && l.status === "approved");
+  const leaveByKind = LEAVE_KINDS.map((k) => ({ ...k, n: myLeaveMonth.filter((l) => l.kind === k.id).reduce((s, l) => s + leaveDays(l, monthStart, monthEnd), 0) })).filter((k) => k.n);
   // Suggested log-out for the shift that's running (9 hours after the start, or after 7:30 am).
   const shiftFirst = openShift ? att.filter((a) => a.user_id === me.id && a.work_date === openShift.work_date).map((a) => a.clock_in).sort()[0] : "";
   const outAt = shiftFirst ? suggestedOut(shiftFirst) : "";
   const startedLate = !!shiftFirst && officeMinutes(shiftFirst) > START;
   // Hours this month against the target (working days so far, Mon to Sat, 8h 15m each).
   let workDays = 0;
-  for (let d = monthStart; d <= todayISO(); d = addDays(d, 1)) if (isWeekday(d) && !myMonth.some((x) => x.date === d && x.override === "leave")) workDays++;
+  for (let d = monthStart; d <= todayISO(); d = addDays(d, 1)) if (isWeekday(d) && !myMonth.some((x) => x.date === d && (x.override === "leave" || (x.booked && x.bookedPart === "full")))) workDays++;
   const monthHours = entries.filter((e) => e.user_id === me.id && e.work_date >= monthStart).reduce((s, e) => s + e.hours, 0);
   const target = workDays * WORK_DAY_H;
   const isMaster = me.role === "master";
@@ -216,14 +233,14 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const teamEntries = entries.filter((e) => teamIds.has(e.user_id) && e.work_date >= from && e.work_date <= to && (!who || e.user_id === who))
     .sort((a, b) => a.work_date.localeCompare(b.work_date) || name(a.user_id).localeCompare(name(b.user_id)));
   const teamPeople = visible.filter((p) => !who || p.id === who);
-  const summary = buildDays(att, entries, teamPeople, from, to, now, overrides, requests).sort((a, b) => b.date.localeCompare(a.date) || name(a.user).localeCompare(name(b.user)));
+  const summary = buildDays(att, entries, teamPeople, from, to, now, overrides, requests, leaves).sort((a, b) => b.date.localeCompare(a.date) || name(a.user).localeCompare(name(b.user)));
   const counts = { early: summary.filter((d) => d.early).length, late: summary.filter((d) => d.late).length, leave: summary.filter((d) => d.leave).length, half: summary.filter((d) => d.half).length };
 
   function exportCsv() {
     const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = [["Date", "Person", "Client", "Job", "Hours", "Description"], ...teamEntries.map((e) => [e.work_date, name(e.user_id), clientName(e.client_id), jobLabel(e.job_id), e.hours, e.description])];
     rows.push([], ["Date", "Person", "Logged in", "Logged out", "Time logged in (hours)", "Timesheet hours", "Status"]);
-    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still logged in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && "Leave", d.late && "Late", d.half && "Half day", d.early && `Left ${d.early} min early`].filter(Boolean).join(", ") || "Present"]));
+    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still logged in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && (d.booked ? leaveLabel(d.booked) : "Absent"), d.half && d.booked && !d.leave && leaveLabel(d.booked), d.late && "Late", d.half && "Half day", d.early && `Left ${d.early} min early`].filter(Boolean).join(", ") || "Present"]));
     const blob = new Blob(["﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -253,7 +270,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
                 : <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy} onClick={() => clock("clock_in")}>Log in</button>}
             </div>
           </div>
-
+          <MyLeave me={me} supabase={supabase} list={leaves} missing={leaveMissing} say={say} onSaved={load} />
         </div>
 
         <div className="section">
@@ -264,14 +281,15 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
               <span className="pill warn">{myMonth.filter((d) => d.late).length} late</span>
               <span className="pill warn">{myMonth.filter((d) => d.early).length} left early</span>
               <span className="pill info">{myMonth.filter((d) => d.half).length} half day</span>
-              <span className="pill danger">{myMonth.filter((d) => d.leave).length} leave</span>
+              <span className="pill danger">{myMonth.filter((d) => d.leave && !d.booked).length} absent</span>
             </div>
+            {leaveByKind.length ? <p className="note" style={{ margin: "0 0 8px" }}>Leave booked this month: {leaveByKind.map((k) => `${k.label} ${k.n} day${k.n === 1 ? "" : "s"}`).join(" · ")}</p> : null}
             {myMonth.some((d) => d.late || d.half || d.leave || d.early || d.lateExcused) ? (
               <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave || d.early || d.lateExcused).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
                 <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}
                   {d.late && !d.request ? <> <button type="button" className="link" onClick={() => askApproval(d)}>Ask for approval</button></> : null}</li>))}</ul>
             ) : <p className="note" style={{ margin: 0 }}>No late starts, half days or leave this month.</p>}
-            <p className="note" style={{ margin: "10px 0 0" }}>Office hours: Monday to Saturday, 7:30 am to 4:30 pm (India time) with a 45 min break, so 8h 15m of work. Sunday is off. Late = log in after 7:45 am · Left early = log out before your suggested time · Half day = under 6 hours logged in · Leave = a working day with no timesheet. Your manager can see this.</p>
+            <p className="note" style={{ margin: "10px 0 0" }}>Office hours: Monday to Saturday, 7:30 am to 4:30 pm (India time) with a 45 min break, so 8h 15m of work. Sunday is off. Late = log in after 7:45 am · Left early = log out before your suggested time · Half day = under 6 hours logged in · Absent = a working day with no timesheet and no leave booked. Your manager can see this.</p>
           </div>
         </div>
       </div>
@@ -298,6 +316,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
         <div className="section" style={{ marginTop: 24 }}>
           <div className="pagehead"><div><h2 style={{ fontSize: 20, margin: 0 }}>Team timesheets</h2><p>{me.role === "master" ? "Everyone in the practice." : "You and the team members allocated to you."}</p></div>
             <div className="row"><button type="button" onClick={exportCsv} disabled={!summary.length}>Export CSV</button></div></div>
+          <TeamLeave me={me} supabase={supabase} list={leaves} visible={visible} people={people} say={say} onSaved={load} />
           {isMaster && pending.length ? (
             <div className="panel" style={{ padding: 14, marginBottom: 12, borderColor: "var(--warn)" }}>
               <h2 style={{ margin: "0 0 8px" }}>Late log-ins waiting for your approval ({pending.length})</h2>
