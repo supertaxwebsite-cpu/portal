@@ -29,7 +29,8 @@ header.top .wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding
 .brand .logo.has-img{background:var(--surface);border:1px solid var(--line)}
 .brand .name{display:flex;flex-direction:column;line-height:1.1}
 .brand small{font-weight:500;font-size:12px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
-nav.tabs{display:flex;gap:4px;overflow-x:auto;flex:1;min-width:0}
+nav.tabs{display:flex;gap:4px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none;-ms-overflow-style:none}
+nav.tabs::-webkit-scrollbar{display:none}
 nav.tabs a{padding:7px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:600;white-space:nowrap}
 nav.tabs a:hover{color:var(--fg);background:var(--surface-2)}
 nav.tabs a[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
