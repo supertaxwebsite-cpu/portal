@@ -904,16 +904,23 @@ export default function Workspace({ me }: { me: Profile }) {
     const picked = groupJobs.filter((j) => gsel.has(j.id));
     const allPicked = groupJobs.length > 0 && picked.length === groupJobs.length;
     const Table = ({ list }: { list: Job[] }) => (
-      <table className="jobtable"><thead><tr><th>Job</th><th>Stage</th><th>Assigned</th><th>Reviewer</th><th>Due / time left</th><th>Status</th></tr></thead>
-        <tbody>{list.map((j) => (
-          <tr key={j.id}><td><button className="link jobname" onClick={() => openJob(j)}>{svcLabel(j.service)} · {j.period}</button>{j.priority === "high" ? <div><span className="pill danger">High</span></div> : null}</td>
-            <td><Stage j={j} /></td><td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td>{personName(j.reviewer_id) || <span className="muted">—</span>}</td>
-            <td><TimeLeft j={j} /></td><td><StatusSelect j={j} /></td></tr>))}</tbody></table>
+      <table className="jobtable"><thead><tr><th>Job</th><th>Stage</th><th>Assigned</th><th>Reviewer</th><th>Due / time left</th><th>Status</th><th></th></tr></thead>
+        <tbody>{list.map((j) => { const fl = flags.get(j.id); return (
+          <tr key={j.id}><td><button className="link jobname" onClick={() => openJob(j)}>{svcLabel(j.service)} · {j.period}</button>
+            {j.priority === "high" || fl?.q || fl?.rn ? <div className="jflags">{j.priority === "high" ? <span className="pill danger">High</span> : null}{fl?.q ? <span className="jf q">{fl.q} quer{fl.q === 1 ? "y" : "ies"}</span> : null}{fl?.rn ? <span className="jf rn">{fl.rn} review note{fl.rn === 1 ? "" : "s"}</span> : null}</div> : null}</td>
+            <td><Stage j={j} /></td><td title={personName(j.assignee_id)}>{personName(j.assignee_id).split(" ")[0] || <span className="muted">Unassigned</span>}</td><td title={personName(j.reviewer_id)}>{personName(j.reviewer_id).split(" ")[0] || <span className="muted">—</span>}</td>
+            <td><TimeLeft j={j} /></td><td><StatusSelect j={j} /></td><td><button onClick={() => openJob(j)}>{closedFor(j) ? "View" : "Open"}</button></td></tr>); })}</tbody></table>
     );
     const od = openJ.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length;
     const waitingN = openJ.filter((j) => j.status === "waiting" || j.status === "client_query" || j.status === "sent_for_sign").length;
     const freq = (sv: string) => sv === "bas" ? (c.bas_freq === "monthly" ? " · monthly" : c.bas_freq === "annual" ? " · annually" : " · quarterly") : sv === "payroll" && c.payroll_freq ? ` · ${c.payroll_freq}` : "";
     const go2 = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const showClosed = () => { const d = document.getElementById("cl-closed") as HTMLDetailsElement | null; if (d) d.open = true; go2("cl-closed"); };
+    const yearH = js.reduce((t, j) => t + (jobHours[j.id] ?? 0), 0);
+    const fy = currentFY();
+    const fyStart = `${fy - 1}-07-01`, fyEnd = `${fy}-06-30`;
+    const lodgedFY = closedJ.filter((j) => (j.lodged_on ?? "") >= fyStart && (j.lodged_on ?? "") <= fyEnd).length;
+    const sumFlag = (k: "q" | "rn" | "f") => js.reduce((t, j) => t + (flags.get(j.id)?.[k] ?? 0), 0);
     return (
       <>
         <div className="crumb"><button type="button" className="link" onClick={() => setClientId(null)}>← Clients</button> / Client page</div>
@@ -930,7 +937,11 @@ export default function Workspace({ me }: { me: Profile }) {
             <button type="button" className="count" onClick={() => go2("cl-work")}>Overdue <i className={od ? "red" : ""}>{od}</i></button>
             <button type="button" className="count" onClick={() => go2("cl-work")}>Waiting on client <i className={waitingN ? "amber" : ""}>{waitingN}</i></button>
             <button type="button" className="count" onClick={() => go2("cl-related")}>Related clients <i className="blue">{Math.max(0, group.size - 1)}</i></button>
-            <button type="button" className="count" onClick={() => go2("cl-closed")}>Lodged and completed <i className="green">{closedJ.length}</i></button>
+            <span className="count">Time on jobs <i className="dark">{fmtHours(yearH)}</i></span>
+            <button type="button" className="count" onClick={showClosed}>Lodged FY{String(fy).slice(2)} <i className="green">{lodgedFY}</i></button>
+            <span style={{ flex: 1 }} />
+            {c.email ? <a className="btnlink" href={`mailto:${c.email}`}>✉ Email client</a> : null}
+            <span className="count">📎 All files <i className="blue">{sumFlag("f")}</i></span>
           </div>
         </div>
         <div className="jobgrid">
@@ -938,7 +949,9 @@ export default function Workspace({ me }: { me: Profile }) {
             <div className="panel" id="cl-work">
               <div className="ph"><h2>Work for this client</h2><span className="note">Open jobs, what stage they&apos;re at, who has them</span></div>
               {openJ.length ? <div style={{ overflowX: "auto" }}><Table list={openJ} /></div> : <div className="empty">No open jobs for this client.</div>}
-              {upcoming.length ? <div className="note" style={{ padding: "10px 14px", borderTop: "1px solid var(--line)" }}><strong style={{ color: "var(--fg)" }}>Coming up automatically:</strong> {upcoming.slice(0, 4).map((u) => `${svcLabel(u.service)} ${u.period} on ${fmtDate(u.appears)}`).join(" · ")}</div> : null}
+              <div className="note row" style={{ padding: "10px 14px", borderTop: "1px solid var(--line)", justifyContent: "space-between" }}>
+                <span>{upcoming.length ? <><strong style={{ color: "var(--fg)" }}>Coming up automatically:</strong> {upcoming.slice(0, 4).map((u) => `${svcLabel(u.service)} ${u.period} on ${fmtDate(u.appears)}`).join(" · ")}</> : null}</span>
+                <button type="button" className="link" onClick={showClosed}>Lodged and completed ({closedJ.length}) ▸</button></div>
             </div>
             <div id="cl-related"><RelatedClients key={`rel-${c.id}`} client={c} clients={clients} links={links} supabase={supabase} say={say} missing={linksMissing} onOpen={openClient} onChanged={load} /></div>
             {group.size > 1 ? <div id="group-work" className="panel"><div className="ph"><h2>Whole group: {groupJobs.length} open job{groupJobs.length === 1 ? "" : "s"} across {group.size} clients</h2></div>
@@ -971,6 +984,20 @@ export default function Workspace({ me }: { me: Profile }) {
             {canManage || me.can_see_mgmt_notes ? <ClientNotes key={`m-${c.id}`} mgmt clientId={c.id} meId={me.id} isManager={canManage} canDelete={false} supabase={supabase} personName={personName} say={say} /> : null}
             <div className="panel"><div className="ph"><h2>Contact</h2></div>
               <dl className="people"><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Phone</dt><dd>{c.phone || "—"}</dd><dt>Email</dt><dd style={{ overflowWrap: "anywhere" }}>{c.email || "—"}</dd><dt>Address</dt><dd>{c.address || "—"}</dd></dl></div>
+            <div className="panel"><div className="ph"><h2>Summary</h2></div>
+              <ul className="actions summary">
+                <li><span>🕘 Time on this client&apos;s jobs</span><b>{fmtHours(yearH)}</b></li>
+                <li><span>📎 Files across all jobs</span><b>{sumFlag("f")}</b></li>
+                <li><span>⚠️ Open review notes</span><b className={sumFlag("rn") ? "red" : ""}>{sumFlag("rn")}</b></li>
+                <li><span>❓ Open internal queries</span><b className={sumFlag("q") ? "red" : ""}>{sumFlag("q")}</b></li>
+              </ul></div>
+            <div className="panel"><div className="ph"><h2>Other actions</h2></div>
+              <ul className="actions">
+                <li><button type="button" className="link" onClick={() => setModal({ kind: "client", client: c })}>✎ Edit client details</button></li>
+                {canManage ? <li><button type="button" className="link" onClick={() => setModal({ kind: "client", client: c })}>⇄ Change manager</button></li> : null}
+                <li><button type="button" className="link" onClick={() => gotoJobs({ client: c.id, status: "" })}>🗂 All jobs for this client</button></li>
+                {canDelete ? <li><button type="button" className="link" style={{ color: "var(--danger)" }} onClick={() => setModal({ kind: "client", client: c })}>🗑 Delete client (in Edit client)</button></li> : null}
+              </ul></div>
             <div className="panel"><div className="ph"><h2>Details</h2></div>
               <dl className="people">
                 {c.services.includes("payroll") ? <><dt>Payroll</dt><dd>{c.payroll_freq ? `${c.payroll_freq[0].toUpperCase()}${c.payroll_freq.slice(1)}, automatic` : "No automatic jobs"}</dd></> : null}
