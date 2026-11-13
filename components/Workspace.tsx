@@ -26,6 +26,7 @@ import ProspectsView from "./Prospects";
 import ActivityLog from "./ActivityLog";
 import { STEPS } from "@/lib/checklists";
 import TeamBoard from "./TeamBoard";
+import JobPage from "./JobPage";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
@@ -65,7 +66,7 @@ interface JobFilter { q: string; service: string; status: string; assignee: stri
 const NO_FILTER: JobFilter = { q: "", service: "", status: "open", assignee: "", due: "", client: "", group: "", practice: "", entity: "", fy: "", quarter: "" };
 
 type Modal =
-  | { kind: "job"; job?: Job; clientId?: string; service?: string; tab?: "queries" }
+  | { kind: "job"; job?: Job; clientId?: string; service?: string; tab?: "queries" | "email" }
   | { kind: "bulk" }
   | { kind: "client"; client?: Client }
   | { kind: "member"; member?: Profile }
@@ -186,6 +187,7 @@ export default function Workspace({ me }: { me: Profile }) {
   }, []);
   const setCcols = (c: string[]) => { setCcolsState(c); try { localStorage.setItem("pd-client-cols", JSON.stringify(c)); } catch { /* ignore */ } };
   const [clientId, setClientId] = useState<string | null>(null);
+  const [jobPageId, setJobPageId] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -278,7 +280,7 @@ export default function Workspace({ me }: { me: Profile }) {
     window.addEventListener("hashchange", route);
     return () => window.removeEventListener("hashchange", route);
   }, [canSeeTeam]);
-  const go = (v: View) => { if (v !== "clients") setClientId(null); window.location.hash = v; setView(v); window.scrollTo(0, 0); };
+  const go = (v: View) => { if (v !== "clients") setClientId(null); setJobPageId(null); window.location.hash = v; setView(v); window.scrollTo(0, 0); };
   // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
   const navGo = (v: View) => {
     setJf(NO_FILTER); setJsort({ k: "due", dir: 1 });
@@ -287,7 +289,8 @@ export default function Workspace({ me }: { me: Profile }) {
     go(v);
   };
   const gotoJobs = (f: Partial<JobFilter>) => { setJf({ ...NO_FILTER, ...f }); go("jobs"); };
-  const openClient = (id: string) => { setClientId(id); window.location.hash = "clients"; setView("clients"); window.scrollTo(0, 0); };
+  const openJob = (j: Job) => { setModal(null); setJobPageId(j.id); window.location.hash = "jobs"; setView("jobs"); window.scrollTo(0, 0); };
+  const openClient = (id: string) => { setJobPageId(null); setClientId(id); window.location.hash = "clients"; setView("clients"); window.scrollTo(0, 0); };
 
   const profileById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
@@ -556,7 +559,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <button key={st.id} className="statuschip" onClick={() => gotoJobs({ status: st.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>); })}</div>
         </div>
         {canSeeWorkload || seesOwnTeam ? <TeamBoard supabase={supabase} rows={rows} timers={teamRunning} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} meId={me.id}
-          title={seesOwnTeam ? "My team board" : "Team board"} onOpen={(j) => setModal({ kind: "job", job: j })} onViewTasks={(id) => gotoJobs({ assignee: id })} /> : null}
+          title={seesOwnTeam ? "My team board" : "Team board"} onOpen={(j) => openJob(j)} onViewTasks={(id) => gotoJobs({ assignee: id })} /> : null}
         <Reminders jobs={openJobs} myId={me.id} showOwner={canManage} clientName={clientName} personName={personName} busy={timerBusy}
           onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} onWaiting={followedUp} />
         <div className="grid2">
@@ -570,13 +573,13 @@ export default function Workspace({ me }: { me: Profile }) {
               onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")} running={running} clientName={clientName} busy={timerBusy}
               reviewerName={me.reports_to ? personName(me.reports_to) : ""}
               onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} wasStarted={wasStarted}
-              onOpen={(j) => setModal({ kind: "job", job: j })} onSeeAll={() => gotoJobs({ assignee: me.id })} />
+              onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} />
             <div className="panel">
               <div className="ph"><h2>Needs attention</h2><span className="note">Your jobs: overdue, due this week or high priority</span></div>
               {attention.length ? (
                 <ul className="list">{attention.map((j) => (
                   <li key={j.id}><div style={{ minWidth: 0 }}><div className="t">{clientName(j.client_id)}</div><div className="s">{svcLabel(j.service)} · {j.period}{j.priority === "high" ? <> · <span style={{ color: "var(--danger)", fontWeight: 600 }}>High priority</span></> : null}</div></div>
-                    <div className="row"><Due j={j} /><button onClick={() => setModal({ kind: "job", job: j })}>Open</button></div></li>
+                    <div className="row"><Due j={j} /><button onClick={() => openJob(j)}>Open</button></div></li>
                 ))}</ul>
               ) : <div className="empty"><strong>Nothing needs your attention.</strong>Your jobs that are overdue, due in the next 7 days or marked high priority show here.</div>}
             </div>
@@ -715,14 +718,14 @@ export default function Workspace({ me }: { me: Profile }) {
                 <tbody>{shown.map((j) => { const c = clientById.get(j.client_id); return (
                   <tr key={j.id}>
                     <td className="client"><button className="link" style={{ color: "var(--fg)" }} onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button><div className="note">{practiceOf(c)}{c?.entity ? ` · ${c.entity}` : ""}</div></td>
-                    <td><button className="link jobname" onClick={() => setModal({ kind: "job", job: j })}>{svcLabel(j.service)} · {j.period}</button>
+                    <td><button className="link jobname" onClick={() => openJob(j)}>{svcLabel(j.service)} · {j.period}</button>
                       {j.priority === "high" ? <div><span className="pill danger">High</span></div> : null}</td>
                     <td><Stage j={j} /></td>
                     <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td>
                     <td>{personName(j.reviewer_id) || <span className="muted">—</span>}</td>
                     <td><TimeLeft j={j} /></td>
                     <td><StatusSelect j={j} /></td>
-                    <td><button onClick={() => setModal({ kind: "job", job: j })}>{closedFor(j) ? "View" : "Open"}</button></td>
+                    <td><button onClick={() => openJob(j)}>{closedFor(j) ? "View" : "Open"}</button></td>
                   </tr>); })}</tbody></table>
               <div className="count">{list.length} job{list.length === 1 ? "" : "s"}{list.length > 500 ? " · showing the first 500, narrow the filters to see the rest" : ""}</div>
             </>
@@ -802,7 +805,7 @@ export default function Workspace({ me }: { me: Profile }) {
       <table><thead><tr><th>Service</th><th>Period</th><th>Due</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
         <tbody>{list.map((j) => (
           <tr key={j.id}><td>{svcLabel(j.service)}{j.priority === "high" ? <span className="prio">!</span> : null}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
-            <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td><td><button onClick={() => setModal({ kind: "job", job: j })}>{closedFor(j) ? "View" : "Edit"}</button></td></tr>))}</tbody></table>
+            <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td><td><button onClick={() => openJob(j)}>{closedFor(j) ? "View" : "Edit"}</button></td></tr>))}</tbody></table>
     );
     return (
       <>
@@ -841,7 +844,7 @@ export default function Workspace({ me }: { me: Profile }) {
                     <td>{j.client_id === c.id ? <strong>{clientName(j.client_id)}</strong> : <button className="link" onClick={() => openClient(j.client_id)}>{clientName(j.client_id)}</button>}</td>
                     <td>{svcLabel(j.service)}</td><td className="mono">{j.period}</td><td><Due j={j} /></td>
                     <td>{personName(j.assignee_id) || <span className="muted">Unassigned</span>}</td><td><StatusSelect j={j} /></td>
-                    <td><button onClick={() => setModal({ kind: "job", job: j })}>Edit</button></td></tr>)}</tbody></table>
+                    <td><button onClick={() => openJob(j)}>Edit</button></td></tr>)}</tbody></table>
                   : <div className="empty">No pending work for anyone in this group.</div>}
               </div></div> : null}
             <ClientNotes key={c.id} clientId={c.id} meId={me.id} isManager={canManage} canDelete={canDelete} supabase={supabase} personName={personName} say={say} />
@@ -924,13 +927,20 @@ export default function Workspace({ me }: { me: Profile }) {
     <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       <WorkGate supabase={supabase} meId={me.id} isStaff={me.role === "staff"} running={running} onTimesheet={view === "timesheet"} onMyJobs={() => navGo("overview")} say={say}>
       {view === "overview" ? <Overview /> : null}
-      {view === "jobs" ? JobsView() : null}
+      {view === "jobs" ? (() => {
+        const jp = jobPageId ? jobs.find((x) => x.id === jobPageId) : undefined;
+        if (!jp) return JobsView();
+        return <JobPage key={jp.id} job={jp} client={clientById.get(jp.client_id)} meId={me.id} team={team} canAnswerAll={me.role !== "staff"} canDelete={canDelete}
+          readOnly={!isOpen(jp.status) && !isMaster} supabase={supabase} personName={personName} say={say} statusEl={<StatusSelect j={jp} />} hours={jobHours[jp.id] ?? 0}
+          running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
+          onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => setModal({ kind: "client" })} />;
+      })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
-        onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => setModal({ kind: "job", job: j })} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
+        onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "prospects" && canSeeTeam ? <ProspectsView key={navTick} supabase={supabase} meId={me.id} team={team} clients={clients} canDelete={canDelete} personName={personName} say={say} onOpenClient={openClient} onChanged={load} /> : null}
       {view === "timesheet" ? <Timesheet key={navTick} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
-      {view === "team" && canSeeTeam ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => setModal({ kind: "job", job: j })} /></> : null}
+      {view === "team" && canSeeTeam ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => openJob(j)} /></> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }}
@@ -1033,7 +1043,7 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
 }
 
 function JobModal({ job, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; initialTab?: "queries"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+  job?: Job; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -1049,7 +1059,7 @@ function JobModal({ job, initialTab, onNewClient, presetClient, presetService, i
   const [busy, setBusy] = useState(false);
   // Team members see the job at a glance (no edit form): the manager has set it up.
   const brief = !!job && staffLock;
-  const [tab, setTab] = useState<"details" | "queries" | "history" | "files" | "email">(brief || initialTab === "queries" || (job && STEPS[job.service]) ? "queries" : "details");
+  const [tab, setTab] = useState<"details" | "queries" | "history" | "files" | "email">(initialTab === "email" ? "email" : brief || initialTab === "queries" || (job && STEPS[job.service]) ? "queries" : "details");
   const [openQs, setOpenQs] = useState(0);
   const [fileCount, setFileCount] = useState<number | null>(null);
   const [sum, setSum] = useState<JobSummary | null>(null);
