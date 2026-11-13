@@ -2572,3 +2572,8 @@ do $$ begin
     begin alter publication supabase_realtime add table public.review_notes; exception when duplicate_object then null; end;
   end if;
 end $$;
+
+-- Master admins and team leaders add approved leave for their team.
+drop policy if exists "leader adds leave for team" on public.leave_requests;
+create policy "leader adds leave for team" on public.leave_requests for insert to authenticated
+  with check (public.can_approve_leave(user_id));

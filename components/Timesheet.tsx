@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
-import type { Attendance, Client, Job, Person, Profile, TimeEntry } from "@/lib/types";
+import type { Attendance, Client, Job, JobTimer, Person, Profile, TimeEntry } from "@/lib/types";
+import { AddLeave, Approvals, MonthGrid, RightNow, monthDays } from "./TeamAttendance";
 import ClientPicker from "./ClientPicker";
 import { MyLeave, TeamLeave, leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
 import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
@@ -99,8 +100,8 @@ const Status = ({ d }: { d: Day }) => (
 
 const monday = () => { const d = new Date(); const back = (d.getDay() + 6) % 7; d.setDate(d.getDate() - back); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
 
-export default function Timesheet({ me, supabase, people, visible, clients, jobs, canSeeTeam, say }: {
-  me: Profile; supabase: SB; people: Person[]; visible: Profile[]; clients: Client[]; jobs: Job[]; canSeeTeam: boolean;
+export default function Timesheet({ me, supabase, people, visible, clients, jobs, canSeeTeam, say, timers = [] }: {
+  me: Profile; supabase: SB; people: Person[]; visible: Profile[]; clients: Client[]; jobs: Job[]; canSeeTeam: boolean; timers?: JobTimer[];
   say: (m: string, e?: boolean) => void;
 }) {
   const [day, setDay] = useState(todayISO());
@@ -117,9 +118,15 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [leaves, setLeaves] = useState<LeaveReq[]>([]);
   const [leaveMissing, setLeaveMissing] = useState(false);
 
+  const [tab, setTab] = useState<"grid" | "cal" | "req" | "log" | "mine">(canSeeTeam ? "grid" : "mine");
+  const [gm, setGm] = useState(todayISO().slice(0, 7));
+  const [adding, setAdding] = useState(false);
   const monthStart = todayISO().slice(0, 8) + "01";
-  const lo = [day, from, monthStart].sort()[0];
-  const hi = [day, to].sort()[1];
+  const gDays = monthDays(gm);
+  const gStart = gDays[0], gEnd = gDays[gDays.length - 1];
+  const lo = [day, from, monthStart, ...(canSeeTeam ? [gStart] : [])].sort()[0];
+  const hi = [day, to, ...(canSeeTeam ? [gEnd] : [])].sort().pop()!;
+  const yearStart = `${todayISO().slice(0, 4)}-01-01`;
   const load = useCallback(async () => {
     const [a, e] = await Promise.all([
       supabase.from("attendance").select("*").gte("work_date", lo).lte("work_date", hi).order("clock_in"),
@@ -139,10 +146,10 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     setOverrides(o.error ? [] : (o.data as Override[]));
     setRequests(r.error ? [] : (r.data as LateRequest[]));
     // Booked leave: anything that ends on or after the earliest date shown (so future leave shows too).
-    const lv = await supabase.from("leave_requests").select("*").gte("end_date", lo).order("start_date");
+    const lv = await supabase.from("leave_requests").select("*").gte("end_date", lo < yearStart ? lo : yearStart).order("start_date");
     setLeaveMissing(!!lv.error && /does not exist|schema cache|leave_requests/i.test(lv.error.message));
     setLeaves(lv.error ? [] : (lv.data as LeaveReq[]));
-  }, [supabase, lo, hi, me.id]);
+  }, [supabase, lo, hi, me.id, yearStart]);
 
   useEffect(() => {
     load();
@@ -249,10 +256,54 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     URL.revokeObjectURL(a.href);
   }
 
-  return (
-    <>
-      <div className="pagehead"><div><h1>Timesheet</h1><p>Log in when you start, log out when you finish, and record what you worked on.</p></div></div>
+  // ----- team attendance (master admins and team leaders) -----
+  const canApproveLeave = (uid: string) => uid !== me.id && (me.role === "master" || (me.role === "manager" && visible.some((p) => p.id === uid && p.reports_to === me.id)));
+  async function decideLeave(l: LeaveReq, status: "approved" | "rejected") {
+    const { error } = await supabase.from("leave_requests").update({ status, decided_by: me.id, decided_at: new Date().toISOString() }).eq("id", l.id);
+    if (error) { say(`Not saved: ${error.message}`, true); return; }
+    say(status === "approved" ? `Leave approved for ${name(l.user_id)}` : `Leave not approved for ${name(l.user_id)}`);
+    load();
+  }
+  async function markSick(uid: string) {
+    if (!window.confirm(`Mark ${name(uid)} as on sick leave today?`)) return;
+    const t = todayISO();
+    const { error } = await supabase.from("leave_requests").insert({ user_id: uid, start_date: t, end_date: t, kind: "sick", part: "full", reason: "Marked sick by manager", status: "approved", decided_by: me.id, decided_at: new Date().toISOString() });
+    if (error) { say(/row-level security|policy/i.test(error.message) ? "Run the team leave database update first (database-update-team-leave.sql)" : `Not saved: ${error.message}`, true); return; }
+    say(`${name(uid)} marked as sick today`);
+    load();
+  }
+  const team = visible.filter((p) => p.active);
+  const gTo = gEnd < todayISO() ? gEnd : todayISO();
+  const gridDays = canSeeTeam ? buildDays(att, entries, team, gStart, gTo, now, overrides, requests, leaves) : [];
+  const gm1 = gridDays.filter((d) => d.date.startsWith(gm));
+  const teamH = gm1.reduce((s, d) => s + d.h, 0);
+  const teamIn = gm1.reduce((s, d) => s + d.m, 0) / 60;
+  const onJobsH = entries.filter((e) => e.job_id && e.work_date.startsWith(gm) && team.some((p) => p.id === e.user_id)).reduce((s, e) => s + e.hours, 0);
+  const leaveTaken = leaves.filter((l) => l.status === "approved" && team.some((p) => p.id === l.user_id)).reduce((s, l) => s + leaveDays(l, gStart, gTo), 0) + gm1.filter((d) => d.leave && !d.booked && !d.override).length;
+  const leaveAhead = leaves.filter((l) => l.status === "approved" && team.some((p) => p.id === l.user_id)).reduce((s, l) => s + leaveDays(l, addDays(gTo, 1), gEnd), 0);
+  const forgot = gm1.filter((d) => d.open && d.date < todayISO()).length;
+  const reqCount = leaves.filter((l) => l.status === "pending" && canApproveLeave(l.user_id)).length + (isMaster ? pending.length : 0);
+  const shiftMonth = (n: number) => { const [y, m] = gm.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); setGm(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); };
+  function exportPayroll() {
+    const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows: unknown[][] = [["Person", "Days at work", "Timesheet hours", "Hours on jobs", "Extra hours", "Late starts", "Half days", "Absent (no leave asked)", ...LEAVE_KINDS.map((k) => `${k.label} (days)`)]];
+    team.forEach((p) => {
+      const ds = gm1.filter((d) => d.user === p.id);
+      rows.push([p.full_name, ds.filter((d) => (d.first || d.h) && !d.leave).length, ds.reduce((s, d) => s + d.h, 0).toFixed(2),
+        entries.filter((e) => e.user_id === p.id && e.job_id && e.work_date.startsWith(gm)).reduce((s, e) => s + e.hours, 0).toFixed(2),
+        ds.reduce((s, d) => s + Math.max(0, d.h - WORK_DAY_H), 0).toFixed(2), ds.filter((d) => d.late).length, ds.filter((d) => d.half).length, ds.filter((d) => d.leave && !d.booked && !d.override).length,
+        ...LEAVE_KINDS.map((k) => leaves.filter((l) => l.user_id === p.id && l.status === "approved" && l.kind === k.id).reduce((s, l) => s + leaveDays(l, gStart, gEnd), 0))]);
+    });
+    const blob = new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `supertax-payroll-${gm}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
+  const mineEl = (
+    <>
       <div className="grid2">
         <div className="section">
           <div className="panel" style={{ padding: 16 }}>
@@ -312,19 +363,20 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
           </div>
       </div>
 
-      {canSeeTeam ? (
-        <div className="section" style={{ marginTop: 24 }}>
-          <div className="pagehead"><div><h2 style={{ fontSize: 20, margin: 0 }}>Team timesheets</h2><p>{me.role === "master" ? "Everyone in the practice." : "You and the team members allocated to you."}</p></div>
-            <div className="row"><button type="button" onClick={exportCsv} disabled={!summary.length}>Export CSV</button></div></div>
-          <TeamLeave me={me} supabase={supabase} list={leaves} visible={visible} people={people} say={say} onSaved={load} />
-          {isMaster && pending.length ? (
-            <div className="panel" style={{ padding: 14, marginBottom: 12, borderColor: "var(--warn)" }}>
-              <h2 style={{ margin: "0 0 8px" }}>Late log-ins waiting for your approval ({pending.length})</h2>
-              <table><tbody>{pending.map((r) => { const first = att.filter((a) => a.user_id === r.user_id && a.work_date === r.work_date).map((a) => a.clock_in).sort()[0]; return (
-                <tr key={`${r.user_id}|${r.work_date}`}><td className="client">{name(r.user_id)}</td><td>{fmtDate(r.work_date)}</td><td>{first ? `Logged in ${time(first)}` : ""}</td><td style={{ whiteSpace: "pre-wrap" }}>{r.reason || <span className="note">No reason given</span>}</td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}><button type="button" className="primary" onClick={() => decide(r, "approved")}>Approve</button> <button type="button" onClick={() => decide(r, "rejected")}>Don&apos;t approve</button></td></tr>); })}</tbody></table>
-            </div>
-          ) : null}
+    </>
+  );
+
+  if (!canSeeTeam) return (
+    <>
+      <div className="pagehead"><div><h1>Timesheet</h1><p>Log in when you start, log out when you finish, and record what you worked on.</p></div></div>
+      {mineEl}
+    </>
+  );
+
+  const logEl = (
+    <>
+      <div className="pagehead" style={{ marginTop: 4 }}><div><h2 style={{ fontSize: 20, margin: 0 }}>Day by day</h2><p>Log-in times, timesheet hours and status for each person and day.</p></div>
+        <div className="row"><button type="button" onClick={exportCsv} disabled={!summary.length}>Export CSV</button></div></div>
           <div>
           <div className="toolbar">
             <label className="row note">From <input type="date" id="tt-from" value={from} onChange={(e) => e.target.value && setFrom(e.target.value)} /></label>
@@ -354,8 +406,45 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
               <div className="count">{teamEntries.length} entr{teamEntries.length === 1 ? "y" : "ies"} · {hrs(teamEntries.reduce((s, e) => s + e.hours, 0))}</div>
             </div>
           ) : null}
+    </>
+  );
+  const monthLabel = new Date(`${gm}-01T00:00:00`).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
+
+  return (
+    <>
+      <div className="pagehead">
+        <div><h1>Team attendance</h1><p>{me.role === "master" ? "Everyone's" : "Your team's"} log-ins, hours and leave for the whole month.</p></div>
+        <div className="row">
+          <button type="button" aria-label="Previous month" onClick={() => shiftMonth(-1)}>‹</button><strong style={{ minWidth: 130, textAlign: "center" }}>{monthLabel}</strong><button type="button" aria-label="Next month" onClick={() => shiftMonth(1)}>›</button>
+          <button type="button" onClick={exportPayroll}>⬇ Export for payroll</button>
+          <button type="button" onClick={() => setAdding(!adding)}>+ Add leave for someone</button>
         </div>
-      ) : null}
+      </div>
+      <div className="quickpills">{([["grid", "Month grid", 0], ["cal", "Leave calendar", 0], ["req", "Requests", reqCount], ["log", "Day by day", 0], ["mine", "My own timesheet", 0]] as [typeof tab, string, number][]).map(([k, l, n]) => (
+        <button key={k} type="button" className={tab === k ? "on" : undefined} onClick={() => setTab(k)}>{l}{n ? <i className="hot">{n}</i> : null}</button>))}</div>
+      {adding ? <AddLeave people={team.filter((p) => canApproveLeave(p.id))} supabase={supabase} meId={me.id} say={say} onDone={() => { setAdding(false); load(); }} /> : null}
+      {tab === "grid" ? <>
+        <RightNow people={team} att={att} timers={timers} leaves={leaves} requests={requests} jobs={jobs} clients={clients} now={now} canMark={canApproveLeave} onMarkSick={markSick} />
+        <div className="atiles">
+          <div className="panel b-blue"><span className="val">{Math.round(teamH)}<small>h</small></span><span className="lbl">Team hours this month (8h 15m a day, Mon to Sat)</span></div>
+          <div className="panel b-blue"><span className="val">{teamIn ? Math.round((onJobsH / teamIn) * 100) : 0}<small>%</small></span><span className="lbl">Time on jobs (timesheet hours on jobs out of hours logged in)</span></div>
+          <div className="panel b-warn"><span className="val">{gm1.filter((d) => d.late).length}</span><span className="lbl">Late starts</span></div>
+          <div className="panel b-blue"><span className="val">{gm1.filter((d) => d.half).length}</span><span className="lbl">Half days</span></div>
+          <div className="panel b-danger"><span className="val">{Number(leaveTaken.toFixed(1))}{leaveAhead ? <small> + {Number(leaveAhead.toFixed(1))} booked</small> : null}</span><span className="lbl">Leave days this month</span></div>
+          <div className="panel b-navy"><span className="val">{forgot}</span><span className="lbl">Forgot to log out</span></div>
+        </div>
+        <MonthGrid month={gm} people={team} days={gridDays} leaves={leaves} entries={entries} requests={requests} isMaster={isMaster} onOverride={setOverride} onLate={decide}
+          onOpenDay={(uid, d) => { setFrom(d); setTo(d); setWho(uid); setTab("log"); }} />
+        <Approvals me={me} people={team} leaves={leaves} requests={requests} att={att} canApprove={canApproveLeave} onLeave={decideLeave} onLate={decide} />
+      </> : null}
+      {tab === "cal" ? <MonthGrid leaveOnly month={gm} people={team} days={gridDays} leaves={leaves} entries={entries} requests={requests} isMaster={isMaster} onOverride={setOverride} onLate={decide}
+        onOpenDay={(uid, d) => { setFrom(d); setTo(d); setWho(uid); setTab("log"); }} /> : null}
+      {tab === "req" ? <>
+          <TeamLeave me={me} supabase={supabase} list={leaves} visible={visible} people={people} say={say} onSaved={load} />
+        <Approvals me={me} people={team} leaves={leaves} requests={requests} att={att} canApprove={canApproveLeave} onLeave={decideLeave} onLate={decide} />
+      </> : null}
+      {tab === "log" ? logEl : null}
+      {tab === "mine" ? mineEl : null}
     </>
   );
 }
