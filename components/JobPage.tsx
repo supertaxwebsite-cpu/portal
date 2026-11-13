@@ -13,6 +13,9 @@ type SB = ReturnType<typeof createClient>;
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join("").toUpperCase() || "—";
 
 /** A job on its own page: the stages it goes through, its checklist, review notes and queries, files and history. */
+/** Hours as "1h 20m". */
+export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
+
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
   onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onRaised, onAnswered }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void;
@@ -49,13 +52,32 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
     })();
     return () => { live = false; };
   }, [supabase, job.id, job.client_id, job.status]);
+  // Time logged on this job, split by task: preparation, review, signing, and each internal query answer.
+  const [ents, setEnts] = useState<{ user_id: string; hours: number; description: string; created_at: string }[]>([]);
+  useEffect(() => {
+    let live = true;
+    supabase.from("timesheet_entries").select("user_id,hours,description,created_at").eq("job_id", job.id)
+      .then(({ data }) => { if (live) setEnts(((data as typeof ents | null) ?? []).map((e) => ({ ...e, hours: Number(e.hours) || 0 }))); });
+    return () => { live = false; };
+  }, [supabase, job.id, hours]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isAnswer = (e: { description: string }) => e.description.startsWith("Answering internal query");
+  const stageOf = (e: { user_id: string; description: string }) => {
+    if (/^(Preparing for signing|Signing follow-up)/.test(e.description)) return 2;
+    if (e.user_id === job.reviewer_id && e.user_id !== job.assignee_id) return 1;
+    return 0;
+  };
+  const stageHrs = [0, 1, 2, 3].map((i) => ents.filter((e) => !isAnswer(e) && stageOf(e) === i).reduce((t, e) => t + e.hours, 0));
+  const queryHours = (q: { to_id: string | null; created_at: string; answered_at: string | null }) => ents
+    .filter((e) => isAnswer(e) && e.user_id === q.to_id && e.created_at >= q.created_at && (!q.answered_at || Date.parse(e.created_at) <= Date.parse(q.answered_at) + 5 * 60e3))
+    .reduce((t, e) => t + e.hours, 0);
   const total = checklistFor(job.service).length;
   const reviewing = job.status === "review" && (job.reviewer_id === meId || canAnswerAll) && !readOnly;
   const head = (i: number) => { const r = rows[i]; const cls = i < stage ? "done" : i === stage ? "now" : "";
     return <div className={`taskhead ${cls}`}>
       <span className="tdot">{i < stage ? "✓" : i + 1}</span>
       <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">{r.t}{r.who ? ` · ${personName(r.who)}${r.who === meId ? " (you)" : ""}` : ""}</div>
-        <div className="tks">{i === 0 && on ? <span className="runtxt">● Running · </span> : null}{r.s}</div></div>
+        <div className="tks">{i === stage && on ? <span className="runtxt">● Running · </span> : null}{r.s}</div></div>
+      {stageHrs[i] ? <span className="tasktime mono" title="Time logged on this task">{hm(stageHrs[i])}</span> : null}
       <div className="row jsact">
         {i === stage && open ? <>
           {(i === 0 && job.assignee_id === meId || i === 1 && job.reviewer_id === meId) && !readOnly ? (on ? <><span className="timer mono">● running</span><button type="button" disabled={busy} onClick={onStop}>Stop</button></> : <button type="button" disabled={busy} onClick={() => onStart(job)}>{i === 1 ? "Start review" : "Start"}</button>) : null}
@@ -98,7 +120,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <div className="panel tasksp" id="jp-work">
             <div className="ph"><h2>Tasks</h2><span className="note">Each task has its own stage and person. Change the stage from the list on the current row.</span></div>
             <JobBrief job={job} clientName={client?.name ?? ""} showInfo={false} meId={meId} canAnswerAll={canAnswerAll} team={team} defaultTo={job.reviewer_id} readOnly={readOnly}
-              supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }}
+              supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }} queryHours={queryHours}
               tasks={{ prep: head(0), after: <>
                 <li className={`task${stage === 1 ? " now" : stage > 1 ? " done" : " later"}`}>{head(1)}
                   {reviewing ? <div className="taskbody"><p className="note" style={{ margin: "0 0 8px" }}>Found a mistake? Add a review note above. When everything is cleared, approve it.</p>

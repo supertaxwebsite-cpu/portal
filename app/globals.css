@@ -774,3 +774,11 @@ ol.tasks{list-style:none;margin:0;padding:0}
 .qkind button.on{border-color:var(--ink,#0b1b2b);box-shadow:inset 0 0 0 1px var(--ink,#0b1b2b);background:#f5f8fb}
 .qtimer{align-items:center;gap:8px;margin-bottom:6px;padding:6px 8px;border-radius:8px;background:#f5f8fb}
 .qtimer .note{font-size:12px}
+.tasktime{font-size:12px;font-weight:600;color:var(--ink,#0b1b2b);background:#eef3f8;border-radius:999px;padding:3px 9px;white-space:nowrap;margin-right:8px;align-self:center}
+/* Fold a task row by clicking its header */
+ol.tasks > li.task > .taskhead{cursor:pointer;position:relative;padding-right:34px}
+ol.tasks > li.task > .taskhead::after{content:"▾";position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;transition:transform .15s}
+ol.tasks > li.task[data-min] > .taskhead::after{transform:translateY(-50%) rotate(-90deg)}
+ol.tasks > li.task[data-min] > :not(.taskhead){display:none}
+ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead{cursor:default}
+ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}

@@ -1,6 +1,6 @@
 "use client";
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import type { MouseEvent as RMouseEvent, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Job, Person } from "@/lib/types";
 import { svcLabel, ST, fmtDate, daysFrom } from "@/lib/domain";
@@ -17,7 +17,9 @@ const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_")
 
 /** The job at a glance (for team members, instead of the edit form), its checklist,
  *  and internal queries: question on the left, the manager's reply beside it. */
-export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, timer, tasks }: {
+const fmtHm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
+
+export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, timer, queryHours, tasks }: {
   tasks?: { prep: ReactNode; after: ReactNode };
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
   supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void; onNewClient?: () => void;
@@ -26,6 +28,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   /** A response was sent; stillOpen is how many internal queries on the job are still unanswered. */
   onAnswered?: (j: Job, stillOpen: number) => void;
   /** Job timer, so the person a query was raised to can time their answer onto their own timesheet. */
+  queryHours?: (q: { to_id: string | null; created_at: string; answered_at: string | null }) => number;
   timer?: { runningHere: boolean; busy: boolean; start: (j: Job) => void; stop: () => void };
 }) {
   const [qs, setQs] = useState<Query[] | null>(null);
@@ -38,6 +41,22 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const [replyFile, setReplyFile] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
   const [askKind, setAskKind] = useState<"internal" | "client">("internal");
+  // Task rows fold up when you click their header. Finished ones start folded.
+  const tasksRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    tasksRef.current?.querySelectorAll<HTMLLIElement>(":scope > li.task").forEach((li) => {
+      if (li.dataset.init || li.children.length < 2) return;
+      li.dataset.init = "1";
+      if (li.matches(".done, .answered, .rn.closed, .rn.cleared") || li.querySelector(":scope > .taskhead.done")) li.dataset.min = "1";
+    });
+  });
+  const foldTask = (e: RMouseEvent) => {
+    const t = e.target as HTMLElement;
+    if (t.closest("button, select, input, textarea, a, label")) return;
+    const head = t.closest(".taskhead"); const li = head?.parentElement;
+    if (!head || !li || !li.matches("li.task") || li.children.length < 2) return;
+    if (li.dataset.min) delete li.dataset.min; else li.dataset.min = "1";
+  };
   const [askOpen, setAskOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -177,7 +196,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
 
   if (tasks) return (
     <div className="jobbrief" onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault(); }}>
-      <ol className="tasks">
+      <ol className="tasks" ref={tasksRef} onClick={foldTask}>
         <li className={`task prep${job.status === "in_progress" || job.status === "not_started" ? " now" : ""}`}>{tasks.prep}<div className="taskbody">{checklistEl}</div></li>
         {questions.map((q) => {
           const rs = replies.filter((r) => r.parent_id === q.id);
@@ -189,6 +208,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
               <div className="taskhead"><span className="tdot">{answered ? "✓" : "?"}</span>
                 <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Internal query · {personName(q.author_id) || "Someone"} → {personName(q.to_id) || "a manager"}</div>
                   <div className="tks">Raised {when(q.created_at)}{rs[0] ? ` · answered ${when(rs[0].created_at)}` : ""}</div></div>
+                {queryHours?.(q) ? <span className="tasktime mono" title="Time logged answering this query">{fmtHm(queryHours(q))}</span> : null}
                 <span className={`pill ${answered ? "ok" : "danger"}`}>{answered ? "Answered" : "Open"}</span></div>
               <div className="qpair">
                 <div className="qcol ask"><div className="qhead"><span className="pill danger">Query</span> {personName(q.author_id) || "Someone"}</div><div className="qbody">{q.body}</div>{fileChip(q.file_id)}</div>
