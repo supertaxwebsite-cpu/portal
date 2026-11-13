@@ -1,0 +1,151 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Clients · Practice Desk prototype</title><meta name="viewport" content="width=1280">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f8fb;--surface:#fff;--surface-2:#eaf1f6;--fg:#0b1a2c;--muted:#4b5a6d;--line:#dde6ee;--accent:#0f73ab;--accent-soft:#e1f1fa;--orange:#f59a22;--navy:#07121f;--danger:#b3261e;--danger-soft:#fbe7e4;--warn:#9a5a08;--warn-soft:#fdf0dc;--info:#2b5797;--info-soft:#e4ecf8;--ok:#2f6b1e;--ok-soft:#e6f2df}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 Manrope,system-ui,sans-serif}
+.mono{font-family:"JetBrains Mono",monospace}
+header{background:var(--navy);color:#e6eef6}header .w{display:flex;align-items:center;gap:22px;padding:10px 24px;max-width:1280px;margin:auto}
+header img{height:30px}header small{color:#8fa3b8;letter-spacing:.06em;font-size:12px}
+nav a{color:#b8c7d6;padding:6px 10px;border-radius:8px;font-weight:600}nav a.on{color:#fff;background:rgba(34,163,220,.22)}
+header .me{margin-left:auto;display:flex;gap:10px;align-items:center}.bell{width:32px;height:32px;border-radius:50%;background:var(--orange);display:grid;place-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;font:inherit;font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--orange);border-color:var(--orange);color:#1b1104}.btn.ghost{background:transparent}.btn.sm{padding:4px 9px;font-size:13px}
+main{max-width:1280px;margin:auto;padding:14px 24px 40px}
+.crumb{color:var(--muted);font-size:13px;margin-bottom:8px}.crumb a{color:var(--accent);font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-info{background:var(--info-soft);color:var(--info)}.p-danger{background:var(--danger-soft);color:var(--danger)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-ok{background:var(--ok-soft);color:var(--ok)}.p-none{background:var(--surface-2);color:var(--muted)}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;border-top:4px solid var(--accent)}
+.hero h1{margin:0;font-size:21px;letter-spacing:-.01em}.hero h1 span{color:var(--muted);font-weight:600}
+.facts{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:10px;color:var(--muted)}.facts b{color:var(--fg);font-weight:700}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.count{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-weight:600;font-size:13px;background:var(--bg)}
+.count i{font-style:normal;min-width:20px;height:20px;border-radius:10px;display:grid;place-items:center;font-size:12px;color:#fff;background:var(--muted);padding:0 5px}
+.count.red i{background:var(--danger)}.count.amber i{background:#c77a0a}.count.blue i{background:var(--accent)}.count.green i{background:var(--ok)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;margin-top:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.card>h2{font-size:15px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.card>h2 .note{font-weight:500}
+.note{color:var(--muted);font-size:12.5px}
+.stage{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.stage:last-child{border-bottom:0}
+.dot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;border:2px solid var(--line);color:var(--muted);background:var(--surface)}
+.stage.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}.stage.now{background:linear-gradient(90deg,var(--accent-soft),transparent 70%)}.stage.now .dot{border-color:var(--accent);color:var(--accent)}
+.stage .t{font-weight:700}.stage .s{color:var(--muted);font-size:12.5px}
+.stage .who{display:flex;gap:8px;align-items:center}
+.av{width:26px;height:26px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;font-size:11px;font-weight:800;color:var(--accent)}
+.hrs{font-family:"JetBrains Mono",monospace;font-size:12.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;background:var(--bg)}
+.running{color:var(--ok);font-weight:700}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.check{list-style:none;margin:0;padding:6px 16px 12px}.check li{display:flex;gap:9px;padding:6px 0;border-bottom:1px dashed var(--line);align-items:flex-start}
+.check li.d span{text-decoration:line-through;color:var(--muted)}.check li .note{margin-left:auto;white-space:nowrap}
+.bar{height:6px;border-radius:3px;background:var(--surface-2);margin:0 16px 4px;overflow:hidden}.bar i{display:block;height:100%;width:43%;background:var(--ok)}
+.q{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 16px}
+.qc{border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:13.5px}.qc.a{border-left:4px solid var(--danger)}.qc.r{border-left:4px solid var(--ok)}
+.qc .h{font-size:12px;color:var(--muted);margin-bottom:4px}.qc .f{color:var(--accent);font-weight:600;font-size:12.5px;margin-top:5px}
+.side .card{margin-bottom:14px}.side h2{font-size:14px}
+.links{list-style:none;margin:0;padding:6px 8px}.links li{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;font-weight:600}
+.links li:hover{background:var(--bg)}.links .ic{width:22px;text-align:center}.links .badge{margin-left:auto;background:var(--danger);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px}
+.links .sub{margin-left:auto;color:var(--muted);font-weight:500;font-size:12.5px}
+.stbox{padding:12px 14px;display:grid;gap:8px}
+select{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid var(--line);width:100%;background:var(--surface)}
+.annot{position:absolute;background:#fff7d6;border:1px solid #e8c656;border-radius:8px;padding:6px 9px;font-size:12px;font-weight:600;color:#6b5200;box-shadow:0 4px 14px rgba(0,0,0,.08);max-width:220px}
+
+.task{border-bottom:1px solid var(--line)}.task:last-child{border-bottom:0}
+.trow{display:grid;grid-template-columns:30px minmax(0,1fr) 210px auto;gap:12px;align-items:center;padding:12px 16px}
+.task.now>.trow{background:linear-gradient(90deg,var(--accent-soft),transparent 75%)}
+.task.done>.trow{background:var(--ok-soft)}.task.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+.task.iq>.trow{background:var(--danger-soft)}.task.iq .dot{border-color:var(--danger);color:var(--danger)}
+.task.later>.trow{opacity:.62}
+.task.now .dot{border-color:var(--accent);color:var(--accent)}
+.trow .t{font-weight:800;text-transform:uppercase;font-size:13px;letter-spacing:.02em}.trow .s{color:var(--muted);font-size:12.5px}
+.trow select{font-weight:600}
+.meta{display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:150px}
+.icons{color:var(--muted);font-size:15px;letter-spacing:6px}
+.tsub{padding:4px 16px 14px 58px}
+.tsub .check{padding:0}.tsub .check li{padding:6px 0}
+.subfoot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.iqbody{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.od{color:var(--danger);font-weight:700;font-size:12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.filters select,.filters input{width:auto;font-size:13px;padding:6px 9px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12.5px;font-weight:700;background:var(--surface)}.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.steps{display:flex;gap:3px;align-items:center}.steps i{width:16px;height:6px;border-radius:3px;background:var(--surface-2)}.steps i.d{background:var(--ok)}.steps i.n{background:var(--accent)}
+.flags{display:flex;gap:4px;flex-wrap:wrap}.fl{font-size:11px;font-weight:800;border-radius:6px;padding:1px 6px}.fl.q{background:var(--danger-soft);color:var(--danger)}.fl.r{background:var(--warn-soft);color:var(--warn)}.fl.f{background:var(--info-soft);color:var(--info)}
+.bulk{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--navy);color:#fff;border-radius:0 0 14px 14px}
+.bulk select{width:auto;font-size:13px;padding:5px 8px}
+td input[type=checkbox]{width:16px;height:16px}
+.savedv{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+</style><style>
+.tabsrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tab{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-weight:700;font-size:13px;display:flex;gap:7px;align-items:center}
+.tab i{font-style:normal;background:var(--surface-2);border-radius:10px;padding:0 7px;font-size:12px}
+.tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}.tab.on i{background:var(--orange);color:#1b1104}
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}
+.k{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}.k .l{color:var(--muted);font-size:12.5px;font-weight:600}.k .v{font-family:"JetBrains Mono",monospace;font-size:24px;margin-top:4px}
+.prog{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden;margin-top:8px;position:relative}.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--orange),#7cbf4a)}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);background:var(--bg)}
+td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}tr.run td{background:var(--accent-soft)}tr.late td:first-child{box-shadow:inset 4px 0 0 var(--danger)}
+.tl{font-weight:700;font-size:13px}.tl.r{color:var(--danger)}.tl.a{color:#b06d06}.tl.g{color:var(--ok)}
+.ul{height:3px;border-radius:2px;margin-top:4px;width:70px}.ul.r{background:var(--danger)}.ul.a{background:var(--orange)}.ul.g{background:#7cbf4a}
+.cx{font-size:12px;font-weight:700;border-radius:6px;padding:2px 8px}.cx.h{background:var(--danger-soft);color:var(--danger)}.cx.m{background:var(--warn-soft);color:var(--warn)}.cx.s{background:var(--ok-soft);color:var(--ok)}
+.prio{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;background:var(--accent)}
+td select{width:auto;padding:5px 8px;font-size:13px}
+.tname{font-weight:700;color:var(--accent)}.small{font-size:12.5px;color:var(--muted)}
+.overlay{position:fixed;inset:0;background:rgba(7,18,31,.42);display:flex;justify-content:flex-end}
+.drawer{width:430px;background:var(--surface);height:100%;box-shadow:-10px 0 40px rgba(0,0,0,.2);display:flex;flex-direction:column}
+.drawer header{background:var(--surface);color:var(--fg);border-bottom:1px solid var(--line);padding:16px 18px;display:flex;justify-content:space-between;align-items:center}
+.drawer .b{padding:16px 18px;display:grid;gap:12px;overflow:auto}.drawer label{display:grid;gap:5px;font-weight:700;font-size:13px}
+.drawer textarea{font:inherit;min-height:90px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}.seg span{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:13px;font-weight:600}.seg span.on{background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+.task.rn>.trow{background:var(--warn-soft)}.task.rn .dot{border-color:var(--warn);color:var(--warn)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.filters select,.filters input{width:auto;font-size:13px;padding:6px 9px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12.5px;font-weight:700;background:var(--surface)}.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.steps{display:flex;gap:3px;align-items:center}.steps i{width:16px;height:6px;border-radius:3px;background:var(--surface-2)}.steps i.d{background:var(--ok)}.steps i.n{background:var(--accent)}
+.flags{display:flex;gap:4px;flex-wrap:wrap}.fl{font-size:11px;font-weight:800;border-radius:6px;padding:1px 6px}.fl.q{background:var(--danger-soft);color:var(--danger)}.fl.r{background:var(--warn-soft);color:var(--warn)}.fl.f{background:var(--info-soft);color:var(--info)}
+.bulk{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--navy);color:#fff;border-radius:0 0 14px 14px}
+.bulk select{width:auto;font-size:13px;padding:5px 8px}
+td input[type=checkbox]{width:16px;height:16px}
+.savedv{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+</style><style>
+.two{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;margin-top:16px}
+.k.r .v{color:var(--danger)}.k.a .v{color:#b06d06}.k.b .v{color:var(--accent)}
+.kpi5{grid-template-columns:repeat(5,1fr)}
+.now{display:flex;gap:6px;align-items:center;font-size:12.5px}
+.live{width:8px;height:8px;border-radius:50%;background:#2fae4a;box-shadow:0 0 0 3px #d9f2df}
+.idle{width:8px;height:8px;border-radius:50%;background:#c9d3dc}
+.mini{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;width:90px}.mini i{display:block;height:100%;background:var(--accent)}
+.att li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.att{list-style:none;margin:0;padding:0}
+.sbar{display:flex;height:14px;border-radius:7px;overflow:hidden;margin:12px 16px 6px}.sbar i{display:block}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;padding:4px 16px 14px;font-size:12.5px;color:var(--muted)}.leg b{color:var(--fg)}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.filters select,.filters input{width:auto;font-size:13px;padding:6px 9px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12.5px;font-weight:700;background:var(--surface)}.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.steps{display:flex;gap:3px;align-items:center}.steps i{width:16px;height:6px;border-radius:3px;background:var(--surface-2)}.steps i.d{background:var(--ok)}.steps i.n{background:var(--accent)}
+.flags{display:flex;gap:4px;flex-wrap:wrap}.fl{font-size:11px;font-weight:800;border-radius:6px;padding:1px 6px}.fl.q{background:var(--danger-soft);color:var(--danger)}.fl.r{background:var(--warn-soft);color:var(--warn)}.fl.f{background:var(--info-soft);color:var(--info)}
+.bulk{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--navy);color:#fff;border-radius:0 0 14px 14px}
+.bulk select{width:auto;font-size:13px;padding:5px 8px}
+td input[type=checkbox]{width:16px;height:16px}
+.savedv{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+</style></head><body>
+<header><div class="w"><img src="logo.webp" alt=""><small>PRACTICE DESK</small>
+<nav><a href="home.html">Overview</a> <a href="staff-jobs.html">Jobs</a> <a href="index.html#payroll">Payroll</a> <a href="clients-s.html" class="on">Clients</a> <a href="ts-staff.html">Timesheet</a></nav>
+<div class="me"><div class="bell">🔔</div><b>Naval</b><button class="btn ghost" style="color:#fff;border-color:#2a3b50">Sign out</button></div></div></header>
+<main>
+<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap">
+ <div><h1 style="margin:0;font-size:24px">Clients <span class="pill p-info" style="font-size:13px">1,288</span></h1><div class="note" style="font-size:13.5px">Who you act for, what you do for them, and what's open right now.</div></div>
+ <div style="display:flex;gap:8px"><button class="btn">⬇ Export</button><button class="btn">Import from CSV or Excel</button><button class="btn pri">+ Add client</button></div></div>
+<div class="savedv"><span class="tab on">All clients <i>1,288</i></span><span class="tab">With overdue work <i style="background:var(--danger);color:#fff">14</i></span><span class="tab">Waiting on client <i>93</i></span><span class="tab">Related groups <i>212</i></span><span class="tab">No open jobs <i>412</i></span><span class="tab">New this month <i>9</i></span></div>
+<section class="card">
+<div class="filters"><input placeholder="🔍 Search name, ABN, contact, email or phone" style="min-width:300px"><select><option>All practices</option></select><select><option>Any service</option></select><select><option>Any manager</option></select><select><option>BAS cycle: any</option></select>
+<span class="chip">Individual</span><span class="chip">Sole trader</span><span class="chip on">Company</span><span class="chip">Trust</span><span class="chip">Partnership</span><span class="chip">SMSF</span><button class="btn sm ghost" style="margin-left:auto">Columns ▾</button><button class="btn sm ghost">Clear</button></div>
+<table><thead><tr><th>Client</th><th>Practice</th><th>Services</th><th>Manager</th><th>Open jobs</th><th>Next due ↑</th><th>Flags</th><th></th></tr></thead><tbody><tr><td><b class="tname" style="color:var(--fg)">Workpaper Solutions Pty Ltd</b><div class="small">Company · ABN 60 680 275 754</div></td><td>Supertax</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">BAS</span> <span class="chip" style="font-size:11.5px;padding:2px 8px">Company tax</span> <span class="chip" style="font-size:11.5px;padding:2px 8px">Payroll</span> </td><td>Harshad</td><td><b class="mono">3</b> <span class='fl q'>1 overdue</span></td><td><span class="tl r">25 Aug · 79 days over</span><div class="ul r"></div></td><td><div class="flags"><span class="fl f">🔗 2</span> <span class="fl q">🔒</span> <span class="fl f">📌 1</span></div></td><td><button class="btn sm">Open</button></td></tr><tr><td><b class="tname" style="color:var(--fg)">Ross Family Super Fund</b><div class="small">SMSF · ABN 21 334 908 112</div></td><td>Mentor Group</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">SMSF</span> </td><td>Harshad</td><td><b class="mono">1</b> <span class='fl q'>1 overdue</span></td><td><span class="tl r">7 Nov · 5 days over</span><div class="ul r"></div></td><td><div class="flags"><span class="fl f">🔗 1</span></div></td><td><button class="btn sm">Open</button></td></tr><tr><td><b class="tname" style="color:var(--fg)">PARIMAL PATEL</b><div class="small">Individual</div></td><td>Supertax</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">Individual tax</span> </td><td>Hardeep</td><td><b class="mono">1</b> </td><td><span class="tl a">Awaiting signature</span><div class="ul a"></div></td><td><div class="flags"><span class="fl f">🔗 1</span></div></td><td><button class="btn sm">Open</button></td></tr><tr><td><b class="tname" style="color:var(--fg)">DEV TJ Electrical Pty Ltd</b><div class="small">Company · ABN 60 680 275 754</div></td><td>Supertax</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">BAS</span> <span class="chip" style="font-size:11.5px;padding:2px 8px">Company tax</span> </td><td>Harshad</td><td><b class="mono">1</b> </td><td><span class="tl g">25 Nov · 13 days</span><div class="ul g"></div></td><td><div class="flags"><span class="fl f">📌 2</span></div></td><td><button class="btn sm">Open</button></td></tr><tr><td><b class="tname" style="color:var(--fg)">Bell Partners Unit Trust</b><div class="small">Trust · ABN 88 120 556 001</div></td><td>Titantax</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">Trust tax</span> <span class="chip" style="font-size:11.5px;padding:2px 8px">BAS</span> </td><td>Hardeep</td><td><b class="mono">1</b> </td><td><span class="tl g">9 Dec · 27 days</span><div class="ul g"></div></td><td><div class="flags"><span class="fl q">🔒</span></div></td><td><button class="btn sm">Open</button></td></tr><tr><td><b class="tname" style="color:var(--fg)">Sahej Logistics Pty Ltd</b><div class="small">Company · ABN 47 615 220 908</div></td><td>Supertax</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">BAS</span> <span class="chip" style="font-size:11.5px;padding:2px 8px">Payroll</span> <span class="chip" style="font-size:11.5px;padding:2px 8px">Company tax</span> </td><td>Harshad</td><td><b class="mono">2</b> </td><td><span class="tl a">14 Nov · 2 days</span><div class="ul a"></div></td><td><div class="flags"></div></td><td><button class="btn sm">Open</button></td></tr><tr><td><b class="tname" style="color:var(--fg)">Travers Retirement Fund</b><div class="small">SMSF · ABN 93 704 118 330</div></td><td>Workpaper</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">SMSF</span> </td><td>Hardeep</td><td><b class="mono">1</b> </td><td><span class="tl g">16 Nov · 4 days</span><div class="ul g"></div></td><td><div class="flags"></div></td><td><button class="btn sm">Open</button></td></tr><tr><td><b class="tname" style="color:var(--fg)">Deepa Sharma</b><div class="small">Individual</div></td><td>Supertax</td><td><span class="chip" style="font-size:11.5px;padding:2px 8px">Individual tax</span> </td><td>Harshad</td><td><b class="mono">0</b> </td><td><span class="tl g">No open jobs</span><div class="ul g"></div></td><td><div class="flags"><span class="fl f">🔗 1</span></div></td><td><button class="btn sm">Open</button></td></tr></tbody></table>
+<div style="padding:10px 16px" class="note">Showing 8 of 1,288 · 🔗 related clients · 📌 pinned client note · click a row to open the client page</div></section>
+</main><style>.protobar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;gap:6px;align-items:center;background:#07121f;color:#e6eef6;border-radius:999px;padding:6px 8px 6px 16px;box-shadow:0 10px 30px rgba(7,18,31,.35);font:600 13px Manrope,system-ui,sans-serif;white-space:nowrap}
+.protobar a{color:#e6eef6;text-decoration:none;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.08)}.protobar a:hover{background:rgba(255,255,255,.18)}.protobar a.sw{background:#f59a22;color:#1b1104}.protobar .who{color:#8fa3b8;margin-right:6px}
+nav a[href]{cursor:pointer;text-decoration:none}.tname{cursor:pointer}.tname:hover{text-decoration:underline;color:var(--accent)}body{padding-bottom:70px}</style>
+<div class="protobar"><span class="who">Prototype · sample data · Staff view · Clients</span>
+<a href="staff-job.html">‹ Job page</a><a href="client-s.html">Client page ›</a><a href="index.html">All screens</a><a class="sw" href="manager.html">Switch to manager</a></div><script>document.querySelectorAll(".tname").forEach(e=>e.addEventListener("click",()=>location.href="client-s.html"))</script></body></html>

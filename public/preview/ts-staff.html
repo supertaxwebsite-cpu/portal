@@ -1,0 +1,164 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>My timesheet · Practice Desk prototype</title><meta name="viewport" content="width=1280">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f8fb;--surface:#fff;--surface-2:#eaf1f6;--fg:#0b1a2c;--muted:#4b5a6d;--line:#dde6ee;--accent:#0f73ab;--accent-soft:#e1f1fa;--orange:#f59a22;--navy:#07121f;--danger:#b3261e;--danger-soft:#fbe7e4;--warn:#9a5a08;--warn-soft:#fdf0dc;--info:#2b5797;--info-soft:#e4ecf8;--ok:#2f6b1e;--ok-soft:#e6f2df}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 Manrope,system-ui,sans-serif}
+.mono{font-family:"JetBrains Mono",monospace}
+header{background:var(--navy);color:#e6eef6}header .w{display:flex;align-items:center;gap:22px;padding:10px 24px;max-width:1280px;margin:auto}
+header img{height:30px}header small{color:#8fa3b8;letter-spacing:.06em;font-size:12px}
+nav a{color:#b8c7d6;padding:6px 10px;border-radius:8px;font-weight:600}nav a.on{color:#fff;background:rgba(34,163,220,.22)}
+header .me{margin-left:auto;display:flex;gap:10px;align-items:center}.bell{width:32px;height:32px;border-radius:50%;background:var(--orange);display:grid;place-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;font:inherit;font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--orange);border-color:var(--orange);color:#1b1104}.btn.ghost{background:transparent}.btn.sm{padding:4px 9px;font-size:13px}
+main{max-width:1280px;margin:auto;padding:14px 24px 40px}
+.crumb{color:var(--muted);font-size:13px;margin-bottom:8px}.crumb a{color:var(--accent);font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-info{background:var(--info-soft);color:var(--info)}.p-danger{background:var(--danger-soft);color:var(--danger)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-ok{background:var(--ok-soft);color:var(--ok)}.p-none{background:var(--surface-2);color:var(--muted)}
+
+.p-info{background:var(--info-soft);color:var(--info)}.p-danger{background:var(--danger-soft);color:var(--danger)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-ok{background:var(--ok-soft);color:var(--ok)}.p-none{background:var(--surface-2);color:var(--muted)}
+.note{color:var(--muted);font-size:12.5px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.card>h2{font-size:15px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.card>h2 .note{font-weight:500}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.top h1{margin:0;font-size:24px}
+.monthsel{display:flex;align-items:center;gap:6px}.monthsel b{min-width:130px;text-align:center;font-size:15px}
+.tabs{display:flex;gap:6px;margin:0 0 12px}.tabs span{padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:13px}.tabs span.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.today{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;padding:14px 18px;border-top:4px solid var(--ok)}
+.today .clock{font-family:"JetBrains Mono",monospace;font-size:30px;font-weight:600;color:var(--ok)}
+.today .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.prog{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden;margin-top:6px;position:relative}.prog i{display:block;height:100%;background:var(--ok)}
+.prog .job{position:absolute;left:0;top:0;height:100%;background:var(--accent);opacity:.85}
+.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:14px 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;border-left:4px solid var(--line)}
+.tile .n{font-size:24px;font-weight:800;letter-spacing:-.02em}.tile .n small{font-size:13px;color:var(--muted);font-weight:600}
+.tile .l{font-size:12.5px;color:var(--muted);font-weight:600}
+.tile.ok{border-left-color:var(--ok)}.tile.blue{border-left-color:var(--accent)}.tile.warn{border-left-color:#c77a0a}.tile.info{border-left-color:var(--info)}.tile.red{border-left-color:var(--danger)}.tile.grey{border-left-color:var(--muted)}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:12px 14px}
+.cal .wd{font-size:11.5px;font-weight:800;color:var(--muted);text-align:center;text-transform:uppercase}
+.day{border:1px solid var(--line);border-radius:10px;min-height:76px;padding:6px 8px;font-size:12px;background:var(--surface);display:flex;flex-direction:column;gap:2px}
+.day .d{font-weight:800;font-size:13px;display:flex;justify-content:space-between}
+.day .h{font-family:"JetBrains Mono",monospace;font-size:12px}
+.day.we{background:var(--bg);color:#9aa8b6;border-style:dashed}
+.day.out{visibility:hidden}
+.day.pres{border-left:4px solid var(--ok)}.day.late{border-left:4px solid #c77a0a;background:#fffaf1}.day.half{border-left:4px solid var(--info);background:#f6f9fe}.day.leave{border-left:4px solid var(--danger);background:#fdf5f4}
+.day.booked{background:repeating-linear-gradient(135deg,#fdf5f4,#fdf5f4 6px,#fff 6px,#fff 12px);border:1px dashed var(--danger)}
+.day.ph{background:#f3eefc;border-left:4px solid #6b4bb3}
+.day.now{outline:2px solid var(--ok);outline-offset:1px}
+.day.fut{color:#9aa8b6}
+.tag{font-size:10.5px;font-weight:800;border-radius:5px;padding:0 5px;align-self:flex-start}
+.t-late{background:var(--warn-soft);color:var(--warn)}.t-half{background:var(--info-soft);color:var(--info)}.t-leave{background:var(--danger-soft);color:var(--danger)}.t-ph{background:#ebe3fa;color:#5a3d9c}.t-now{background:var(--ok-soft);color:var(--ok)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;padding:0 16px 12px;font-size:12px;color:var(--muted)}.legend span{display:flex;gap:5px;align-items:center}.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.side .card{margin-bottom:14px}
+.lv{padding:10px 16px}.lv .row{display:flex;justify-content:space-between;align-items:center;font-size:13.5px;padding:3px 0}.lv .row b{font-family:"JetBrains Mono",monospace}
+.lvbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--surface-2);margin:6px 0 4px}.lvbar i{display:block;height:100%}
+.list{list-style:none;margin:0;padding:4px 0}.list li{display:flex;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);font-size:13.5px}.list li:last-child{border-bottom:0}
+.list li .s{color:var(--muted);font-size:12.5px}.list .acts{margin-left:auto;display:flex;gap:6px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);background:var(--bg);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
+.av{width:26px;height:26px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;font-size:11px;font-weight:800;color:var(--accent);flex:none}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}.btn.no{color:var(--danger)}
+
+.idea{display:inline-block;background:#6b4bb3;color:#fff;font-size:10.5px;font-weight:800;border-radius:5px;padding:1px 6px;letter-spacing:.03em;vertical-align:middle;margin-left:6px}
+.form{padding:12px 16px;display:grid;gap:9px}.form label{font-size:12.5px;font-weight:700;color:var(--muted);display:grid;gap:4px}
+.form .in{border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-weight:600;color:var(--fg);background:var(--surface)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg span{flex:1;text-align:center;padding:6px 4px;font-weight:700;font-size:12.5px;border-right:1px solid var(--line)}.seg span:last-child{border-right:0}.seg span.on{background:var(--accent-soft);color:var(--accent)}
+.warnbox{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:600}
+.okbox{background:var(--ok-soft);color:var(--ok);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:600}
+</style></head><body>
+<header><div class="w"><img src="logo.webp" alt=""><small>PRACTICE DESK</small>
+<nav><a href="home.html">Overview</a> <a href="staff-jobs.html">Jobs</a> <a href="index.html#payroll">Payroll</a> <a href="clients-s.html">Clients</a> <a href="ts-staff.html" class="on">Timesheet</a></nav>
+<div class="me"><div class="bell">🔔</div><b>Naval</b><button class="btn ghost" style="color:#fff;border-color:#2a3b50">Sign out</button></div></div></header>
+<main>
+<div class="top"><div><h1>My timesheet</h1><div class="note" style="font-size:13.5px">Your log-in times, hours, leave and job time for the month.</div></div>
+<div class="monthsel"><button class="btn sm">‹</button><b>November 2026</b><button class="btn sm">›</button><button class="btn">⬇ Download my month</button><button class="btn pri">+ Apply for leave</button></div></div>
+
+<section class="card today"><div><div class="lbl">Today · Fri 13 Nov</div><div class="clock">5h 12m</div><div class="note">Logged in 7:38 am · on time</div></div>
+<div><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700"><span>Logged in 5h 12m of 8h</span><span style="color:var(--accent)">On jobs 4h 40m (90%)</span></div>
+<div class="prog"><i style="width:65%"></i><span class="job" style="width:58%"></span></div>
+<div class="note" style="margin-top:6px">▶ Running now: <b style="color:var(--fg)">Patel Family Trust · ITR 2026</b> · 1h 05m. Breaks today: 30 min lunch.</div></div>
+<div style="display:grid;gap:6px"><button class="btn">☕ Start break <span class="idea" style="margin-left:2px">IDEA 4</span></button><button class="btn">Log out for the day</button></div></section>
+
+<div class="tiles">
+<div class="tile ok"><div class="n">9 <small>of 10</small></div><div class="l">Days worked so far</div></div>
+<div class="tile blue"><div class="n">71.5<small>h</small></div><div class="l">Hours logged in (target 80h)</div></div>
+<div class="tile info"><div class="n">88<small>%</small></div><div class="l">Time on jobs <span class="idea">IDEA 1</span></div></div>
+<div class="tile warn"><div class="n">1</div><div class="l">Late start (after 7:45)</div></div>
+<div class="tile info"><div class="n">1</div><div class="l">Half day</div></div>
+<div class="tile red"><div class="n">1 <small>+ 2 booked</small></div><div class="l">Leave days this month</div></div>
+</div>
+
+<div class="grid2"><div>
+<section class="card"><h2>November at a glance <span class="note">Click a day to see its log-ins and jobs</span></h2>
+<div class="cal" id="cal"></div>
+<div class="legend"><span><i style="background:var(--ok)"></i>Present</span><span><i style="background:#c77a0a"></i>Late</span><span><i style="background:var(--info)"></i>Half day</span><span><i style="background:var(--danger)"></i>Leave</span><span><i style="background:repeating-linear-gradient(135deg,var(--danger) 0 3px,#fff 3px 6px)"></i>Booked leave</span><span><i style="background:#6b4bb3"></i>Public holiday</span></div></section>
+
+<section class="card" style="margin-top:14px"><h2>Day by day <span class="note">Log in, log out, breaks and job time</span></h2>
+<table><thead><tr><th>Date</th><th>Logged in</th><th>Logged out</th><th>Break <span class="idea">IDEA 4</span></th><th>Hours</th><th>On jobs <span class="idea">IDEA 1</span></th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></section>
+</div>
+
+<div class="side">
+<section class="card"><h2>My leave balance <span class="note">2026 year</span></h2><div class="lv">
+<div class="row"><span><b style="font-family:inherit">Annual leave</b></span><span class="note">20 days a year</span></div>
+<div class="lvbar"><i style="width:32.5%;background:var(--danger)"></i><i style="width:10%;background:repeating-linear-gradient(135deg,var(--danger) 0 3px,#f6c9c3 3px 6px)"></i></div>
+<div class="row"><span class="note">Taken 6.5 · Booked 2 · Waiting 1</span><span><b>10.5</b> left</span></div>
+<div class="row" style="margin-top:8px"><span><b style="font-family:inherit">Sick / personal</b></span><span class="note">10 days a year</span></div>
+<div class="lvbar"><i style="width:30%;background:#c77a0a"></i></div>
+<div class="row"><span class="note">Taken 3</span><span><b>7</b> left</span></div>
+<div class="row" style="margin-top:8px"><span><b style="font-family:inherit">Unpaid / other</b></span><span><b>0</b> taken</span></div>
+</div></section>
+
+<section class="card"><h2>Apply for leave</h2><div class="form">
+<label>Type<div class="seg"><span class="on">Annual</span><span>Sick</span><span>Personal</span><span>Unpaid</span></div></label>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label>From<div class="in">Mon 21 Dec 2026</div></label><label>To<div class="in">Thu 24 Dec 2026</div></label></div>
+<label>Length<div class="seg"><span class="on">Full days</span><span>Half day (am)</span><span>Half day (pm)</span></div></label>
+<label>Reason (optional)<div class="in" style="font-weight:500;color:var(--muted)">Family trip before Christmas</div></label>
+<div class="okbox">4 working days. You'll have 6.5 days of annual leave left.</div>
+<div class="warnbox">⚠ Priya is also off 23–24 Dec. <span class="idea">IDEA 2</span></div>
+<label>Who covers my urgent jobs? <span class="idea" style="justify-self:start;margin:0">IDEA 3</span><div class="in">Jas</div></label>
+<button class="btn pri">Send to manager for approval</button>
+<div class="note">Your manager gets a notification. Approved leave shows on your calendar and the team's.</div></div></section>
+
+<section class="card"><h2>My requests</h2><ul class="list">
+<li><span>🌴</span><div><b>24–25 Nov</b> · Annual, 2 days<div class="s">Approved by Harshad on 5 Nov</div></div><span class="acts"><span class="pill p-ok">Approved</span></span></li>
+<li><span>🌴</span><div><b>27 Nov</b> · Annual, half day pm<div class="s">Sent 12 Nov</div></div><span class="acts"><span class="pill p-warn">Waiting</span><button class="btn sm">Cancel</button></span></li>
+<li><span>⏰</span><div><b>4 Nov</b> · Late start 7:58 am<div class="s">"Train delay on the Western line"</div></div><span class="acts"><span class="pill p-ok">Late approved</span></span></li>
+</ul></section>
+
+<section class="card"><h2>Who's off this week <span class="idea">IDEA 2</span></h2><ul class="list">
+<li><div class="av">PR</div><div><b>Priya</b><div class="s">Annual leave · Thu 12 – Fri 13 Nov</div></div></li>
+<li><div class="av">MK</div><div><b>Mehul</b><div class="s">Sick · today</div></div></li></ul></section>
+</div></div>
+</main>
+<script>
+const st={2:['pres','7:31','4:12',8.2,7.6],3:['pres','7:40','4:25',8.3,7.4],4:['late','7:58','4:40',8.2,7.0],5:['pres','7:35','4:15',8.2,7.5],6:['leave','Sick leave'],9:['pres','7:29','4:05',8.1,7.3],10:['half','7:41','12:05',4.4,4.0],11:['pres','7:36','4:30',8.4,7.8],12:['pres','7:33','4:20',8.3,6.9],13:['now','7:38','',5.2,4.7],24:['booked','Annual leave'],25:['booked','Annual leave'],27:['bookedp','Half day pm · waiting']};
+const cal=document.getElementById('cal');['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(w=>cal.innerHTML+=`<div class="wd">${w}</div>`);
+for(let i=0;i<6;i++)cal.innerHTML+='<div class="day out"></div>';
+for(let d=1;d<=30;d++){const dow=(d+5)%7;const we=dow>=5;const s=st[d];let cls='day',body='';
+ if(we)cls+=' we';else if(s){const[k]=s;
+  if(k==='pres'){cls+=' pres';body=`<span class="h">${s[3].toFixed(1)}h</span><span class="note">${s[1]} – ${s[2]}</span>`}
+  if(k==='late'){cls+=' late';body=`<span class="h">${s[3].toFixed(1)}h</span><span class="tag t-late">Late ${s[1]}</span>`}
+  if(k==='half'){cls+=' half';body=`<span class="h">${s[3].toFixed(1)}h</span><span class="tag t-half">Half day</span>`}
+  if(k==='leave'){cls+=' leave';body=`<span class="tag t-leave">${s[1]}</span>`}
+  if(k==='now'){cls+=' pres now';body=`<span class="h">${s[3].toFixed(1)}h so far</span><span class="tag t-now">● Working</span>`}
+  if(k==='booked'){cls+=' booked';body=`<span class="tag t-leave">🌴 ${s[1]}</span><span class="note">Approved</span>`}
+  if(k==='bookedp'){cls+=' booked';body=`<span class="tag t-leave">🌴 Half day pm</span><span class="note">Waiting</span>`}
+ } else if(d>13) cls+=' fut';
+ cal.innerHTML+=`<div class="${cls}"><div class="d">${d}${we?'<span class="note">'+(dow===5?'Sat':'Sun')+'</span>':''}</div>${body}</div>`}
+const rows=document.getElementById('rows');const dn=d=>['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(d+5)%7];
+const h=x=>{const H=Math.floor(x),M=Math.round((x-H)*60);return H+'h '+String(M).padStart(2,'0')+'m'};
+[13,12,11,10,9,6,5,4,3,2].forEach(d=>{const s=st[d];let stat,inn='—',out='—',hr='—',jb='—',br='—',act='';
+ if(s[0]==='leave'){stat='<span class="pill p-danger">Sick leave</span>'}
+ else{inn=s[1]+' am';out=s[2]?s[2]+' pm':'<span style="color:var(--ok);font-weight:700">Still in</span>';br=d===13?'30m':'30m';hr=h(s[3]);jb=h(s[4])+' <span class="note">('+Math.round(s[4]/s[3]*100)+'%)</span>';
+  stat={pres:'<span class="pill p-ok">Present</span>',late:'<span class="pill p-warn">Late · approved</span>',half:'<span class="pill p-info">Half day</span>',now:'<span class="pill p-ok">Working</span>'}[s[0]];
+  if(d===10)act='<button class="btn sm">Explain</button>';if(d===12)act='<span class="note">Forgot to stop a job? <a style="color:var(--accent);font-weight:700">Fix time</a></span>'}
+ rows.innerHTML+=`<tr><td><b>${dn(d)} ${d} Nov</b></td><td class="m">${inn}</td><td class="m">${out}</td><td class="m">${br}</td><td class="m">${hr}</td><td class="m">${jb}</td><td>${stat}</td><td>${act}</td></tr>`});
+</script><style>.protobar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;gap:6px;align-items:center;background:#07121f;color:#e6eef6;border-radius:999px;padding:6px 8px 6px 16px;box-shadow:0 10px 30px rgba(7,18,31,.35);font:600 13px Manrope,system-ui,sans-serif;white-space:nowrap}
+.protobar a{color:#e6eef6;text-decoration:none;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.08)}.protobar a:hover{background:rgba(255,255,255,.18)}.protobar a.sw{background:#f59a22;color:#1b1104}.protobar .who{color:#8fa3b8;margin-right:6px}
+nav a[href]{cursor:pointer;text-decoration:none}.tname{cursor:pointer}.tname:hover{text-decoration:underline;color:var(--accent)}body{padding-bottom:70px}</style>
+<div class="protobar"><span class="who">Prototype · sample data · Staff view · My timesheet</span>
+<a href="client-s.html">‹ Client page</a><a href="index.html">All screens</a><a class="sw" href="manager.html">Switch to manager</a></div></body></html>

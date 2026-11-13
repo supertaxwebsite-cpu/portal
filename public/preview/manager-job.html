@@ -1,0 +1,202 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Job page (reviewing) · Practice Desk prototype</title><meta name="viewport" content="width=1280">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f8fb;--surface:#fff;--surface-2:#eaf1f6;--fg:#0b1a2c;--muted:#4b5a6d;--line:#dde6ee;--accent:#0f73ab;--accent-soft:#e1f1fa;--orange:#f59a22;--navy:#07121f;--danger:#b3261e;--danger-soft:#fbe7e4;--warn:#9a5a08;--warn-soft:#fdf0dc;--info:#2b5797;--info-soft:#e4ecf8;--ok:#2f6b1e;--ok-soft:#e6f2df}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 Manrope,system-ui,sans-serif}
+.mono{font-family:"JetBrains Mono",monospace}
+header{background:var(--navy);color:#e6eef6}header .w{display:flex;align-items:center;gap:22px;padding:10px 24px;max-width:1280px;margin:auto}
+header img{height:30px}header small{color:#8fa3b8;letter-spacing:.06em;font-size:12px}
+nav a{color:#b8c7d6;padding:6px 10px;border-radius:8px;font-weight:600}nav a.on{color:#fff;background:rgba(34,163,220,.22)}
+header .me{margin-left:auto;display:flex;gap:10px;align-items:center}.bell{width:32px;height:32px;border-radius:50%;background:var(--orange);display:grid;place-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;font:inherit;font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--orange);border-color:var(--orange);color:#1b1104}.btn.ghost{background:transparent}.btn.sm{padding:4px 9px;font-size:13px}
+main{max-width:1280px;margin:auto;padding:14px 24px 40px}
+.crumb{color:var(--muted);font-size:13px;margin-bottom:8px}.crumb a{color:var(--accent);font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-info{background:var(--info-soft);color:var(--info)}.p-danger{background:var(--danger-soft);color:var(--danger)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-ok{background:var(--ok-soft);color:var(--ok)}.p-none{background:var(--surface-2);color:var(--muted)}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;border-top:4px solid var(--accent)}
+.hero h1{margin:0;font-size:21px;letter-spacing:-.01em}.hero h1 span{color:var(--muted);font-weight:600}
+.facts{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:10px;color:var(--muted)}.facts b{color:var(--fg);font-weight:700}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.count{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-weight:600;font-size:13px;background:var(--bg)}
+.count i{font-style:normal;min-width:20px;height:20px;border-radius:10px;display:grid;place-items:center;font-size:12px;color:#fff;background:var(--muted);padding:0 5px}
+.count.red i{background:var(--danger)}.count.amber i{background:#c77a0a}.count.blue i{background:var(--accent)}.count.green i{background:var(--ok)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;margin-top:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.card>h2{font-size:15px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.card>h2 .note{font-weight:500}
+.note{color:var(--muted);font-size:12.5px}
+.stage{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.stage:last-child{border-bottom:0}
+.dot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;border:2px solid var(--line);color:var(--muted);background:var(--surface)}
+.stage.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}.stage.now{background:linear-gradient(90deg,var(--accent-soft),transparent 70%)}.stage.now .dot{border-color:var(--accent);color:var(--accent)}
+.stage .t{font-weight:700}.stage .s{color:var(--muted);font-size:12.5px}
+.stage .who{display:flex;gap:8px;align-items:center}
+.av{width:26px;height:26px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;font-size:11px;font-weight:800;color:var(--accent)}
+.hrs{font-family:"JetBrains Mono",monospace;font-size:12.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;background:var(--bg)}
+.running{color:var(--ok);font-weight:700}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.check{list-style:none;margin:0;padding:6px 16px 12px}.check li{display:flex;gap:9px;padding:6px 0;border-bottom:1px dashed var(--line);align-items:flex-start}
+.check li.d span{text-decoration:line-through;color:var(--muted)}.check li .note{margin-left:auto;white-space:nowrap}
+.bar{height:6px;border-radius:3px;background:var(--surface-2);margin:0 16px 4px;overflow:hidden}.bar i{display:block;height:100%;width:43%;background:var(--ok)}
+.q{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px 16px}
+.qc{border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:13.5px}.qc.a{border-left:4px solid var(--danger)}.qc.r{border-left:4px solid var(--ok)}
+.qc .h{font-size:12px;color:var(--muted);margin-bottom:4px}.qc .f{color:var(--accent);font-weight:600;font-size:12.5px;margin-top:5px}
+.side .card{margin-bottom:14px}.side h2{font-size:14px}
+.links{list-style:none;margin:0;padding:6px 8px}.links li{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;font-weight:600}
+.links li:hover{background:var(--bg)}.links .ic{width:22px;text-align:center}.links .badge{margin-left:auto;background:var(--danger);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px}
+.links .sub{margin-left:auto;color:var(--muted);font-weight:500;font-size:12.5px}
+.stbox{padding:12px 14px;display:grid;gap:8px}
+select{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid var(--line);width:100%;background:var(--surface)}
+.annot{position:absolute;background:#fff7d6;border:1px solid #e8c656;border-radius:8px;padding:6px 9px;font-size:12px;font-weight:600;color:#6b5200;box-shadow:0 4px 14px rgba(0,0,0,.08);max-width:220px}
+
+.task{border-bottom:1px solid var(--line)}.task:last-child{border-bottom:0}
+.trow{display:grid;grid-template-columns:30px minmax(0,1fr) 210px auto;gap:12px;align-items:center;padding:12px 16px}
+.task.now>.trow{background:linear-gradient(90deg,var(--accent-soft),transparent 75%)}
+.task.done>.trow{background:var(--ok-soft)}.task.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+.task.iq>.trow{background:var(--danger-soft)}.task.iq .dot{border-color:var(--danger);color:var(--danger)}
+.task.later>.trow{opacity:.62}
+.task.now .dot{border-color:var(--accent);color:var(--accent)}
+.trow .t{font-weight:800;text-transform:uppercase;font-size:13px;letter-spacing:.02em}.trow .s{color:var(--muted);font-size:12.5px}
+.trow select{font-weight:600}
+.meta{display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:150px}
+.icons{color:var(--muted);font-size:15px;letter-spacing:6px}
+.tsub{padding:4px 16px 14px 58px}
+.tsub .check{padding:0}.tsub .check li{padding:6px 0}
+.subfoot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.iqbody{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.od{color:var(--danger);font-weight:700;font-size:12px}
+</style><style>
+.tabsrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tab{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-weight:700;font-size:13px;display:flex;gap:7px;align-items:center}
+.tab i{font-style:normal;background:var(--surface-2);border-radius:10px;padding:0 7px;font-size:12px}
+.tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}.tab.on i{background:var(--orange);color:#1b1104}
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}
+.k{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}.k .l{color:var(--muted);font-size:12.5px;font-weight:600}.k .v{font-family:"JetBrains Mono",monospace;font-size:24px;margin-top:4px}
+.prog{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden;margin-top:8px;position:relative}.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--orange),#7cbf4a)}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);background:var(--bg)}
+td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}tr.run td{background:var(--accent-soft)}tr.late td:first-child{box-shadow:inset 4px 0 0 var(--danger)}
+.tl{font-weight:700;font-size:13px}.tl.r{color:var(--danger)}.tl.a{color:#b06d06}.tl.g{color:var(--ok)}
+.ul{height:3px;border-radius:2px;margin-top:4px;width:70px}.ul.r{background:var(--danger)}.ul.a{background:var(--orange)}.ul.g{background:#7cbf4a}
+.cx{font-size:12px;font-weight:700;border-radius:6px;padding:2px 8px}.cx.h{background:var(--danger-soft);color:var(--danger)}.cx.m{background:var(--warn-soft);color:var(--warn)}.cx.s{background:var(--ok-soft);color:var(--ok)}
+.prio{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;background:var(--accent)}
+td select{width:auto;padding:5px 8px;font-size:13px}
+.tname{font-weight:700;color:var(--accent)}.small{font-size:12.5px;color:var(--muted)}
+.overlay{position:fixed;inset:0;background:rgba(7,18,31,.42);display:flex;justify-content:flex-end}
+.drawer{width:430px;background:var(--surface);height:100%;box-shadow:-10px 0 40px rgba(0,0,0,.2);display:flex;flex-direction:column}
+.drawer header{background:var(--surface);color:var(--fg);border-bottom:1px solid var(--line);padding:16px 18px;display:flex;justify-content:space-between;align-items:center}
+.drawer .b{padding:16px 18px;display:grid;gap:12px;overflow:auto}.drawer label{display:grid;gap:5px;font-weight:700;font-size:13px}
+.drawer textarea{font:inherit;min-height:90px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}.seg span{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:13px;font-weight:600}.seg span.on{background:var(--danger-soft);border-color:var(--danger);color:var(--danger)}
+.task.rn>.trow{background:var(--warn-soft)}.task.rn .dot{border-color:var(--warn);color:var(--warn)}
+</style></head><body>
+<header><div class="w"><img src="logo.webp" alt=""><small>PRACTICE DESK</small>
+<nav><a href="manager.html">Overview</a> <a href="jobs.html" class="on">Jobs</a> <a href="index.html#payroll">Payroll</a> <a href="clients.html">Clients</a> <a href="index.html#payroll">Prospects</a> <a href="ts-manager.html">Timesheet</a> <a href="index.html#payroll">Team</a> <a href="index.html#payroll">Meetings</a></nav>
+<div class="me"><div class="bell">🔔</div><b>Harshad</b><button class="btn ghost" style="color:#fff;border-color:#2a3b50">Sign out</button></div></div></header>
+<main>
+<div class="crumb"><a>← Jobs</a> &nbsp;/&nbsp; Job page</div>
+<section class="hero">
+  <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start">
+    <div><h1>Workpaper Solutions Pty Ltd <span>· BAS Q4 FY26</span></h1>
+      <div class="facts"><span>Practice <b>Supertax</b></span><span>Entity <b>Company</b></span><span>Due <b>25 Aug 2026</b> <span class="pill p-danger">79 days overdue</span></span><span>Priority <b>Normal</b></span><span>Client signature <b>Needed</b></span></div></div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="pill p-info" style="font-size:13px;padding:4px 12px">In progress</span><button class="btn">✎ Edit job</button></div>
+  </div>
+  <div class="counts">
+    <span class="count red">Internal queries <i>1</i></span><span class="count amber">Client queries <i>0</i></span><span class="count red">Review notes <i>2</i></span>
+    <span class="count blue">Files <i>3</i></span><span class="count green">Checklist <i>3/7</i></span><span class="count">Stage <i style="background:var(--accent)">2 of 4</i></span>
+    <span class="count">Time logged <i style="background:var(--navy)">4.5h</i></span>
+    <span style="flex:1"></span><button class="btn sm">✉ Email client</button><button class="btn sm">📎 Files</button><button class="btn sm">🔗 Related clients (2)</button>
+  </div>
+</section>
+
+<div class="grid">
+<div>
+  <section class="card">
+    <h2>Tasks <span class="note">Each task has its own stage, time and person. Change the stage from the list on the row.</span></h2>
+
+    <div class="task done">
+      <div class="trow"><div class="dot">✓</div>
+        <div><div class="t">Preparation · Naval</div><div class="s">10 Nov → 13 Nov · checklist 7/7 · submitted with a note: “Fuel GST query answered, ready to check”</div></div>
+        <select><option>Completed</option></select>
+        <div class="meta"><span class="hrs">3.5h</span><div class="av">NV</div><span class="icons">🕘</span></div></div>
+      <div class="tsub" style="padding-top:8px"><span class="note">▸ Show Naval's checklist (7 of 7 done)</span></div>
+    </div>
+    <div class="task iq">
+      <div class="trow"><div class="dot">?</div>
+        <div><div class="t">Internal query · Naval → Harshad</div><div class="s">Raised 12 Nov, 2:10 pm · answered 3:05 pm</div></div>
+        <select><option>Answered</option><option>Open</option></select>
+        <div class="meta"><span class="hrs">0.2h</span><div class="av">HK</div><span class="icons">🕘</span></div></div>
+      <div class="tsub"><div class="iqbody">
+        <div class="qc a"><div class="h"><span class="pill p-danger">Query</span> Naval</div>Fuel receipts have no tax invoice. Can we claim the GST?<div class="f">📎 query-sheet.xlsx</div></div>
+        <div class="qc r"><div class="h"><span class="pill p-ok">Response</span> Harshad</div>Only claim if under $82.50. Otherwise ask the client for tax invoices.<div class="f">📎 client-query-list.xlsx</div></div></div></div>
+    </div>
+
+
+    <div class="task rn">
+      <div class="trow"><div class="dot">!</div>
+        <div><div class="t">Review note · Harshad → Naval</div><div class="s">Raised 13 Nov during Review · <span class="pill p-danger">Major</span> GST coding</div></div>
+        <select><option>Open: Naval to fix</option><option>Fixed: ready to check</option><option>Cleared</option></select>
+        <div class="meta"><span class="hrs">0.3h</span><div class="av">HK</div><span class="icons">🕘</span></div></div>
+      <div class="tsub"><div class="iqbody">
+        <div class="qc a" style="border-left-color:var(--warn)"><div class="h"><span class="pill p-warn">Mistake</span> Harshad</div>Fuel receipts without tax invoices were claimed in full (G11 overstated by $1,240). Reverse the GST on those over $82.50.<div class="f">📎 marked-up-workpaper.pdf</div></div>
+        <div class="qc r"><div class="h"><span class="pill p-ok">Fix</span> Naval · 13 Nov, 4:20 pm</div>Reversed GST on 6 receipts. G11 now $18,410. Workpaper updated.<div class="f">📎 workpaper-v2.xlsx</div></div></div></div>
+    </div>
+    <div class="task rn">
+      <div class="trow"><div class="dot">!</div>
+        <div><div class="t">Review note · Harshad → Naval</div><div class="s">Raised 13 Nov during Review · <span class="pill p-warn">Minor</span> Process</div></div>
+        <select><option>Open: Naval to fix</option></select>
+        <div class="meta"><span class="hrs">0.0h</span><div class="av">NV</div></div></div>
+      <div class="tsub"><div class="qc a" style="border-left-color:var(--warn)"><div class="h"><span class="pill p-warn">Mistake</span> Harshad</div>Checklist ticked "Compared with last period" but no variance notes are saved in Files.</div></div>
+    </div>
+    <div class="task now">
+      <div class="trow"><div class="dot">2</div>
+        <div><div class="t">Review · Harshad (you)</div><div class="s"><span class="running">● Running 0:42</span> · started 13 Nov · <span class="od">Overdue by 79 days</span></div></div>
+        <select><option>Reviewing</option><option>Not started</option><option>Review notes sent back</option><option>Approved →</option></select>
+        <div class="meta"><span class="hrs">1.0h</span><div class="av">HK</div><span class="icons">⏸ 🕘</span></div></div>
+      <div class="tsub">
+        <div class="note" style="margin-bottom:4px;font-weight:700;color:var(--fg)">Review checklist · 3 of 5 done</div>
+        <div class="bar" style="margin:0 0 6px"><i style="width:60%"></i></div>
+        <ul class="check">
+          <li class="d"><input type="checkbox" checked><span>Figures agree to the workpapers and bank</span><span class="note">Harshad · 13 Nov</span></li>
+          <li class="d"><input type="checkbox" checked><span>GST coding sample-checked (10 transactions)</span><span class="note">Harshad · 13 Nov</span></li>
+          <li class="d"><input type="checkbox" checked><span>Compared with last period, variances make sense</span><span class="note">Harshad · 13 Nov</span></li>
+          <li><input type="checkbox"><span>Review notes cleared</span></li>
+          <li><input type="checkbox"><span>Ready to send to the client</span></li>
+        </ul>
+        <div class="subfoot"><span class="note">Found a mistake? Add a review note. When everything is cleared, approve it.</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm">⚠ Add review note</button><button class="btn sm">↩ Send back to Naval</button><button class="btn sm pri">Approve → Client signature</button></div></div>
+      </div>
+    </div>
+    <div class="task later"><div class="trow"><div class="dot">3</div>
+      <div><div class="t">Client signature</div><div class="s">Send for signing, then mark signed</div></div>
+      <select disabled><option>Select task stage</option></select><div class="meta"><span class="hrs">0.0h</span><div class="av">HK</div></div></div></div>
+    <div class="task later"><div class="trow"><div class="dot">4</div>
+      <div><div class="t">Lodge</div><div class="s">Lodgment date and receipt number</div></div>
+      <select disabled><option>Select task stage</option></select><div class="meta"><span class="hrs">0.0h</span><div class="av">—</div></div></div></div>
+  </section>
+  <p class="note" style="margin:10px 4px 0">Example of a finished task row: <span class="pill p-ok">✓ Preparation · Completed · 3.5h · Naval</span> turns green, and the next task opens with its own stage list.</p>
+</div>
+
+<aside class="side">
+  <section class="card"><h2>Job notes</h2><div style="padding:12px 16px;white-space:pre-wrap">Client uses Xero. Check fuel receipts.
+Director signs the BAS, not the bookkeeper.</div>
+    <div style="padding:0 16px 12px" class="note">📌 Prefers WhatsApp after 5pm<br>📌 Xero login in the shared vault</div></section>
+  <section class="card"><h2>Summary</h2><ul class="links">
+    <li><span class="ic">⚠️</span>Review notes<span class="badge">2</span></li><li><span class="ic">📝</span>Client notes<span class="sub">4</span></li>
+    <li><span class="ic">🔒</span>Management notes<span class="sub">1</span></li>
+    <li><span class="ic">🕘</span>Job history &amp; time<span class="sub">4.5h</span></li>
+    <li><span class="ic">👤</span>Client summary</li></ul></section>
+  <section class="card"><h2>People</h2><div class="stbox" style="gap:6px">
+    <div style="display:flex;justify-content:space-between"><span class="note">Assigned</span><b>Naval</b></div>
+    <div style="display:flex;justify-content:space-between"><span class="note">Reviewer</span><b>Harshad</b></div>
+    <div style="display:flex;justify-content:space-between"><span class="note">Signing</span><b>Harshad</b></div></div></section>
+  <section class="card"><h2>Other actions</h2><ul class="links">
+    <li><span class="ic">✎</span>Edit job details</li><li><span class="ic">🤝</span>Hand to a team member</li><li><span class="ic" style="color:var(--danger)">🗑</span><span style="color:var(--danger)">Delete job</span></li></ul></section>
+</aside>
+</div>
+</main><style>.protobar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;gap:6px;align-items:center;background:#07121f;color:#e6eef6;border-radius:999px;padding:6px 8px 6px 16px;box-shadow:0 10px 30px rgba(7,18,31,.35);font:600 13px Manrope,system-ui,sans-serif;white-space:nowrap}
+.protobar a{color:#e6eef6;text-decoration:none;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.08)}.protobar a:hover{background:rgba(255,255,255,.18)}.protobar a.sw{background:#f59a22;color:#1b1104}.protobar .who{color:#8fa3b8;margin-right:6px}
+nav a[href]{cursor:pointer;text-decoration:none}.tname{cursor:pointer}.tname:hover{text-decoration:underline;color:var(--accent)}body{padding-bottom:70px}</style>
+<div class="protobar"><span class="who">Prototype · sample data · Manager / master view · Job page (reviewing)</span>
+<a href="jobs.html">‹ All jobs</a><a href="review.html">Review notes ›</a><a href="index.html">All screens</a><a class="sw" href="home.html">Switch to staff</a></div></body></html>

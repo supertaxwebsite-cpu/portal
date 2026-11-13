@@ -1,0 +1,55 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Practice Desk Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap">
+<style>
+/* Layout: a hub page, two role columns of screen links, matching the portal's navy/orange brand */
+:root{--bg:#f4f8fb;--surface:#fff;--fg:#0b1a2c;--muted:#4b5a6d;--line:#dde6ee;--accent:#0f73ab;--orange:#f59a22;--navy:#07121f;--on-navy:#e6eef6;--chip:#e1f1fa;--font:Manrope,system-ui,sans-serif}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0b1522;--surface:#122030;--fg:#e6eef6;--muted:#9fb1c4;--line:#22364b;--accent:#5bb8ea;--navy:#050c15;--chip:#16324a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b1522;--surface:#122030;--fg:#e6eef6;--muted:#9fb1c4;--line:#22364b;--accent:#5bb8ea;--navy:#050c15;--chip:#16324a;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--font)}
+.band{background:var(--navy);color:var(--on-navy)}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.band .wrap{padding-block:28px 30px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.band img{height:34px}
+.band h1{margin:0;font-size:26px;letter-spacing:-.01em;text-wrap:balance}
+.band p{margin:4px 0 0;color:#a9bbcd;max-width:62ch}
+main.wrap{padding-block:24px 48px;display:grid;gap:20px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}
+section{background:var(--surface);border:1px solid var(--line);border-radius:14px;min-width:0}
+section h2{margin:0;padding:14px 18px;border-bottom:1px solid var(--line);font-size:17px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+section h2 span{font-size:12.5px;font-weight:600;color:var(--muted)}
+ol{list-style:none;margin:0;padding:6px}
+li a{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;color:inherit;text-decoration:none}
+li a:hover,li a:focus-visible{background:var(--chip);outline:none}
+li a b{display:block;font-size:14.5px}
+li a small{color:var(--muted);font-size:12.5px}
+li a i{font-style:normal;width:28px;height:28px;border-radius:8px;background:var(--chip);color:var(--accent);display:grid;place-items:center;font-weight:800;font-size:12px}
+li a em{font-style:normal;color:var(--accent);font-weight:700;font-size:13px}
+.start{display:inline-block;margin:0 18px 16px;background:var(--orange);color:#1b1104;font-weight:800;text-decoration:none;padding:8px 14px;border-radius:9px}
+.note{color:var(--muted);font-size:13.5px;padding:14px 18px;margin:0}
+</style></head><body>
+<div class="band"><div class="wrap"><img src="logo.webp" alt="Supertax"><div><h1>Practice Desk, new design</h1><p>A clickable preview with sample data. Nothing here touches the live portal. Use the top menu inside each screen, or the bar at the bottom to step through.</p></div></div></div>
+<main class="wrap">
+<div class="cols">
+<section><h2>Staff view <span>logged in as Naval</span></h2><ol>
+<li><a href="home.html"><i>1</i><span><b>My tasks</b><small>Main page after logging in</small></span><em>Open</em></a></li>
+<li><a href="staff-jobs.html"><i>2</i><span><b>My jobs</b><small>Own jobs plus unassigned ones to pick up</small></span><em>Open</em></a></li>
+<li><a href="staff-job.html"><i>3</i><span><b>Job page</b><small>Stages, checklist, internal queries, review notes</small></span><em>Open</em></a></li>
+<li><a href="clients-s.html"><i>4</i><span><b>Clients</b><small>Only the client types you allow</small></span><em>Open</em></a></li>
+<li><a href="client-s.html"><i>5</i><span><b>Client page</b><small>No management notes for staff</small></span><em>Open</em></a></li>
+<li><a href="ts-staff.html"><i>6</i><span><b>My timesheet</b><small>Month calendar, leave balance, apply for leave</small></span><em>Open</em></a></li>
+</ol><a class="start" href="home.html">Start the staff tour</a></section>
+<section><h2>Manager and master view <span>logged in as Harshad</span></h2><ol>
+<li><a href="manager.html"><i>1</i><span><b>Practice overview</b><small>Tiles, jobs by status, team board, attention list</small></span><em>Open</em></a></li>
+<li><a href="jobs.html"><i>2</i><span><b>All jobs</b><small>Every job with stage and flags</small></span><em>Open</em></a></li>
+<li><a href="manager-job.html"><i>3</i><span><b>Job page while reviewing</b><small>Approve, send back, reply to queries</small></span><em>Open</em></a></li>
+<li><a href="review.html"><i>4</i><span><b>Review notes</b><small>Mistakes noted on a job</small></span><em>Open</em></a></li>
+<li><a href="review-add.html"><i>5</i><span><b>Add a review note</b><small>Type, severity, what to fix</small></span><em>Open</em></a></li>
+<li><a href="clients.html"><i>6</i><span><b>Clients</b><small>Full list with saved views</small></span><em>Open</em></a></li>
+<li><a href="client.html"><i>7</i><span><b>Client page</b><small>Includes management notes</small></span><em>Open</em></a></li>
+<li><a href="ts-manager.html"><i>8</i><span><b>Team attendance</b><small>Whole month for everyone, leave approvals</small></span><em>Open</em></a></li>
+</ol><a class="start" href="manager.html">Start the manager tour</a></section>
+</div>
+<section id="payroll"><p class="note">Payroll, Prospects, Team and Meetings keep their current design, so they aren't in this preview. Buttons inside the screens are for show only.</p></section>
+</main>
+</body></html>
