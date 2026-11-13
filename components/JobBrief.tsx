@@ -4,6 +4,7 @@ import type { createClient } from "@/lib/supabase/client";
 import type { Job, Person } from "@/lib/types";
 import { svcLabel, ST, fmtDate, daysFrom } from "@/lib/domain";
 import { checklistFor, STEPS } from "@/lib/checklists";
+import ReviewNotes from "./ReviewNotes";
 import type { JobFile } from "./JobFiles";
 
 type SB = ReturnType<typeof createClient>;
@@ -128,6 +129,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
           <li key={i}><label className={c ? "done" : ""}><input type="checkbox" checked={!!c} disabled={readOnly || missing} onChange={() => toggle(i, !!c)} /> {i}</label>
             {c ? <span className="note">{personName(c.done_by) || "someone"} · {when(c.done_at)}</span> : null}</li>); })}</ul>
       </section> : null}
+
+      <ReviewNotes job={job} meId={meId} canAnswerAll={canAnswerAll} readOnly={readOnly} supabase={supabase} personName={personName} say={say} />
 
       <section className="briefsec">
         <h3>Internal queries{questions.length ? ` (${questions.length})` : ""}</h3>

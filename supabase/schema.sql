@@ -2493,3 +2493,82 @@ do $$ begin
     begin alter publication supabase_realtime add table public.leave_requests; exception when duplicate_object then null; end;
   end if;
 end $$;
+-- ============================================================
+-- Review notes (Nov 2026). Add-only: one new table, a trigger, and two more bell notice types.
+-- The reviewer raises a note on a job (Major or Minor, with a type such as GST coding).
+-- The preparer writes how they fixed it; the reviewer clears it. Both get a bell notice.
+-- ============================================================
+create table if not exists public.review_notes (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references public.jobs (id) on delete cascade,
+  author_id uuid references public.profiles (id) on delete set null default auth.uid(),
+  to_id uuid references public.profiles (id) on delete set null,
+  severity text not null default 'minor' check (severity in ('major', 'minor')),
+  category text not null default 'Other' check (length(category) between 1 and 60),
+  body text not null check (length(trim(body)) > 0 and length(body) <= 4000),
+  status text not null default 'open' check (status in ('open', 'fixed', 'cleared')),
+  fix_body text not null default '' check (length(fix_body) <= 4000),
+  fixed_by uuid references public.profiles (id) on delete set null,
+  fixed_at timestamptz,
+  cleared_by uuid references public.profiles (id) on delete set null,
+  cleared_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists review_notes_job_idx on public.review_notes (job_id, created_at);
+create index if not exists review_notes_to_idx on public.review_notes (to_id, status);
+alter table public.review_notes enable row level security;
+revoke all on public.review_notes from anon;
+drop policy if exists "see review notes" on public.review_notes;
+create policy "see review notes" on public.review_notes for select to authenticated
+  using (public.is_active_member() and exists (select 1 from public.jobs j where j.id = job_id));
+drop policy if exists "raise review notes" on public.review_notes;
+create policy "raise review notes" on public.review_notes for insert to authenticated
+  with check (public.is_active_member() and author_id = auth.uid() and status = 'open'
+    and exists (select 1 from public.jobs j where j.id = job_id));
+drop policy if exists "fix or clear review notes" on public.review_notes;
+create policy "fix or clear review notes" on public.review_notes for update to authenticated
+  using (public.is_active_member() and (author_id = auth.uid() or to_id = auth.uid() or public.my_role() in ('master', 'manager')))
+  with check (public.is_active_member());
+drop policy if exists "remove review notes" on public.review_notes;
+create policy "remove review notes" on public.review_notes for delete to authenticated
+  using (author_id = auth.uid() or public.my_role() = 'master');
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned',
+                  'sign_reminder', 'client_query_reminder', 'sign_handover', 'review_note', 'review_fixed'));
+
+create or replace function public.review_note_changed() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; label text; who uuid := coalesce(auth.uid(), new.author_id);
+begin
+  select * into j from public.jobs where id = new.job_id;
+  select coalesce(c.name, '') || ' · ' || j.period into label from public.clients c where c.id = j.client_id;
+  if tg_op = 'INSERT' then
+    if new.to_id is not null and new.to_id <> who then
+      insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+      values (new.to_id, who, 'review_note', new.job_id, j.service, coalesce(label, '') || ': ' || left(new.body, 160));
+    end if;
+    insert into public.job_activity (job_id, actor_id, kind, body)
+    values (new.job_id, who, 'comment', 'Review note (' || new.severity || ', ' || new.category || '): ' || new.body);
+  elsif new.status = 'fixed' and old.status = 'open' then
+    if new.author_id is not null and new.author_id <> who then
+      insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+      values (new.author_id, who, 'review_fixed', new.job_id, j.service, coalesce(label, '') || ': ' || left(new.fix_body, 160));
+    end if;
+    insert into public.job_activity (job_id, actor_id, kind, body) values (new.job_id, who, 'comment', 'Review note fixed: ' || new.fix_body);
+  elsif new.status = 'cleared' and old.status <> 'cleared' then
+    insert into public.job_activity (job_id, actor_id, kind, body) values (new.job_id, who, 'comment', 'Review note cleared: ' || left(new.body, 200));
+  end if;
+  return new;
+end $$;
+revoke all on function public.review_note_changed() from public, anon, authenticated;
+drop trigger if exists review_notes_changed on public.review_notes;
+create trigger review_notes_changed after insert or update on public.review_notes
+  for each row execute function public.review_note_changed();
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.review_notes; exception when duplicate_object then null; end;
+  end if;
+end $$;

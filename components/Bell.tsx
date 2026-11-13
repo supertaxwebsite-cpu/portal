@@ -5,14 +5,14 @@ import { svcLabel } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
 export interface Notice {
-  id: string; user_id: string; actor_id: string | null; kind: "job_assigned" | "internal_query" | "query_answered" | "review" | "meeting" | "review_approved" | "review_returned" | "sign_reminder" | "client_query_reminder" | "sign_handover";
+  id: string; user_id: string; actor_id: string | null; kind: "job_assigned" | "internal_query" | "query_answered" | "review" | "meeting" | "review_approved" | "review_returned" | "sign_reminder" | "client_query_reminder" | "sign_handover" | "review_note" | "review_fixed";
   job_id: string | null; meeting_id: string | null; service: string; body: string; read_at: string | null; created_at: string;
 }
 
 const WHAT: Record<Notice["kind"], string> = {
   job_assigned: "assigned you a job",
   internal_query: "sent you an internal query",
-  query_answered: "sent a job back to you",
+  query_answered: "answered your query",
   review: "sent you a job to review",
   meeting: "invited you to a meeting",
   review_approved: "approved your job",
@@ -20,6 +20,8 @@ const WHAT: Record<Notice["kind"], string> = {
   sign_reminder: "reminder: the client still hasn't signed. Contact them for the signature",
   client_query_reminder: "reminder: no reply yet to your query. Follow up with the client",
   sign_handover: "handed you a job to send to the client for signing",
+  review_note: "left you a review note to fix",
+  review_fixed: "fixed a review note for you to check",
 };
 
 function ago(s: string) {

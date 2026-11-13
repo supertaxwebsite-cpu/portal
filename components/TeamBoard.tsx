@@ -6,7 +6,7 @@ import { daysFrom, svcLabel, todayISO } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
 export interface BoardRow { id: string; name: string; title: string; js: Job[] }
-interface Hours { today: Record<string, number>; week: Record<string, number>; inNow: Set<string> }
+interface Hours { today: Record<string, number>; week: Record<string, number>; inNow: Set<string>; notes: { to_id: string | null; status: string; category: string; created_at: string }[] | null }
 
 /** 6-day week (Mon to Sat) at 8h 15m a day. */
 const WEEK_TARGET = 6 * 8.25;
@@ -32,11 +32,12 @@ export default function TeamBoard({ supabase, rows, timers, jobById, clientName,
     let live = true;
     (async () => {
       const from = monday(), today = todayISO();
-      const [e, a] = await Promise.all([
+      const [e, a, rn] = await Promise.all([
         supabase.from("timesheet_entries").select("user_id,work_date,hours").gte("work_date", from).lte("work_date", today),
         supabase.from("attendance").select("user_id").is("clock_out", null),
+        supabase.from("review_notes").select("to_id,status,category,created_at").gte("created_at", `${today.slice(0, 4)}-01-01`),
       ]);
-      const data: Hours = { today: {}, week: {}, inNow: new Set(((a.data as { user_id: string }[] | null) ?? []).map((x) => x.user_id)) };
+      const data: Hours = { notes: rn.error ? null : (rn.data as Hours["notes"]), today: {}, week: {}, inNow: new Set(((a.data as { user_id: string }[] | null) ?? []).map((x) => x.user_id)) };
       for (const r of (e.data as { user_id: string; work_date: string; hours: number }[] | null) ?? []) {
         const h = Number(r.hours) || 0;
         data.week[r.user_id] = (data.week[r.user_id] ?? 0) + h;
@@ -52,7 +53,7 @@ export default function TeamBoard({ supabase, rows, timers, jobById, clientName,
     <div className="panel teamboard" style={{ marginBottom: 16 }}>
       <div className="ph"><h2>{title}</h2><span className="note">Live: who is working on what right now</span></div>
       <div style={{ overflowX: "auto" }}>
-        <table><thead><tr><th>Team member</th><th>Working now</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th style={{ textAlign: "right" }}>Hours today</th><th>Hours this week</th><th></th></tr></thead>
+        <table><thead><tr><th>Team member</th><th>Working now</th><th style={{ textAlign: "right" }}>Open jobs</th><th style={{ textAlign: "right" }}>Overdue</th><th style={{ textAlign: "right" }}>Hours today</th><th>Hours this week</th>{hours?.notes ? <th>Review notes</th> : null}<th></th></tr></thead>
           <tbody>{rows.map((r) => {
             const t = timers.find((x) => x.user_id === r.id);
             const j = t?.job_id ? jobById(t.job_id) : undefined;
@@ -69,10 +70,17 @@ export default function TeamBoard({ supabase, rows, timers, jobById, clientName,
                 <td className="mono" style={{ textAlign: "right", color: od ? "var(--danger)" : "var(--ok)" }}>{od}</td>
                 <td className="mono" style={{ textAlign: "right" }}>{none ? "" : hours ? `${(hours.today[r.id] ?? 0).toFixed(1)}h` : "…"}</td>
                 <td>{none ? null : <div className="wkbar" title={`${fmt(wk)} of ${fmt(WEEK_TARGET)} (Mon to Sat, 8h 15m a day)`}><span className="mono">{fmt(wk)} / {fmt(WEEK_TARGET)}</span><i><b style={{ width: `${Math.min(100, (wk / WEEK_TARGET) * 100)}%` }} /></i></div>}</td>
+                {hours?.notes ? <td>{none ? null : (() => { const mine = hours.notes!.filter((x) => x.to_id === r.id); const op = mine.filter((x) => x.status !== "cleared").length; return mine.length ? <span><span className={`pill ${op ? "danger" : "ok"}`}>{op} open</span> <span className="note">{mine.length} this year</span></span> : <span className="note">—</span>; })()}</td> : null}
                 <td style={{ textAlign: "right" }}><button type="button" onClick={() => onViewTasks(r.id)}>View jobs</button></td>
               </tr>);
           })}</tbody></table>
       </div>
+      {hours?.notes?.length ? (() => {
+        const month = todayISO().slice(0, 7);
+        const m = hours.notes!.filter((x) => x.created_at.slice(0, 7) === month);
+        const types = [...new Set(m.map((x) => x.category))].map((c) => ({ c, n: m.filter((x) => x.category === c).length })).sort((a, b) => b.n - a.n);
+        return types.length ? <div className="rntypes"><span className="note">Review notes this month by type:</span>{types.map((t) => <span key={t.c} className="pill warn">{t.c} {t.n}</span>)}</div> : null;
+      })() : null}
     </div>
   );
 }
