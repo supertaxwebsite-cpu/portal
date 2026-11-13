@@ -78,14 +78,14 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 <div class="monthsel"><button class="btn sm">‹</button><b>November 2026</b><button class="btn sm">›</button><button class="btn">⬇ Download my month</button><button class="btn pri">+ Apply for leave</button></div></div>
 
 <section class="card today"><div><div class="lbl">Today · Fri 13 Nov</div><div class="clock">5h 12m</div><div class="note">Logged in 7:38 am · on time</div></div>
-<div><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700"><span>Logged in 5h 12m of 8h</span><span style="color:var(--accent)">On jobs 4h 40m (90%)</span></div>
+<div><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700"><span>Worked 5h 12m of 8h 15m</span><span style="color:var(--accent)">On jobs 4h 40m (90%)</span></div>
 <div class="prog"><i style="width:65%"></i><span class="job" style="width:58%"></span></div>
-<div class="note" style="margin-top:6px">▶ Running now: <b style="color:var(--fg)">Patel Family Trust · ITR 2026</b> · 1h 05m. Breaks today: 30 min lunch.</div></div>
+<div class="note" style="margin-top:6px">▶ Running now: <b style="color:var(--fg)">Patel Family Trust · ITR 2026</b> · 1h 05m. 45 min break not taken yet.</div></div>
 <div style="display:grid;gap:6px"><button class="btn">☕ Start break <span class="idea" style="margin-left:2px">IDEA 4</span></button><button class="btn">Log out for the day</button></div></section>
 
 <div class="tiles">
-<div class="tile ok"><div class="n">9 <small>of 10</small></div><div class="l">Days worked so far</div></div>
-<div class="tile blue"><div class="n">71.5<small>h</small></div><div class="l">Hours logged in (target 80h)</div></div>
+<div class="tile ok"><div class="n">10 <small>of 11</small></div><div class="l">Days worked (Mon to Sat)</div></div>
+<div class="tile blue"><div class="n">75.6<small>h</small></div><div class="l">Hours worked (target 90h 45m)</div></div>
 <div class="tile info"><div class="n">88<small>%</small></div><div class="l">Time on jobs <span class="idea">IDEA 1</span></div></div>
 <div class="tile warn"><div class="n">1</div><div class="l">Late start (after 7:45)</div></div>
 <div class="tile info"><div class="n">1</div><div class="l">Half day</div></div>
@@ -95,7 +95,8 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 <div class="grid2"><div>
 <section class="card"><h2>November at a glance <span class="note">Click a day to see its log-ins and jobs</span></h2>
 <div class="cal" id="cal"></div>
-<div class="legend"><span><i style="background:var(--ok)"></i>Present</span><span><i style="background:#c77a0a"></i>Late</span><span><i style="background:var(--info)"></i>Half day</span><span><i style="background:var(--danger)"></i>Leave</span><span><i style="background:repeating-linear-gradient(135deg,var(--danger) 0 3px,#fff 3px 6px)"></i>Booked leave</span><span><i style="background:#6b4bb3"></i>Public holiday</span></div></section>
+<div class="legend"><span><i style="background:var(--ok)"></i>Present</span><span><i style="background:#c77a0a"></i>Late</span><span><i style="background:var(--info)"></i>Half day</span><span><i style="background:var(--danger)"></i>Leave</span><span><i style="background:repeating-linear-gradient(135deg,var(--danger) 0 3px,#fff 3px 6px)"></i>Booked leave</span><span><i style="background:#6b4bb3"></i>Public holiday</span></div>
+<div class="note" style="padding:0 16px 12px">Office hours: Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break, so 8h 15m a day. Sunday is off. Late = log in after 7:45 am.</div></section>
 
 <section class="card" style="margin-top:14px"><h2>Day by day <span class="note">Log in, log out, breaks and job time</span></h2>
 <table><thead><tr><th>Date</th><th>Logged in</th><th>Logged out</th><th>Break <span class="idea">IDEA 4</span></th><th>Hours</th><th>On jobs <span class="idea">IDEA 1</span></th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></section>
@@ -135,10 +136,10 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 </div></div>
 </main>
 <script>
-const st={2:['pres','7:31','4:12',8.2,7.6],3:['pres','7:40','4:25',8.3,7.4],4:['late','7:58','4:40',8.2,7.0],5:['pres','7:35','4:15',8.2,7.5],6:['leave','Sick leave'],9:['pres','7:29','4:05',8.1,7.3],10:['half','7:41','12:05',4.4,4.0],11:['pres','7:36','4:30',8.4,7.8],12:['pres','7:33','4:20',8.3,6.9],13:['now','7:38','',5.2,4.7],24:['booked','Annual leave'],25:['booked','Annual leave'],27:['bookedp','Half day pm · waiting']};
+const st={2:['pres','7:28','4:31',8.30,7.6],3:['pres','7:30','4:35',8.33,7.4],4:['late','7:58','4:45',8.03,7.0],5:['pres','7:26','4:30',8.32,7.5],6:['leave','Sick leave'],7:['pres','7:32','4:30',8.22,7.4],9:['pres','7:29','4:33',8.32,7.3],10:['half','7:41','12:05',4.4,4.0],11:['pres','7:36','4:40',8.32,7.8],12:['pres','7:33','4:30',8.2,6.9],13:['now','7:38','',5.2,4.7],24:['booked','Annual leave'],25:['booked','Annual leave'],27:['bookedp','Half day pm · waiting']};
 const cal=document.getElementById('cal');['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(w=>cal.innerHTML+=`<div class="wd">${w}</div>`);
 for(let i=0;i<6;i++)cal.innerHTML+='<div class="day out"></div>';
-for(let d=1;d<=30;d++){const dow=(d+5)%7;const we=dow>=5;const s=st[d];let cls='day',body='';
+for(let d=1;d<=30;d++){const dow=(d+5)%7;const we=dow===6;const s=st[d];let cls='day',body='';
  if(we)cls+=' we';else if(s){const[k]=s;
   if(k==='pres'){cls+=' pres';body=`<span class="h">${s[3].toFixed(1)}h</span><span class="note">${s[1]} – ${s[2]}</span>`}
   if(k==='late'){cls+=' late';body=`<span class="h">${s[3].toFixed(1)}h</span><span class="tag t-late">Late ${s[1]}</span>`}
@@ -148,12 +149,12 @@ for(let d=1;d<=30;d++){const dow=(d+5)%7;const we=dow>=5;const s=st[d];let cls='
   if(k==='booked'){cls+=' booked';body=`<span class="tag t-leave">🌴 ${s[1]}</span><span class="note">Approved</span>`}
   if(k==='bookedp'){cls+=' booked';body=`<span class="tag t-leave">🌴 Half day pm</span><span class="note">Waiting</span>`}
  } else if(d>13) cls+=' fut';
- cal.innerHTML+=`<div class="${cls}"><div class="d">${d}${we?'<span class="note">'+(dow===5?'Sat':'Sun')+'</span>':''}</div>${body}</div>`}
+ cal.innerHTML+=`<div class="${cls}"><div class="d">${d}${we?'<span class="note">Sun · off</span>':''}</div>${body}</div>`}
 const rows=document.getElementById('rows');const dn=d=>['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(d+5)%7];
 const h=x=>{const H=Math.floor(x),M=Math.round((x-H)*60);return H+'h '+String(M).padStart(2,'0')+'m'};
-[13,12,11,10,9,6,5,4,3,2].forEach(d=>{const s=st[d];let stat,inn='—',out='—',hr='—',jb='—',br='—',act='';
+[13,12,11,10,9,7,6,5,4,3,2].forEach(d=>{const s=st[d];let stat,inn='—',out='—',hr='—',jb='—',br='—',act='';
  if(s[0]==='leave'){stat='<span class="pill p-danger">Sick leave</span>'}
- else{inn=s[1]+' am';out=s[2]?s[2]+' pm':'<span style="color:var(--ok);font-weight:700">Still in</span>';br=d===13?'30m':'30m';hr=h(s[3]);jb=h(s[4])+' <span class="note">('+Math.round(s[4]/s[3]*100)+'%)</span>';
+ else{inn=s[1]+' am';out=s[2]?s[2]+' pm':'<span style="color:var(--ok);font-weight:700">Still in</span>';br=d===13?'not yet':s[0]==='half'?'—':'45m';hr=h(s[3]);jb=h(s[4])+' <span class="note">('+Math.round(s[4]/s[3]*100)+'%)</span>';
   stat={pres:'<span class="pill p-ok">Present</span>',late:'<span class="pill p-warn">Late · approved</span>',half:'<span class="pill p-info">Half day</span>',now:'<span class="pill p-ok">Working</span>'}[s[0]];
   if(d===10)act='<button class="btn sm">Explain</button>';if(d===12)act='<span class="note">Forgot to stop a job? <a style="color:var(--accent);font-weight:700">Fix time</a></span>'}
  rows.innerHTML+=`<tr><td><b>${dn(d)} ${d} Nov</b></td><td class="m">${inn}</td><td class="m">${out}</td><td class="m">${br}</td><td class="m">${hr}</td><td class="m">${jb}</td><td>${stat}</td><td>${act}</td></tr>`});

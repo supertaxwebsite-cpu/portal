@@ -109,7 +109,7 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 </div></section>
 
 <div class="tiles">
-<div class="tile blue"><div class="n">562<small>h</small></div><div class="l">Team hours this month</div></div>
+<div class="tile blue"><div class="n">668<small>h</small></div><div class="l">Team hours this month (8h 15m a day, Mon to Sat)</div></div>
 <div class="tile info"><div class="n">86<small>%</small></div><div class="l">Time on jobs <span class="idea">IDEA 1</span></div></div>
 <div class="tile warn"><div class="n">7</div><div class="l">Late starts</div></div>
 <div class="tile info"><div class="n">4</div><div class="l">Half days</div></div>
@@ -121,7 +121,7 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 <table id="grid"></table>
 <div class="legend" style="padding-top:10px"><span><i class="c P" style="width:14px;height:14px">P</i>Present</span><span><i class="c L" style="width:14px;height:14px"></i>Late</span><span><i class="c H" style="width:14px;height:14px"></i>Half day</span><span><i class="c S" style="width:14px;height:14px"></i>Approved leave</span><span><i class="c A" style="width:14px;height:14px"></i>Absent, no leave asked</span><span><i class="c B" style="width:14px;height:14px"></i>Booked leave</span><span><i class="c Q" style="width:14px;height:14px"></i>Leave waiting for approval</span><span><i class="c N" style="width:14px;height:14px"></i>Forgot to log out</span></div>
 <div class="pop" style="left:560px;top:160px"><h4>Riya · Tue 10 Nov</h4>
-<div class="r"><span class="note">Logged in</span><b>8:12 am (late)</b></div><div class="r"><span class="note">Logged out</span><b>4:40 pm</b></div><div class="r"><span class="note">Hours</span><b>8h 28m</b></div><div class="r"><span class="note">On jobs</span><b>6h 50m · 3 jobs</b></div>
+<div class="r"><span class="note">Logged in</span><b>8:12 am (late)</b></div><div class="r"><span class="note">Logged out</span><b>4:40 pm</b></div><div class="r"><span class="note">Hours</span><b>7h 43m <span class="note">(after 45m break)</span></b></div><div class="r"><span class="note">On jobs</span><b>6h 50m · 3 jobs</b></div>
 <div class="r"><span class="note">Late reason</span><span>"Doctor appointment"</span></div>
 <select><option>Late (automatic)</option></select>
 <div style="display:flex;gap:6px"><button class="btn sm ok">Approve late</button><button class="btn sm no">Reject</button><button class="btn sm" style="margin-left:auto">Open day</button></div></div>
@@ -141,28 +141,28 @@ td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
 <li><span class="idea">IDEA 1</span><span><b>Time on jobs.</b> Compares hours logged in with hours on job timers, so you see who is logged in but not working on jobs.</span></li>
 <li><span class="idea">IDEA 2</span><span><b>Leave clash warning and "Who's off".</b> Staff see who else is off before they ask, and you see clashes before you approve.</span></li>
 <li><span class="idea">IDEA 3</span><span><b>Cover person.</b> Staff name who looks after urgent jobs while they're away; that person gets their reminders.</span></li>
-<li><span class="idea">IDEA 4</span><span><b>Breaks.</b> A Start break button; break time comes off the day's hours and doesn't trigger the idle pop-up.</span></li>
+<li><span class="idea">IDEA 4</span><span><b>Breaks.</b> A Start break button for the 45 min break. Break time isn't counted as work and doesn't trigger the idle pop-up.</span></li>
 <li><span class="idea">IDEA 5</span><span><b>Forgot to log out.</b> If someone is still logged in at 7 pm the day is closed at their last job time and flagged for you to check.</span></li>
 <li><span class="idea">IDEA 6</span><span><b>Export for payroll.</b> One spreadsheet with each person's hours, leave by type and late starts for the month.</span></li>
-<li><span class="idea">IDEA 7</span><span><b>Extra hours.</b> Hours over 8 a day add up as extra time, shown per person each month (for time in lieu or overtime).</span></li>
-<li><span class="idea">IDEA 8</span><span><b>Public holidays.</b> Add your state's public holidays once a year so they don't count as leave or absence.</span></li>
+<li><span class="idea">IDEA 7</span><span><b>Extra hours.</b> Hours over 8h 15m a day add up as extra time, shown per person each month (for time in lieu or overtime).</span></li>
+<li><span class="idea">IDEA 8</span><span><b>Public holidays.</b> Add each office's public holidays once a year (India and Australia differ) so they don't count as leave or absence.</span></li>
 </ul></section>
 </main>
 <script>
 const ppl=[['Naval','NA'],['Jas','JS'],['Riya','RY'],['Aman','AM'],['Kiran','KR'],['Sneha','SN'],['Priya','PR'],['Mehul','MK']];
 const sp={Naval:{4:'L',6:'S',10:'H',13:'W',24:'B',25:'B',27:'Q'},Jas:{13:'W',30:'B'},Riya:{3:'L',10:'L',13:'L',5:'S'},Aman:{9:'H',11:'N',13:'W'},Kiran:{2:'L',4:'L',12:'A',13:'W',18:'B',19:'B',20:'B'},Sneha:{6:'H',13:'W'},Priya:{12:'S',13:'S',16:'S',23:'B'},Mehul:{3:'S',5:'N',11:'H',13:'',26:'B',27:'B'}};
 const g=document.getElementById('grid');let h='<thead><tr><th class="n">Staff</th>';
-for(let d=1;d<=30;d++){const dow=(d+5)%7;h+=`<th class="${dow>=5?'we':''} ${d===13?'tdy':''}">${d}<br><span style="font-weight:600">${'MTWTFSS'[dow]}</span></th>`}
+for(let d=1;d<=30;d++){const dow=(d+5)%7;h+=`<th class="${dow===6?'we':''} ${d===13?'tdy':''}">${d}<br><span style="font-weight:600">${'MTWTFSS'[dow]}</span></th>`}
 h+='<th class="tot">Days</th><th class="tot">Hours</th><th class="tot">Late</th><th class="tot">Half</th><th class="tot">Leave</th><th class="tot">On jobs <span class="idea" style="margin:2px 0 0;font-size:9px">1</span></th><th class="tot">Extra hrs <span class="idea" style="margin:2px 0 0;font-size:9px">7</span></th></tr></thead><tbody>';
 ppl.forEach(([n,a],i)=>{h+=`<tr><td class="n"><span style="display:flex;gap:6px;align-items:center"><span class="av">${a}</span><b>${n}</b></span></td>`;let c={P:0,L:0,H:0,S:0,A:0};
- for(let d=1;d<=30;d++){const dow=(d+5)%7;let v=sp[n][d];const we=dow>=5;
+ for(let d=1;d<=30;d++){const dow=(d+5)%7;let v=sp[n][d];const we=dow===6;
   if(we){h+=`<td class="we ${d===13?'tdy':''}"></td>`;continue}
   if(v===undefined)v=d<13?'P':'';if(v==='W')v='P';
   if(v)c[v==='N'?'P':v]=(c[v==='N'?'P':v]||0)+1;
   const label={P:'',L:'',H:'½',S:'L',A:'!',B:'L',Q:'?',N:'?'}[v]||'';
   const sel=n==='Riya'&&d===10?' sel':'';
   h+=`<td class="${d===13?'tdy':''}">${v?`<span class="c ${v}${sel}">${label}</span>`:(d===13?'<span class="c N" style="border-style:dotted;color:var(--muted);border-color:var(--muted)">–</span>':'')}</td>`}
- const days=c.P+c.L+c.H, hrs=(c.P*8.3+c.L*8.1+c.H*4.3).toFixed(0), lv=(c.S||0)+(c.A||0);
+ const days=c.P+c.L+c.H, hrs=(c.P*8.25+c.L*8.0+c.H*4.3).toFixed(0), lv=(c.S||0)+(c.A||0);
  const jobs=[90,84,79,88,71,92,87,83][i], ex=[2.5,4,0,1,0,6,0.5,0][i];
  h+=`<td class="tot">${days}</td><td class="tot">${hrs}</td><td class="tot" style="color:${c.L?'var(--warn)':'inherit'}">${c.L}</td><td class="tot">${c.H}</td><td class="tot" style="color:${lv?'var(--danger)':'inherit'}">${lv}</td><td class="tot" style="color:${jobs<80?'var(--danger)':'inherit'}">${jobs}%</td><td class="tot">${ex}</td></tr>`});
 g.innerHTML=h+'</tbody>';
