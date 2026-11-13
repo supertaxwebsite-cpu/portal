@@ -397,6 +397,8 @@ export default function Workspace({ me }: { me: Profile }) {
   }
   /** The last open internal query on a job was answered: the job goes back to In progress for the preparer. */
   async function queryAnswered(j: Job, stillOpen: number) {
+    // Sending the response stops the responder's timer: the time goes on their timesheet.
+    if (running?.job_id === j.id && j.assignee_id !== me.id) await stopJob();
     if (stillOpen) return;
     const cur = jobs.find((x) => x.id === j.id) ?? j;
     if (cur.status !== "internal_query") return;

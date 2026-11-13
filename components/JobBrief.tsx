@@ -17,7 +17,7 @@ const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_")
 
 /** The job at a glance (for team members, instead of the edit form), its checklist,
  *  and internal queries: question on the left, the manager's reply beside it. */
-export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, tasks }: {
+export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, timer, tasks }: {
   tasks?: { prep: ReactNode; after: ReactNode };
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
   supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void; onNewClient?: () => void;
@@ -25,6 +25,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   onRaised?: (j: Job, kind: "internal" | "client") => void;
   /** A response was sent; stillOpen is how many internal queries on the job are still unanswered. */
   onAnswered?: (j: Job, stillOpen: number) => void;
+  /** Job timer, so the person a query was raised to can time their answer onto their own timesheet. */
+  timer?: { runningHere: boolean; busy: boolean; start: (j: Job) => void; stop: () => void };
 }) {
   const [qs, setQs] = useState<Query[] | null>(null);
   const [checks, setChecks] = useState<Check[]>([]);
@@ -165,6 +167,9 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
                   <div key={r.id}><div className="qhead"><span className="pill ok">Response</span> {personName(r.author_id) || "Someone"} · {when(r.created_at)}</div>
                     <div className="qbody">{r.body}</div>{fileChip(r.file_id)}</div>))
                   : mine && !readOnly ? <div className="qreply">
+                    {timer && q.to_id === meId ? <div className="row qtimer">{timer.runningHere
+                      ? <><span className="runtxt">● Timing your answer</span><span style={{ flex: 1 }} /><button type="button" disabled={timer.busy} onClick={timer.stop}>Stop</button></>
+                      : <><span className="note">Start the timer so the time you spend on this goes on your timesheet.</span><span style={{ flex: 1 }} /><button type="button" className="primary" disabled={timer.busy} onClick={() => timer.start(job)}>Start</button></>}</div> : null}
                     <textarea aria-label="Your response" placeholder="Type the response…" value={reply[q.id] ?? ""} onChange={(e) => setReply({ ...reply, [q.id]: e.target.value })} />
                     <div className="row">{pickFile((f) => setReplyFile({ ...replyFile, [q.id]: f }), replyFile[q.id] ?? null, `qr-file-${q.id}`)}<span style={{ flex: 1 }} />
                       <button type="button" className="primary" disabled={busy || !(reply[q.id] ?? "").trim()} onClick={async () => { if (await post({ body: reply[q.id] ?? "", parent_id: q.id }, replyFile[q.id] ?? null)) { setReply({ ...reply, [q.id]: "" }); setReplyFile({ ...replyFile, [q.id]: null }); say("Response sent"); } }}>Send response</button></div>
