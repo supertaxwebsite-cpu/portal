@@ -4,7 +4,7 @@ import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, JobTimer, Person, Profile, TimeEntry } from "@/lib/types";
 import { AddLeave, Approvals, MonthGrid, RightNow, monthDays } from "./TeamAttendance";
 import ClientPicker from "./ClientPicker";
-import { MyLeave, TeamLeave, leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
+import { MyLeave, leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
 import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
@@ -440,7 +440,6 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
       {tab === "cal" ? <MonthGrid leaveOnly month={gm} people={team} days={gridDays} leaves={leaves} entries={entries} requests={requests} isMaster={isMaster} onOverride={setOverride} onLate={decide}
         onOpenDay={(uid, d) => { setFrom(d); setTo(d); setWho(uid); setTab("log"); }} /> : null}
       {tab === "req" ? <>
-          <TeamLeave me={me} supabase={supabase} list={leaves} visible={visible} people={people} say={say} onSaved={load} />
         <Approvals me={me} people={team} leaves={leaves} requests={requests} att={att} canApprove={canApproveLeave} onLeave={decideLeave} onLate={decide} />
       </> : null}
       {tab === "log" ? logEl : null}
