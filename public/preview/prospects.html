@@ -1,0 +1,116 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Prospects · Practice Desk preview</title><meta name="viewport" content="width=1280">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>:root{--bg:#f4f8fb;--surface:#fff;--surface-2:#eaf1f6;--fg:#0b1a2c;--muted:#4b5a6d;--line:#dde6ee;--accent:#0f73ab;--accent-soft:#e1f1fa;--orange:#f59a22;--navy:#07121f;--danger:#b3261e;--danger-soft:#fbe7e4;--warn:#9a5a08;--warn-soft:#fdf0dc;--info:#2b5797;--info-soft:#e4ecf8;--ok:#2f6b1e;--ok-soft:#e6f2df}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 Manrope,system-ui,sans-serif}
+.mono{font-family:"JetBrains Mono",monospace}
+header{background:var(--navy);color:#e6eef6}header .w{display:flex;align-items:center;gap:22px;padding:10px 24px;max-width:1280px;margin:auto}
+header img{height:30px}header small{color:#8fa3b8;letter-spacing:.06em;font-size:12px}
+nav a{color:#b8c7d6;padding:6px 10px;border-radius:8px;font-weight:600}nav a.on{color:#fff;background:rgba(34,163,220,.22)}
+header .me{margin-left:auto;display:flex;gap:10px;align-items:center}.bell{width:32px;height:32px;border-radius:50%;background:var(--orange);display:grid;place-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;font:inherit;font-weight:600;color:var(--fg);cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--orange);border-color:var(--orange);color:#1b1104}.btn.ghost{background:transparent}.btn.sm{padding:4px 9px;font-size:13px}
+main{max-width:1280px;margin:auto;padding:14px 24px 40px}
+.crumb{color:var(--muted);font-size:13px;margin-bottom:8px}.crumb a{color:var(--accent);font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-info{background:var(--info-soft);color:var(--info)}.p-danger{background:var(--danger-soft);color:var(--danger)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-ok{background:var(--ok-soft);color:var(--ok)}.p-none{background:var(--surface-2);color:var(--muted)}
+.p-info{background:var(--info-soft);color:var(--info)}.p-danger{background:var(--danger-soft);color:var(--danger)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-ok{background:var(--ok-soft);color:var(--ok)}.p-none{background:var(--surface-2);color:var(--muted)}
+.note{color:var(--muted);font-size:12.5px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.card>h2{font-size:15px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.card>h2 .note{font-weight:500}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.top h1{margin:0;font-size:24px}
+.monthsel{display:flex;align-items:center;gap:6px}.monthsel b{min-width:130px;text-align:center;font-size:15px}
+.tabs{display:flex;gap:6px;margin:0 0 12px}.tabs span{padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:13px}.tabs span.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.today{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;padding:14px 18px;border-top:4px solid var(--ok)}
+.today .clock{font-family:"JetBrains Mono",monospace;font-size:30px;font-weight:600;color:var(--ok)}
+.today .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.prog{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden;margin-top:6px;position:relative}.prog i{display:block;height:100%;background:var(--ok)}
+.prog .job{position:absolute;left:0;top:0;height:100%;background:var(--accent);opacity:.85}
+.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:14px 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;border-left:4px solid var(--line)}
+.tile .n{font-size:24px;font-weight:800;letter-spacing:-.02em}.tile .n small{font-size:13px;color:var(--muted);font-weight:600}
+.tile .l{font-size:12.5px;color:var(--muted);font-weight:600}
+.tile.ok{border-left-color:var(--ok)}.tile.blue{border-left-color:var(--accent)}.tile.warn{border-left-color:#c77a0a}.tile.info{border-left-color:var(--info)}.tile.red{border-left-color:var(--danger)}.tile.grey{border-left-color:var(--muted)}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:12px 14px}
+.cal .wd{font-size:11.5px;font-weight:800;color:var(--muted);text-align:center;text-transform:uppercase}
+.day{border:1px solid var(--line);border-radius:10px;min-height:76px;padding:6px 8px;font-size:12px;background:var(--surface);display:flex;flex-direction:column;gap:2px}
+.day .d{font-weight:800;font-size:13px;display:flex;justify-content:space-between}
+.day .h{font-family:"JetBrains Mono",monospace;font-size:12px}
+.day.we{background:var(--bg);color:#9aa8b6;border-style:dashed}
+.day.out{visibility:hidden}
+.day.pres{border-left:4px solid var(--ok)}.day.late{border-left:4px solid #c77a0a;background:#fffaf1}.day.half{border-left:4px solid var(--info);background:#f6f9fe}.day.leave{border-left:4px solid var(--danger);background:#fdf5f4}
+.day.booked{background:repeating-linear-gradient(135deg,#fdf5f4,#fdf5f4 6px,#fff 6px,#fff 12px);border:1px dashed var(--danger)}
+.day.ph{background:#f3eefc;border-left:4px solid #6b4bb3}
+.day.now{outline:2px solid var(--ok);outline-offset:1px}
+.day.fut{color:#9aa8b6}
+.tag{font-size:10.5px;font-weight:800;border-radius:5px;padding:0 5px;align-self:flex-start}
+.t-late{background:var(--warn-soft);color:var(--warn)}.t-half{background:var(--info-soft);color:var(--info)}.t-leave{background:var(--danger-soft);color:var(--danger)}.t-ph{background:#ebe3fa;color:#5a3d9c}.t-now{background:var(--ok-soft);color:var(--ok)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;padding:0 16px 12px;font-size:12px;color:var(--muted)}.legend span{display:flex;gap:5px;align-items:center}.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.side .card{margin-bottom:14px}
+.lv{padding:10px 16px}.lv .row{display:flex;justify-content:space-between;align-items:center;font-size:13.5px;padding:3px 0}.lv .row b{font-family:"JetBrains Mono",monospace}
+.lvbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--surface-2);margin:6px 0 4px}.lvbar i{display:block;height:100%}
+.list{list-style:none;margin:0;padding:4px 0}.list li{display:flex;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);font-size:13.5px}.list li:last-child{border-bottom:0}
+.list li .s{color:var(--muted);font-size:12.5px}.list .acts{margin-left:auto;display:flex;gap:6px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);background:var(--bg);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td.m{font-family:"JetBrains Mono",monospace;font-size:12.5px}
+.av{width:26px;height:26px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;font-size:11px;font-weight:800;color:var(--accent);flex:none}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}.btn.no{color:var(--danger)}
+.idea{display:inline-block;background:#6b4bb3;color:#fff;font-size:10.5px;font-weight:800;border-radius:5px;padding:1px 6px;letter-spacing:.03em;vertical-align:middle;margin-left:6px}
+.tiles5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.savedv{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}.savedv .tab{display:flex;gap:6px;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:13px}
+.savedv .tab i{font-style:normal;background:var(--surface-2);border-radius:9px;padding:0 7px;font-size:12px}.savedv .tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}.savedv .tab.on i{background:rgba(255,255,255,.2);color:#fff}
+.steps3{display:flex;gap:4px;align-items:center}.steps3 i{width:26px;height:6px;border-radius:3px;background:var(--surface-2)}.steps3 i.d{background:var(--ok)}.steps3 i.n{background:var(--accent)}
+.small{font-size:12px;color:var(--muted)}
+.tname{font-weight:700}
+.kan{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:start}
+.col{background:var(--surface-2);border-radius:12px;padding:8px;min-height:340px}.col.over{outline:2px dashed var(--accent)}
+.col h3{margin:2px 4px 8px;font-size:13px;display:flex;justify-content:space-between}.col h3 span{color:var(--muted);font-weight:600}
+.pc{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:8px;font-size:12.5px;cursor:grab;display:grid;gap:4px}
+.pc b{font-size:13.5px}.pc .fee{font-family:"JetBrains Mono",monospace;font-weight:600}.pc .fu{font-weight:700}.pc .fu.due{color:var(--danger)}
+.pc .svc{display:flex;gap:4px;flex-wrap:wrap}.pc .svc span{background:var(--accent-soft);color:var(--accent);border-radius:5px;padding:0 5px;font-weight:700;font-size:11px}
+.pc.dragging{opacity:.4}
+.mem{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.mc{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:8px}
+.mc .hd{display:flex;gap:10px;align-items:center}.mc .hd .av{width:38px;height:38px;font-size:13px}.mc .hd b{font-size:15px}
+.mc .perm{display:flex;flex-wrap:wrap;gap:4px}.mc .perm span{font-size:11px;font-weight:700;border-radius:5px;padding:1px 6px;background:var(--surface-2);color:var(--muted)}.mc .perm span.y{background:var(--ok-soft);color:var(--ok)}
+.load{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}.load i{display:block;height:100%;background:var(--accent)}
+.st{font-size:12px;font-weight:700}.st.in{color:var(--ok)}.st.off{color:var(--danger)}.st.no{color:var(--muted)}
+.matrix td,.matrix th{text-align:center}.matrix td:first-child,.matrix th:first-child{text-align:left}
+.yes{color:var(--ok);font-weight:800}.no{color:#b9c4cf}
+.mcal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;padding:12px 14px}
+.mcal .wd{font-size:11.5px;font-weight:800;color:var(--muted);text-align:center;text-transform:uppercase}
+.read .idea{color:#fff}.md{min-width:0;border:1px solid var(--line);border-radius:10px;min-height:92px;padding:5px 6px;font-size:11.5px;display:flex;flex-direction:column;gap:3px;background:var(--surface);cursor:pointer}
+.md .d{font-weight:800;font-size:12.5px}.md.we{background:var(--bg)}.md.out{visibility:hidden}.md.now{outline:2px solid var(--accent);outline-offset:1px}.md:hover{border-color:var(--accent)}
+.ev{border-radius:6px;padding:2px 5px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev.o{background:var(--accent-soft);color:var(--accent)}.ev.t{background:#ece6fa;color:#5a3d9c}.ev.p{background:var(--warn-soft);color:var(--warn)}
+.qb{display:flex;gap:8px;padding:12px 16px}.qb .in{flex:1;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font:inherit;font-size:14px}
+.read{margin:0 16px 14px;border:1px dashed var(--accent);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;background:var(--accent-soft)}
+.read span{color:var(--muted);font-weight:600}
+.payday{display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.payday .dt{text-align:center;border-radius:8px;background:var(--surface-2);padding:3px 0;line-height:1.1}.payday .dt b{display:block;font-size:17px}.payday .dt small{font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase}
+.drawer{position:fixed;right:0;top:0;bottom:0;width:380px;background:var(--surface);border-left:1px solid var(--line);box-shadow:-12px 0 30px rgba(7,18,31,.15);z-index:40;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s}
+.drawer.open{transform:none}.drawer .dh{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.drawer .db{padding:14px 16px;display:grid;gap:10px;overflow:auto}
+.tg{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;padding:4px 0}.tg small{display:block;color:var(--muted);font-size:12px}
+.tog{width:38px;height:22px;border-radius:11px;background:#cbd5df;position:relative;flex:none;cursor:pointer}.tog::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}.tog.on{background:var(--ok)}.tog.on::after{left:19px}
+.fld{display:grid;gap:4px;font-size:12.5px;font-weight:700;color:var(--muted)}.fld select,.fld input{font:inherit;font-weight:600;color:var(--fg);padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}.chips span{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px;font-weight:700;cursor:pointer}.chips span.on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+</style></head><body>
+<header><div class="w"><img src="logo.webp" alt=""><small>PRACTICE DESK</small>
+<nav><a href="manager.html">Overview</a> <a href="jobs.html">Jobs</a> <a href="payroll-m.html">Payroll</a> <a href="clients.html">Clients</a> <a href="prospects.html" class="on">Prospects</a> <a href="ts-manager.html">Timesheet</a> <a href="team.html">Team</a> <a href="meetings.html">Meetings</a></nav>
+<div class="me"><div class="bell">🔔</div><b>Harshad</b><button class="btn ghost" style="color:#fff;border-color:#2a3b50">Sign out</button></div></div></header>
+<main><div class="top"><div><h1>Prospects</h1><div class="note" style="font-size:13.5px">People who might become clients, from first enquiry to signed up. Drag a card to move it along.</div></div>
+<div class="monthsel"><button class="btn">⬇ Export</button><button class="btn pri">+ Add prospect</button></div></div>
+<div class="tiles tiles5"><div class="tile blue"><div class="n">7</div><div class="l">Open prospects</div></div><div class="tile red"><div class="n">3</div><div class="l">Follow-ups due</div></div><div class="tile warn"><div class="n">2</div><div class="l">Proposals out · $11,500</div></div><div class="tile info"><div class="n">$30.6k</div><div class="l">Fees in discussion /yr</div></div><div class="tile ok"><div class="n">1 <small>· $8,400</small></div><div class="l">Won this month</div></div></div>
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap"><div class="savedv" style="margin:0"><span class="tab on">Board</span><span class="tab">List</span><span class="tab">Follow-up due <i style="background:var(--danger);color:#fff">3</i></span><span class="tab">Mine <i>5</i></span></div><span style="flex:1"></span><input type="search" placeholder="Search name, contact, email, phone or notes" style="font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;width:320px"></div>
+<div class="kan"><div class="col" data-col="0"><h3>New enquiry <span>2 · $8,000</span></h3><div class="pc" draggable="true"><b>Riverside Physio Pty Ltd</b><span class="small">Dr Anna Lim · Google</span><div class="svc"><span>Company tax</span><span>BAS</span><span>Payroll</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$4,800<span class="small"> /yr</span></span><span class="av" title="Harshad">HK</span></div><span class="fu due">⏰ Today</span></div><div class="pc" draggable="true"><b>Kaur Family Trust</b><span class="small">Simran Kaur · Referral</span><div class="svc"><span>Trust</span><span>SMSF</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$3,200<span class="small"> /yr</span></span><span class="av" title="Hardeep">HD</span></div><span class="fu">⏰ Mon 16 Nov</span></div></div><div class="col" data-col="1"><h3>Contacted <span>2 · $8,900</span></h3><div class="pc" draggable="true"><b>Coastal Builders Group</b><span class="small">Mark Ellis · Website</span><div class="svc"><span>Company tax</span><span>BAS</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$6,500<span class="small"> /yr</span></span><span class="av" title="Harshad">HK</span></div><span class="fu due">⏰ Yesterday</span></div><div class="pc" draggable="true"><b>Nguyen & Co Partners</b><span class="small">Linh Nguyen · Walk-in</span><div class="svc"><span>Partnership</span><span>BAS</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$2,400<span class="small"> /yr</span></span><span class="av" title="Harshad">HK</span></div><span class="fu">⏰ Tue 17 Nov</span></div></div><div class="col" data-col="2"><h3>Meeting booked <span>1 · $2,200</span></h3><div class="pc" draggable="true"><b>Patel Dental SMSF</b><span class="small">Dr R Patel · Client family</span><div class="svc"><span>SMSF</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$2,200<span class="small"> /yr</span></span><span class="av" title="Hardeep">HD</span></div><span class="fu">⏰ Meeting Thu 19 Nov 2pm</span></div></div><div class="col" data-col="3"><h3>Proposal sent <span>2 · $11,500</span></h3><div class="pc" draggable="true"><b>Bright Kids Childcare</b><span class="small">Joanne Price · Referral</span><div class="svc"><span>Company tax</span><span>Payroll</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$7,900<span class="small"> /yr</span></span><span class="av" title="Harshad">HK</span></div><span class="fu">⏰ Fri 20 Nov</span></div><div class="pc" draggable="true"><b>Oakwood Cafe</b><span class="small">Tom Baker · Social media</span><div class="svc"><span>BAS</span><span>Payroll</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$3,600<span class="small"> /yr</span></span><span class="av" title="Hardeep">HD</span></div><span class="fu due">⏰ 2 days overdue</span></div></div><div class="col" data-col="4"><h3>Won (now a client) <span>1 · $8,400</span></h3><div class="pc" draggable="true"><b>Singh Transport Pty Ltd</b><span class="small">Gurpreet Singh · Referral</span><div class="svc"><span>Company tax</span><span>BAS</span><span>Payroll</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$8,400<span class="small"> /yr</span></span><span class="av" title="Harshad">HK</span></div><span class="fu">Won 9 Nov</span></div></div><div class="col" data-col="5"><h3>Lost <span>1 · $1,900</span></h3><div class="pc" draggable="true"><b>Lee Investment Trust</b><span class="small">David Lee · Google</span><div class="svc"><span>Trust</span></div><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$1,900<span class="small"> /yr</span></span><span class="av" title="Hardeep">HD</span></div><span class="fu">Lost 3 Nov · went with cheaper firm</span></div></div></div>
+<div class="grid2" style="margin-top:14px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+<section class="card"><h2>Where prospects come from <span class="note">Last 12 months</span></h2><div class="bars" style="padding:10px 16px;display:grid;gap:7px">
+<div style="display:grid;grid-template-columns:150px 1fr 96px;gap:8px;align-items:center;font-size:12.5px;font-weight:600"><span>Referral from a client</span><span class="load"><i style="width:100%"></i></span><span class="mono">14 · 6 won</span></div><div style="display:grid;grid-template-columns:150px 1fr 96px;gap:8px;align-items:center;font-size:12.5px;font-weight:600"><span>Google</span><span class="load"><i style="width:64%"></i></span><span class="mono">9 · 2 won</span></div><div style="display:grid;grid-template-columns:150px 1fr 96px;gap:8px;align-items:center;font-size:12.5px;font-weight:600"><span>Website</span><span class="load"><i style="width:50%"></i></span><span class="mono">7 · 2 won</span></div><div style="display:grid;grid-template-columns:150px 1fr 96px;gap:8px;align-items:center;font-size:12.5px;font-weight:600"><span>Existing client family</span><span class="load"><i style="width:36%"></i></span><span class="mono">5 · 4 won</span></div><div style="display:grid;grid-template-columns:150px 1fr 96px;gap:8px;align-items:center;font-size:12.5px;font-weight:600"><span>Social media</span><span class="load"><i style="width:21%"></i></span><span class="mono">3 · 0 won</span></div><div style="display:grid;grid-template-columns:150px 1fr 96px;gap:8px;align-items:center;font-size:12.5px;font-weight:600"><span>Walk-in or phone</span><span class="load"><i style="width:14%"></i></span><span class="mono">2 · 1 won</span></div></div></section>
+<section class="card"><h2>Win rate and speed <span class="idea">IDEA 10</span></h2><div class="lv" style="display:grid;gap:6px;font-size:13.5px"><div class="row"><span>Won vs lost (12 months)</span><b>15 won · 9 lost · 63%</b></div><div class="row"><span>Average days from enquiry to won</span><b>18 days</b></div><div class="row"><span>Proposals with no reply after 7 days</span><b style="color:var(--danger)">1</b></div><div class="note">When a prospect is won, “Convert to client” creates the client with their contact details and the jobs you discussed.</div></div></section></div></main><style>.protobar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:50;display:flex;gap:6px;align-items:center;background:#07121f;color:#e6eef6;border-radius:999px;padding:6px 8px 6px 16px;box-shadow:0 10px 30px rgba(7,18,31,.35);font:600 13px Manrope,system-ui,sans-serif;white-space:nowrap}
+.protobar a{color:#e6eef6;text-decoration:none;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.08)}.protobar a:hover{background:rgba(255,255,255,.18)}.protobar a.sw{background:#f59a22;color:#1b1104}.protobar .who{color:#8fa3b8;margin-right:6px}
+nav a[href]{cursor:pointer;text-decoration:none}.tname{cursor:pointer}.tname:hover{text-decoration:underline;color:var(--accent)}body{padding-bottom:70px}</style><div class="protobar"><span class="who">Preview · sample data · Manager / master view · Prospects</span><a href="payroll-m.html">‹ Payroll</a><a href="ts-manager.html">Team attendance ›</a><a href="index.html">All screens</a><a class="sw" href="home.html">Switch to staff</a></div><script src="proto.js"></script></body></html>

@@ -117,6 +117,7 @@
   $$(".tab").forEach((tab) => tab.addEventListener("click", () => {
     const bar = tab.parentElement; $$(".tab", bar).forEach((t) => t.classList.remove("on")); tab.classList.add("on");
     const name = txt(tab).replace(/\d[\d,]*$/, "").trim();
+    if (cardTabs(name)) return;
     const rows = rowsFor(tab); if (!rows.length) { toast(`Showing: ${name}`); return; }
     const f = FILTER.find(([k]) => k.test(name)), re = f && f[1];
     let shown = 0;
@@ -169,7 +170,7 @@
     if (t === "Reject") { if (b.closest(".pop")) { toast("Late start rejected"); pop.classList.add("pt-hide"); return; } removeRow(b, `Rejected: ${rowName}`); return; }
     if (t === "Still waiting") { removeRow(b, "Reminder hidden for 2 days"); return; }
     if (t === "Cancel" && row) { removeRow(b, "Leave request cancelled"); return; }
-    if (t === "Cancel" || t === "Close") { location.href = "review.html"; return; }
+    if ((t === "Cancel" || t === "Close") && !b.hasAttribute("data-close")) { location.href = "review.html"; return; }
     if (t === "Add review note" && b.closest(".overlay,.modal")) { location.href = "review.html"; toast("Review note added"); return; }
     if (/Add review note/.test(t)) { location.href = "review-add.html"; return; }
     if (/Send to Review/.test(t)) { sendToReview(b.closest(".task")); return; }
@@ -197,8 +198,101 @@
     if (t === "Clear") { $$(".pt-hide").forEach((x) => x.classList.remove("pt-hide")); $$(".chip.on").forEach((c) => c.classList.remove("on")); $$("input[type=search],input[type=text]").forEach((i) => (i.value = "")); toast("Filters cleared"); return; }
     if (/Edit job|Edit client/.test(t)) { toast(isMgr ? "Opens the edit form (managers and masters only)" : "Only managers can edit this"); return; }
     if (/Explain/.test(t)) { modal("Explain this day", `<textarea placeholder="e.g. Left early for a doctor's appointment"></textarea>`, "Send to manager", () => toast("Sent to your manager")); return; }
+    if (/^Processed, send for sign-off$|^Confirm super paid$|^STP lodged, finish$/.test(t)) { payAdvance(b); return; }
+    if (t === "Undo") { toast("Super sign-off undone. Back to Processing."); return; }
+    if (t === "Edit" && b.closest(".mc")) { openDrawer(b.closest(".mc").dataset.name); return; }
+    if (b.hasAttribute("data-close")) { $("#drawer").classList.remove("open"); return; }
+    if (t === "Save changes") { $("#drawer").classList.remove("open"); toast("Saved. The new access applies next time they open the portal."); return; }
+    if (/Turn off this login/.test(t)) { modal("Turn off this login?", `<div>They can't sign in any more. Their jobs and history stay.</div>`, "Turn off", () => { $("#drawer").classList.remove("open"); toast("Login turned off"); }); return; }
+    if (t === "View jobs") { location.href = "jobs.html"; return; }
+    if (t === "Reset password") { toast("A new temporary password is shown once for you to pass on"); return; }
+    if (/Add team member/.test(t)) { openDrawer("new team member"); return; }
+    if (/What each role can do/.test(t)) { flash($(".matrix")); return; }
+    if (/Add prospect/.test(t)) { modal("Add prospect", `<input placeholder="Name"><input placeholder="Contact person"><select><option>Referral from a client</option><option>Website</option><option>Google</option><option>Social media</option><option>Walk-in or phone call</option></select><input placeholder="Fee quoted per year, e.g. 3500">`, "Add prospect", (v) => addProspect(v)); return; }
+    if (t === "Read it") { const o = $("#qbout"); o.classList.remove("pt-hide"); flash(o); toast("Read it. Check the details, then Book it."); return; }
+    if (t === "Book it") { const d = $('.md[data-day="17"]'); if (d) { const e = document.createElement("span"); e.className = "ev t"; e.textContent = "10:30 Teams · Deepa Shah"; d.appendChild(e); flash(d); } toast("Meeting booked. Invites sent and a reminder set."); return; }
+    if (t === "Change details" || (t === "Change" && b.closest(".list"))) { modal("Change meeting", `<input value="${t === "Change" ? rowName : "Call with Deepa Shah"}"><input type="datetime-local"><select><option>In the office</option><option>Microsoft Teams</option><option>Phone</option></select>`, "Save", () => toast("Meeting updated")); return; }
+    if (t === "Join") { toast("Opens the Teams call in a new tab"); return; }
+    if (/Book a meeting/.test(t)) { bookDay(""); return; }
+    if (t === "Today" && $(".mcal")) { flash($(".md.now")); return; }
+    if (/desktop alerts/.test(t)) { toast("Desktop alerts on. You'll get a pop-up 10 minutes before each meeting."); return; }
+    if (/New payroll client/.test(t)) { modal("New payroll client", `<input placeholder="Client"><select><option>Weekly</option><option>Fortnightly</option><option>Monthly</option></select><input type="date"><select>${TEAM.map((n) => `<option>${n}</option>`).join("")}</select>`, "Create", (v) => toast(`${v[1]} payroll set up. A job is created on each pay day.`)); return; }
     toast(`In the real portal: ${t}`);
   });
+
+  // ---------- tabs that filter cards (Team, Prospects) ----------
+  function cardTabs(name) {
+    const mcs = $$(".mc"), pcs = $$(".pc");
+    if (!mcs.length && !pcs.length) return false;
+    let test = () => true;
+    if (mcs.length) {
+      const m = name.match(/^(\w+)'s team/);
+      if (m) test = (c) => c.textContent.includes("Team leader " + m[1]) || c.dataset.name === m[1];
+      else if (/Working now/.test(name)) test = (c) => !!$(".st.in", c);
+      else if (/On leave/.test(name)) test = (c) => !!$(".st.off", c);
+      mcs.forEach((c) => c.classList.toggle("pt-hide", !test(c)));
+      toast(`${name}: ${mcs.filter((c) => !c.classList.contains("pt-hide")).length} shown`); return true;
+    }
+    if (/Follow-up due/.test(name)) test = (c) => !!$(".fu.due", c);
+    else if (/Mine/.test(name)) test = (c) => /HK/.test(txt($(".av", c)));
+    if (/List/.test(name)) toast("List view: the same prospects as a table you can sort");
+    else toast(`${name}: ${pcs.filter((c) => test(c)).length} shown`);
+    pcs.forEach((c) => c.classList.toggle("pt-hide", !test(c)));
+    return true;
+  }
+  // ---------- prospects board: drag and drop, or click a card to move it on ----------
+  let dragEl = null;
+  function wireCard(c) {
+    c.addEventListener("dragstart", () => { dragEl = c; c.classList.add("dragging"); });
+    c.addEventListener("dragend", () => { c.classList.remove("dragging"); });
+    c.addEventListener("click", () => { const col = c.closest(".col"); const next = col && col.nextElementSibling; if (next && next.classList.contains("col") && !/Won|Lost/.test(txt($("h3", col)))) moveCard(c, next); });
+  }
+  function colSums() { $$(".col").forEach((col) => { const cs = $$(".pc", col); const tot = cs.reduce((a, c) => a + Number((txt($(".fee", c)).match(/[\d,]+/) || ["0"])[0].replace(/,/g, "")), 0); const sp = $("h3 span", col); if (sp) sp.textContent = `${cs.length} · $${tot.toLocaleString()}`; }); }
+  function moveCard(c, col) {
+    col.insertBefore(c, $(".pc", col)); colSums(); flash(c);
+    const stage = txt($("h3", col)).replace(/\s\d.*$/, "");
+    toast(/Won/.test(stage) ? `${txt($("b", c))} won! Convert to client creates the client and their jobs.` : `${txt($("b", c))} moved to ${stage}`);
+  }
+  $$(".pc").forEach(wireCard);
+  $$(".col").forEach((col) => {
+    col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("over"); });
+    col.addEventListener("dragleave", () => col.classList.remove("over"));
+    col.addEventListener("drop", (e) => { e.preventDefault(); col.classList.remove("over"); if (dragEl) moveCard(dragEl, col); });
+  });
+  function addProspect(v) {
+    const col = $(".col"); if (!col) return;
+    const c = document.createElement("div"); c.className = "pc"; c.draggable = true;
+    c.innerHTML = `<b>${v[0] || "New prospect"}</b><span class="small">${v[1] || "No contact yet"} · ${v[2]}</span><div style="display:flex;justify-content:space-between;align-items:center"><span class="fee">$${Number(v[3] || 0).toLocaleString()}<span class="small"> /yr</span></span><span class="av">HK</span></div><span class="fu due">⏰ Follow up today</span>`;
+    col.insertBefore(c, $(".pc", col)); wireCard(c); colSums(); flash(c); toast("Prospect added");
+  }
+  // ---------- team: edit drawer, switches, client-type chips ----------
+  function openDrawer(name) { const d = $("#drawer"); if (!d) return; $("#dname").textContent = /new/.test(name) ? "Add team member" : `Edit ${name}`; d.classList.add("open"); }
+  document.addEventListener("click", (e) => {
+    const sw = e.target.closest(".tog"); if (sw) { sw.classList.toggle("on"); const lab = sw.parentElement.querySelector("span"); toast(`${lab ? lab.firstChild.textContent.trim() : "Setting"}: ${sw.classList.contains("on") ? "on" : "off"}`); return; }
+    const ch = e.target.closest(".chips span"); if (ch) { ch.classList.toggle("on"); toast(`${txt(ch)} clients ${ch.classList.contains("on") ? "allowed" : "hidden"}`); }
+  });
+  // ---------- payroll: move a pay run along ----------
+  function payAdvance(b) {
+    const tr = b.closest("tr"), steps = $$(".steps3 i", tr), cur = steps.findIndex((i) => i.classList.contains("n"));
+    const NAMES = ["Processing", "Super to confirm", "STP to lodge", "Finished"], k = cur + 1;
+    steps.forEach((i, x) => { i.className = x < k ? "d" : x === k ? "n" : ""; });
+    $(".steps3 + .small", tr).textContent = NAMES[k];
+    const pill = $(".pill", tr); pill.textContent = NAMES[k]; pill.className = "pill " + (k === 3 ? "p-ok" : "p-warn");
+    const cell = b.closest("td");
+    if (k === 1) cell.innerHTML = isMgr ? '<button class="btn sm pri">Confirm super paid</button>' : '<span class="small">Waiting for super sign-off</span>';
+    if (k === 2) cell.innerHTML = '<button class="btn sm pri">STP lodged, finish</button>';
+    if (k === 3) cell.innerHTML = '<span class="pill p-ok">Finished</span>';
+    toast(["", isMgr ? "Processed. Super sign-off is next." : "Sent to your manager to confirm super", "Super confirmed. Lodge STP next.", "Finished. The next pay day is already set up."][k]);
+  }
+  // ---------- meetings ----------
+  function bookDay(d) {
+    modal(`Book a meeting${d ? " on " + d + " Nov" : ""}`, `<input placeholder="Title, e.g. BAS review with ABC Pty Ltd"><input placeholder="Client"><input type="time" value="10:00"><select><option>30 min</option><option>45 min</option><option>1 hour</option></select><select><option>In the office</option><option>Microsoft Teams</option><option>Phone</option></select>`, "Book it", (v) => {
+      const cell = $(`.md[data-day="${d || 17}"]`); if (cell) { const e = document.createElement("span"); e.className = "ev " + (/Teams/.test(v[4]) ? "t" : "o"); e.textContent = `${v[2]} ${v[0] || "Meeting"}`; cell.appendChild(e); flash(cell); }
+      toast("Meeting booked. A reminder pops up 10 minutes before.");
+    });
+  }
+  $$(".md").forEach((m) => m.addEventListener("click", (e) => { if (e.target.closest(".ev")) { toast(txt(e.target)); return; } if (!m.classList.contains("out")) bookDay(m.dataset.day); }));
+  const qo = $("#qbout"), qi = $("#qbin"); if (qo && qi) qi.addEventListener("input", () => qo.classList.add("pt-hide"));
 
   // manager page: "All jobs by status" numbers and attention items go to the jobs list
   if (page === "manager.html") $$(".mono").forEach((m) => { if (/^\d+$/.test(txt(m))) { m.style.cursor = "pointer"; m.addEventListener("click", () => (location.href = "jobs.html")); } });
