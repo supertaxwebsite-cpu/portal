@@ -46,18 +46,41 @@ export default function PayrollView({ jobs, clients, meId, canSignOff, clientNam
       .map((u) => ({ ...u, client: c, who: c.payroll_assignee || c.manager_id || null })))
     .filter((u) => scope !== "mine" || u.who === meId)
     .sort((a, b) => a.due.localeCompare(b.due) || a.client.name.localeCompare(b.client.name)), [clients, pay, scope, meId]);
-  const counts = [0, 1, 2].map((s) => scoped.filter((j) => payStage(j) === s && due(j) <= 0).length);
+  const month = new Date().toISOString().slice(0, 7);
+  const finishedMonth = scoped.filter((j) => payStage(j) === 3 && (j.stp_done_at ?? j.lodged_on ?? "").startsWith(month)).length;
+  const tiles: [string, number, string][] = [
+    ["Due today", open.filter((j) => due(j) === 0).length, "accent"],
+    ["Overdue", open.filter((j) => due(j) < 0).length, "danger"],
+    ["Super to confirm", scoped.filter((j) => payStage(j) === 1).length, "warn"],
+    ["STP to lodge", scoped.filter((j) => payStage(j) === 2).length, "warn"],
+    ["Finished this month", finishedMonth, "ok"],
+  ];
+  // Payday Super: from 1 July 2026 super must reach the fund within 7 days of each pay day.
+  const superWatch = pay.filter((j) => !j.super_done_at && payStage(j) < 3 && j.due_date && due(j) <= 0)
+    .map((j) => ({ j, left: 7 + due(j) })).sort((a, b) => a.left - b.left);
+  function exportCsv() {
+    const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [["Client", "Period", "Pay day", "Stage", "Prepared by", "Super confirmed", "STP lodged"],
+      ...scoped.sort(byDue).map((j) => [clientName(j.client_id), j.period, j.due_date ?? "", STAGE[payStage(j)], personName(j.assignee_id), j.super_done_at ? at(j.super_done_at) : "", j.stp_done_at ? at(j.stp_done_at) : ""])];
+    const blob = new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `payroll-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  }
   let n = 0;
 
   return (
     <>
       <div className="pagehead">
         <div><h1>Payroll</h1><p>Each pay run goes: processed by the preparer → super confirmed by a team leader or master admin → STP lodged. Finish it on the pay day.</p></div>
-        <div className="row"><button className="primary" onClick={onNew}>New payroll job</button></div>
+        <div className="row"><button onClick={exportCsv} disabled={!scoped.length}>⬇ Export</button><button className="primary" onClick={onNew}>New payroll job</button></div>
       </div>
       <div className="paysum">
-        {STAGE.slice(0, 3).map((s, i) => <div key={s} className={`paystat s${i}`}><span className="lbl">{s}</span><span className="val">{counts[i]}</span><span className="note">due today or overdue</span></div>)}
+        {tiles.map(([l, v, c]) => <div key={l} className={`paystat ${c}`}><span className="val">{v}</span><span className="lbl">{l}</span></div>)}
       </div>
+      {superWatch.length ? <div className="panel" style={{ padding: "12px 14px", marginBottom: 12, borderColor: superWatch.some((x) => x.left < 0) ? "var(--danger)" : "var(--warn)" }}>
+        <div className="ph" style={{ padding: 0 }}><h2>Payday Super check</h2><span className="note">Super must reach the fund within 7 days of each pay day (from 1 July 2026)</span></div>
+        <ul className="list">{superWatch.map(({ j, left }) => <li key={j.id}><div><div className="t"><button className="link" onClick={() => onOpen(j)}>{clientName(j.client_id)}</button></div><div className="s">Pay day {fmtDate(j.due_date)} · {j.period}</div></div>
+          <span className={`pill ${left < 0 ? "danger" : left <= 2 ? "warn" : "info"}`}>{left < 0 ? `${-left} day${left === -1 ? "" : "s"} late` : left === 0 ? "Last day today" : `${left} day${left === 1 ? "" : "s"} left`}</span></li>)}</ul>
+      </div> : null}
       <div className="row payscope" role="tablist">
         {([["mine", "My pay runs"], ...(canSignOff ? [["signoff", "Waiting for sign-off"]] : []), ["all", "All pay runs"]] as [typeof scope, string][]).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={scope === k} className={`chip ${scope === k ? "on" : ""}`} onClick={() => setScope(k)}>{l}</button>))}

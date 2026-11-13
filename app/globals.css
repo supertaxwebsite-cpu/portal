@@ -521,3 +521,7 @@ ol.steps>li.now{border-color:var(--accent);background:linear-gradient(90deg,var(
 ol.steps>li.done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
 ol.steps>li.now .dot{border-color:var(--accent);color:var(--accent)}
 ol.steps .checklist{margin-top:6px}
+.paysum{grid-template-columns:repeat(5,minmax(0,1fr))}
+.paystat.accent{border-top-color:var(--brand-blue)}.paystat.danger{border-top-color:var(--danger)}.paystat.warn{border-top-color:var(--brand-orange)}.paystat.ok{border-top-color:var(--ok)}
+.paystat.danger .val{color:var(--danger)}
+@media (max-width:700px){.paysum{grid-template-columns:repeat(3,minmax(0,1fr))}}
