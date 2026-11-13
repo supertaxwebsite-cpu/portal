@@ -7,7 +7,8 @@ const PUBLIC = ["/login", "/setup", "/api/setup"];
 export async function middleware(request: NextRequest) {
   // Design preview: plain HTML with sample data in public/preview, open without signing in.
   const p0 = request.nextUrl.pathname;
-  if (p0 === "/preview" || p0 === "/preview/") { const u = request.nextUrl.clone(); u.pathname = "/preview/index.html"; return NextResponse.redirect(u); }
+  const start: Record<string, string> = { "/preview": "index.html", "/preview/": "index.html", "/preview/staff": "home.html", "/preview/manager": "manager.html" };
+  if (start[p0]) { const u = request.nextUrl.clone(); u.pathname = "/preview/" + start[p0]; return NextResponse.redirect(u); }
   if (p0.startsWith("/preview/")) return NextResponse.next();
   let response = NextResponse.next({ request });
   const supabase = createServerClient(
