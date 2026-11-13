@@ -2614,10 +2614,16 @@ end $$;
 
 -- ===== Internal query rules =====
 
+create or replace function public.can_respond_to_query(p_parent uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.job_queries p where p.id = p_parent and (p.to_id is null or p.to_id = auth.uid()));
+$$;
+revoke all on function public.can_respond_to_query(uuid) from public, anon;
+grant execute on function public.can_respond_to_query(uuid) to authenticated;
+
 drop policy if exists "only the person asked can respond" on public.job_queries;
 create policy "only the person asked can respond" on public.job_queries as restrictive for insert to authenticated
-  with check (parent_id is null or exists (
-    select 1 from public.job_queries p where p.id = parent_id and (p.to_id is null or p.to_id = auth.uid())));
+  with check (parent_id is null or public.can_respond_to_query(parent_id));
 
 create or replace function public.job_query_posted() returns trigger
 language plpgsql security definer set search_path = public as $$
