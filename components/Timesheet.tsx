@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, JobTimer, Person, Profile, TimeEntry } from "@/lib/types";
-import { AddLeave, Approvals, MonthGrid, RightNow, monthDays } from "./TeamAttendance";
+import { AddLeave, Approvals, LEAVE_ALLOWANCE, MonthGrid, RightNow, monthDays } from "./TeamAttendance";
 import ClientPicker from "./ClientPicker";
-import { MyLeave, leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
+import { leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
 import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
@@ -121,11 +121,13 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [tab, setTab] = useState<"grid" | "cal" | "req" | "log" | "mine">(canSeeTeam ? "grid" : "mine");
   const [gm, setGm] = useState(todayISO().slice(0, 7));
   const [adding, setAdding] = useState(false);
+  const [mm, setMm] = useState(todayISO().slice(0, 7)); // My timesheet month
+  const mmDays = monthDays(mm);
   const monthStart = todayISO().slice(0, 8) + "01";
   const gDays = monthDays(gm);
   const gStart = gDays[0], gEnd = gDays[gDays.length - 1];
-  const lo = [day, from, monthStart, ...(canSeeTeam ? [gStart] : [])].sort()[0];
-  const hi = [day, to, ...(canSeeTeam ? [gEnd] : [])].sort().pop()!;
+  const lo = [day, from, monthStart, mmDays[0], ...(canSeeTeam ? [gStart] : [])].sort()[0];
+  const hi = [day, to, mmDays[mmDays.length - 1], ...(canSeeTeam ? [gEnd] : [])].sort().pop()!;
   const yearStart = `${todayISO().slice(0, 4)}-01-01`;
   const load = useCallback(async () => {
     const [a, e] = await Promise.all([
@@ -302,76 +304,28 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     URL.revokeObjectURL(a.href);
   }
 
-  const mineEl = (
-    <>
-      <div className="grid2">
-        <div className="section">
-          <div className="panel" style={{ padding: 16 }}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div>
-                <h2 style={{ margin: 0 }}>{openShift ? "You're logged in" : "You're logged out"}</h2>
-                <p className="note" style={{ margin: "4px 0 0" }}>{openShift
-                  ? <>Since {time(openShift.clock_in)}{openShift.work_date !== todayISO() ? ` on ${fmtDate(openShift.work_date)}` : ""} · {hm(mins(openShift, now))}</>
-                  : "Log in when you start work."}</p>
-                {openShift && outAt ? <p className="pill warn" style={{ margin: "8px 0 0", whiteSpace: "normal" }}>🕓 Suggested log out <strong>{time(outAt)}</strong>{startedLate ? " (you started after 7:30, so this moves later to make up 8h 15m of work)" : ""}</p> : null}
-                {openShift && !shiftFilled ? <p className="pill warn" style={{ margin: "8px 0 0", whiteSpace: "normal" }}>Fill in your timesheet for {fmtDate(openShift.work_date)} below before you log out.</p> : null}
-              </div>
-              {openShift
-                ? <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy || !shiftFilled} title={shiftFilled ? undefined : "Fill in your timesheet first"} onClick={() => clock("clock_out")}>Log out</button>
-                : <button type="button" className="primary big" style={{ width: "auto" }} disabled={busy} onClick={() => clock("clock_in")}>Log in</button>}
-            </div>
-          </div>
-          <MyLeave me={me} supabase={supabase} list={leaves} missing={leaveMissing} say={say} onSaved={load} />
-        </div>
-
-        <div className="section">
-          <div className="panel" style={{ padding: 16 }}>
-            <h2 style={{ marginTop: 0 }}>My attendance this month</h2>
-            <p className="note" style={{ margin: "2px 0 0" }}>Timesheet <strong>{hrs(monthHours)}</strong> of {hrs(target)} target ({workDays} working day{workDays === 1 ? "" : "s"} so far, 8h 15m each)</p>
-            <div className="row" style={{ margin: "6px 0 10px" }}>
-              <span className="pill warn">{myMonth.filter((d) => d.late).length} late</span>
-              <span className="pill warn">{myMonth.filter((d) => d.early).length} left early</span>
-              <span className="pill info">{myMonth.filter((d) => d.half).length} half day</span>
-              <span className="pill danger">{myMonth.filter((d) => d.leave && !d.booked).length} absent</span>
-            </div>
-            {leaveByKind.length ? <p className="note" style={{ margin: "0 0 8px" }}>Leave booked this month: {leaveByKind.map((k) => `${k.label} ${k.n} day${k.n === 1 ? "" : "s"}`).join(" · ")}</p> : null}
-            {myMonth.some((d) => d.late || d.half || d.leave || d.early || d.lateExcused) ? (
-              <ul className="note" style={{ margin: 0, paddingLeft: 18 }}>{myMonth.filter((d) => d.late || d.half || d.leave || d.early || d.lateExcused).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map((d) => (
-                <li key={d.date}>{fmtDate(d.date)}: <Status d={d} />{d.first ? ` (in ${time(d.first)})` : ""}
-                  {d.late && !d.request ? <> <button type="button" className="link" onClick={() => askApproval(d)}>Ask for approval</button></> : null}</li>))}</ul>
-            ) : <p className="note" style={{ margin: 0 }}>No late starts, half days or leave this month.</p>}
-            <p className="note" style={{ margin: "10px 0 0" }}>Office hours: Monday to Saturday, 7:30 am to 4:30 pm (India time) with a 45 min break, so 8h 15m of work. Sunday is off. Late = log in after 7:45 am · Left early = log out before your suggested time · Half day = under 6 hours logged in · Absent = a working day with no timesheet and no leave booked. Your manager can see this.</p>
-          </div>
-        </div>
+  const dayEl = (
+    <div className="panel">
+      <div className="ph"><h2>Jobs and time · {fmtDate(day)}</h2><label className="row note">Date <input type="date" id="ts-day" value={day} max={todayISO()} onChange={(e) => e.target.value && setDay(e.target.value)} /></label></div>
+      <p className="note" style={{ padding: "4px 14px 0", margin: 0 }}>
+        {myDayAtt.length ? <>Logged in {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No log-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
+      </p>
+      <div className="tablebox solo" style={{ margin: 12 }}>
+        <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>What you did</th><th></th></tr></thead>
+          <tbody>
+            {myDay.map((e) => <EntryRow key={e.id} e={e} locked={!dayOpen} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
+            {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">Nothing was recorded for this day.</td></tr> : null}
+            {dayOpen ? <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} /> : null}
+          </tbody></table>
       </div>
-
-      <div style={{ marginTop: 16 }}>
-          <div className="panel">
-            <div className="ph"><h2>My timesheet</h2><label className="row note">Date <input type="date" id="ts-day" value={day} max={todayISO()} onChange={(e) => e.target.value && setDay(e.target.value)} /></label></div>
-            <p className="note" style={{ padding: "4px 14px 0", margin: 0 }}>
-              {myDayAtt.length ? <>Logged in {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No log-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
-            </p>
-            <div className="tablebox solo" style={{ margin: 12 }}>
-              <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>What you did</th><th></th></tr></thead>
-                <tbody>
-                  {myDay.map((e) => <EntryRow key={e.id} e={e} locked={!dayOpen} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
-                  {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">Nothing was recorded for this day.</td></tr> : null}
-                  {dayOpen ? <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} /> : null}
-                </tbody></table>
-            </div>
-            {!dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask your manager if something needs correcting.</p> : null}
-          </div>
-      </div>
-
-    </>
+      {!dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask your manager if something needs correcting.</p> : null}
+    </div>
   );
+  const mineEl = <MyTimesheet me={me} supabase={supabase} embedded={canSeeTeam} month={mm} setMonth={setMm} att={att} entries={entries} leaves={leaves} requests={requests} overrides={overrides}
+    timers={timers} jobs={jobs} clients={clients} now={now} busy={busy} leaveMissing={leaveMissing} openShift={openShift} shiftFilled={shiftFilled}
+    day={day} setDay={setDay} onClock={clock} onExplain={askApproval} onSaved={load} say={say} dayEl={dayEl} />;
 
-  if (!canSeeTeam) return (
-    <>
-      <div className="pagehead"><div><h1>Timesheet</h1><p>Log in when you start, log out when you finish, and record what you worked on.</p></div></div>
-      {mineEl}
-    </>
-  );
+  if (!canSeeTeam) return mineEl;
 
   const logEl = (
     <>
@@ -445,6 +399,277 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
       {tab === "log" ? logEl : null}
       {tab === "mine" ? mineEl : null}
     </>
+  );
+}
+
+// ============================================================
+// My timesheet: today, this month at a glance, leave, requests, day by day.
+// ============================================================
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const dowOf = (d: string) => { const [y, m, dd] = d.split("-").map(Number); return (new Date(Date.UTC(y, m - 1, dd)).getUTCDay() + 6) % 7; };
+const short = (d: string) => { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }); };
+const n1 = (n: number) => String(Number(n.toFixed(1)));
+/** Compact time for the calendar, e.g. 7:28. */
+const ct = (ts: string) => time(ts).replace(/\s?[ap]m$/i, "");
+const hmS = (m: number) => { const t = Math.max(0, Math.round(m)); return t < 60 ? `${t}m` : `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
+const leaveSpan = (l: LeaveReq) => { const a = Number(l.start_date.slice(8)), b = Number(l.end_date.slice(8)); const mon = new Date(`${l.end_date}T00:00:00`).toLocaleDateString("en-AU", { month: "short" });
+  return l.start_date === l.end_date ? `${a} ${mon}` : l.start_date.slice(0, 7) === l.end_date.slice(0, 7) ? `${a}–${b} ${mon}` : `${fmtDate(l.start_date)} to ${fmtDate(l.end_date)}`; };
+
+function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, leaves, requests, overrides, timers, jobs, clients, now, busy, leaveMissing, openShift, shiftFilled,
+  day, setDay, onClock, onExplain, onSaved, say, dayEl }: {
+  me: Profile; supabase: SB; embedded: boolean; month: string; setMonth: (m: string) => void; att: Attendance[]; entries: TimeEntry[]; leaves: LeaveReq[]; requests: LateRequest[];
+  overrides: Override[]; timers: JobTimer[]; jobs: Job[]; clients: Client[]; now: number; busy: boolean; leaveMissing: boolean; openShift?: Attendance; shiftFilled: boolean;
+  day: string; setDay: (d: string) => void; onClock: (k: "clock_in" | "clock_out") => void; onExplain: (d: Day) => void; onSaved: () => void; say: (m: string, e?: boolean) => void; dayEl: React.ReactNode;
+}) {
+  const today = todayISO();
+  const mDays = monthDays(month);
+  const mStart = mDays[0], mEnd = mDays[mDays.length - 1];
+  const upTo = mEnd < today ? mEnd : today;
+  const days = mStart <= today ? buildDays(att, entries, [me], mStart, upTo, now, overrides, requests, leaves) : [];
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  const myLeaves = leaves.filter((l) => l.user_id === me.id);
+  const leaveOn = (d: string) => myLeaves.find((l) => l.status !== "rejected" && l.start_date <= d && l.end_date >= d);
+  const jobH = (d: string) => entries.filter((e) => e.user_id === me.id && e.work_date === d && e.job_id).reduce((s, e) => s + e.hours, 0);
+
+  // ----- today -----
+  const tDate = openShift?.work_date ?? today;
+  const tAtt = att.filter((a) => a.user_id === me.id && a.work_date === tDate);
+  const tFirst = tAtt.map((a) => a.clock_in).sort()[0] ?? "";
+  const tMin = tAtt.reduce((s, a) => s + mins(a, now), 0);
+  const myTimer = timers.find((t) => t.user_id === me.id && !t.ended_at);
+  const runMin = myTimer ? Math.max(0, (now - Date.parse(myTimer.started_at)) / 60000) : 0;
+  const tJobMin = jobH(tDate) * 60 + runMin;
+  const runJob = myTimer?.job_id ? jobs.find((j) => j.id === myTimer.job_id) : undefined;
+  const outAt = tFirst ? suggestedOut(tFirst) : "";
+  const afterStart = tFirst ? officeMinutes(tFirst) - START : 0;
+  const TARGET = 8.25 * 60;
+
+  // ----- this month -----
+  let workDays = 0;
+  for (let d = mStart; d <= upTo; d = addDays(d, 1)) if (isWeekday(d) && !days.some((x) => x.date === d && (x.override === "leave" || (x.booked && x.bookedPart === "full")))) workDays++;
+  const worked = days.filter((d) => d.first && !d.leave).length;
+  const tsH = entries.filter((e) => e.user_id === me.id && e.work_date >= mStart && e.work_date <= mEnd).reduce((s, e) => s + e.hours, 0);
+  const inH = days.reduce((s, d) => s + d.m, 0) / 60;
+  const jobsH = entries.filter((e) => e.user_id === me.id && e.job_id && e.work_date >= mStart && e.work_date <= mEnd).reduce((s, e) => s + e.hours, 0);
+  const lateN = days.filter((d) => d.late).length;
+  const halfN = days.filter((d) => d.half).length;
+  const appr = myLeaves.filter((l) => l.status === "approved");
+  const leaveTaken = appr.reduce((s, l) => s + leaveDays(l, mStart, upTo), 0) + days.filter((d) => d.leave && !d.booked && !d.override).length;
+  const leaveAhead = appr.reduce((s, l) => s + leaveDays(l, addDays(upTo, 1), mEnd), 0);
+
+  // ----- leave this year -----
+  const yStart = `${today.slice(0, 4)}-01-01`, yEnd = `${today.slice(0, 4)}-12-31`;
+  const yr = (ls: LeaveReq[], a = yStart, b = yEnd) => ls.reduce((s, l) => s + leaveDays(l, a, b), 0);
+  const sp = myLeaves.filter((l) => l.kind !== "unpaid");
+  const spTaken = yr(sp.filter((l) => l.status === "approved"), yStart, today);
+  const spBooked = yr(sp.filter((l) => l.status === "approved"), addDays(today, 1));
+  const spWait = yr(sp.filter((l) => l.status === "pending"));
+  const spLeft = Math.max(0, LEAVE_ALLOWANCE - spTaken - spBooked);
+  const up = myLeaves.filter((l) => l.kind === "unpaid");
+  const upTaken = yr(up.filter((l) => l.status === "approved"), yStart, today);
+  const upBooked = yr(up.filter((l) => l.status === "approved"), addDays(today, 1));
+  const upWait = yr(up.filter((l) => l.status === "pending"));
+
+  // ----- apply for leave -----
+  const nextWork = (() => { let d = addDays(today, 1); while (!isWeekday(d)) d = addDays(d, 1); return d; })();
+  const [v, setV] = useState({ from: nextWork, to: nextWork, kind: "unpaid" as LeaveReq["kind"], part: "full" as LeaveReq["part"], reason: "" });
+  const [sending, setSending] = useState(false);
+  const vTo = v.part === "full" ? v.to : v.from;
+  const vDays = leaveDays({ start_date: v.from, end_date: vTo, part: v.part });
+  const dayName = (d: string) => DOW[dowOf(d)];
+  async function apply() {
+    if (!v.from || vTo < v.from) { say("The end date must be on or after the start date", true); return; }
+    if (!vDays) { say("Those dates are all Sundays, which are already off", true); return; }
+    setSending(true);
+    const { error } = await supabase.from("leave_requests").insert({ user_id: me.id, start_date: v.from, end_date: vTo, kind: v.kind, part: v.part, reason: v.reason.trim() });
+    setSending(false);
+    if (error) { say(`Not sent: ${error.message}`, true); return; }
+    say("Leave request sent to your manager for approval");
+    setV({ ...v, reason: "" });
+    onSaved();
+  }
+  async function cancel(l: LeaveReq) {
+    if (!window.confirm(`Cancel your ${leaveLabel(l.kind).toLowerCase()} on ${leaveSpan(l)}?`)) return;
+    const { error } = await supabase.from("leave_requests").delete().eq("id", l.id);
+    if (error) { say(`Not cancelled: ${error.message}`, true); return; }
+    say("Leave request cancelled");
+    onSaved();
+  }
+  const reqs = [
+    ...myLeaves.map((l) => ({ k: `l${l.id}`, sort: l.start_date, l, r: undefined as LateRequest | undefined })),
+    ...requests.filter((r) => r.user_id === me.id).map((r) => ({ k: `r${r.work_date}`, sort: r.work_date, l: undefined as LeaveReq | undefined, r })),
+  ].sort((a, b) => b.sort.localeCompare(a.sort)).slice(0, 8);
+
+  // ----- calendar and day by day -----
+  const lead = dowOf(mStart);
+  const cells: (string | null)[] = [...Array(lead).fill(null), ...mDays];
+  while (cells.length % 7) cells.push(null);
+  const rows = [...days].filter((d) => d.first || d.leave || d.h).sort((a, b) => b.date.localeCompare(a.date));
+  const shift = (n: number) => { const [y, m] = month.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); };
+  const monthName = new Date(`${month}-01T00:00:00`).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
+  const pickDay = (d: string) => { setDay(d); setTimeout(() => document.getElementById("ts-dayjobs")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); };
+  const statusText = (d: Day) => d.leave ? (d.booked ? leaveLabel(d.booked) : "Leave") : d.open && d.date === today ? "Working" : d.half ? "Half day" : d.late ? "Late" : d.lateExcused ? "Late · approved" : "Present";
+  const statusCls = (d: Day) => d.leave ? "danger" : d.open && d.date === today ? "ok" : d.half ? "info" : d.late ? "warn" : d.lateExcused ? "warn" : "ok";
+
+  function download() {
+    const q = (x: unknown) => `"${String(x ?? "").replace(/"/g, '""')}"`;
+    const out: unknown[][] = [["Date", "Logged in", "Logged out", "Hours logged in", "Timesheet hours", "Hours on jobs", "Status"]];
+    [...days].sort((a, b) => a.date.localeCompare(b.date)).forEach((d) => out.push([d.date, time(d.first || null), d.open ? "Still in" : time(d.last), (d.m / 60).toFixed(2), d.h.toFixed(2), jobH(d.date).toFixed(2), statusText(d)]));
+    out.push([], ["Date", "Client", "Job", "Hours", "What you did"]);
+    entries.filter((e) => e.user_id === me.id && e.work_date >= mStart && e.work_date <= mEnd).sort((a, b) => a.work_date.localeCompare(b.work_date)).forEach((e) => {
+      const j = e.job_id ? jobs.find((x) => x.id === e.job_id) : undefined;
+      out.push([e.work_date, clients.find((c) => c.id === e.client_id)?.name ?? "", j ? `${svcLabel(j.service)} ${j.period}` : "", e.hours, e.description]);
+    });
+    const blob = new Blob(["﻿" + out.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `my-timesheet-${month}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  return (
+    <div className="mts">
+      <div className="pagehead">
+        <div>{embedded ? <h2 style={{ fontSize: 20, margin: 0 }}>My own timesheet</h2> : <h1>My timesheet</h1>}<p>Your log-in times, hours, leave and job time for the month.</p></div>
+        <div className="row">
+          <button type="button" aria-label="Previous month" onClick={() => shift(-1)}>‹</button><strong style={{ minWidth: 130, textAlign: "center" }}>{monthName}</strong><button type="button" aria-label="Next month" onClick={() => shift(1)}>›</button>
+          <button type="button" onClick={download}>⬇ Download my month</button>
+          <button type="button" className="primary" onClick={() => document.getElementById("ts-apply")?.scrollIntoView({ behavior: "smooth", block: "start" })}>+ Apply for leave</button>
+        </div>
+      </div>
+
+      <div className="panel todaybar">
+        <div className="tb-l">
+          <span className="lbl2">Today · {short(tDate)}</span>
+          <span className="big mono">{tFirst ? hmS(tMin) : "—"}</span>
+          <span className="note">{tFirst ? <>Logged in {time(tFirst)}{afterStart > 0 ? ` · ${hmS(afterStart)} after 7:30` : ""}</> : "Not logged in yet. Log in when you start work."}</span>
+          {openShift && outAt ? <span className="pill warn">🕓 Suggested log out <strong>&nbsp;{time(outAt)}</strong></span> : null}
+        </div>
+        <div className="tb-m">
+          <div className="row" style={{ justifyContent: "space-between" }}><strong>Worked {hmS(tMin)} of 8h 15m</strong><span className="note">On jobs {hmS(tJobMin)}{tMin ? ` (${Math.round((tJobMin / tMin) * 100)}%)` : ""}</span></div>
+          <div className="tbbar"><b style={{ width: `${Math.min(100, (Math.min(tJobMin, tMin) / TARGET) * 100)}%` }} /><i style={{ width: `${Math.min(100, (Math.max(0, tMin - tJobMin) / TARGET) * 100)}%` }} /></div>
+          <span className="note">{myTimer ? <>▶ Running now: <strong>{runJob ? clients.find((c) => c.id === runJob.client_id)?.name ?? "a job" : "a job"}</strong>{runJob ? ` · ${svcLabel(runJob.service)} ${runJob.period}` : ""} · {hmS(runMin)}</> : openShift ? "No job timer running. Start a job from My tasks so your time goes on the right job." : ""}</span>
+          {openShift && !shiftFilled ? <span className="pill warn" style={{ whiteSpace: "normal" }}>Add at least one timesheet line for {fmtDate(openShift.work_date)} (below) before you log out.</span> : null}
+        </div>
+        <div className="tb-r">
+          {openShift
+            ? <button type="button" className="primary" disabled={busy || !shiftFilled} title={shiftFilled ? undefined : "Fill in your timesheet first"} onClick={() => onClock("clock_out")}>Log out for the day</button>
+            : <button type="button" className="primary" disabled={busy} onClick={() => onClock("clock_in")}>Log in</button>}
+        </div>
+      </div>
+
+      <div className="atiles">
+        <div className="panel b-ok"><span className="val">{worked}<small> of {workDays}</small></span><span className="lbl">Days worked (Mon to Sat)</span></div>
+        <div className="panel b-blue"><span className="val">{n1(tsH)}<small>h</small></span><span className="lbl">Hours worked (target {hmS(workDays * TARGET)})</span></div>
+        <div className="panel b-blue"><span className="val">{inH ? Math.round((jobsH / inH) * 100) : 0}<small>%</small></span><span className="lbl">Time on jobs</span></div>
+        <div className="panel b-warn"><span className="val">{lateN}</span><span className="lbl">Late start (after 7:45)</span></div>
+        <div className="panel b-blue"><span className="val">{halfN}</span><span className="lbl">Half day</span></div>
+        <div className="panel b-danger"><span className="val">{n1(leaveTaken)}{leaveAhead ? <small> + {n1(leaveAhead)} booked</small> : null}</span><span className="lbl">Leave days this month</span></div>
+      </div>
+
+      <div className="mtsgrid">
+        <div className="section">
+          <div className="panel">
+            <div className="ph"><h2>{new Date(`${month}-01T00:00:00`).toLocaleDateString("en-AU", { month: "long" })} at a glance</h2><span className="note">Click a day to see its log-ins and jobs</span></div>
+            <div className="mcal">
+              {DOW.map((d) => <div key={d} className="mh">{d}</div>)}
+              {cells.map((d, i) => {
+                if (!d) return <div key={`x${i}`} className="mc blank" />;
+                const n = Number(d.slice(8));
+                if (dowOf(d) === 6) return <div key={d} className="mc sun"><span className="dn">{n}</span><span className="note">Sun · off</span></div>;
+                const x = byDate.get(d);
+                const lv = leaveOn(d);
+                if (d > today || !x) {
+                  if (lv) return <button type="button" key={d} className={`mc booked${lv.status === "pending" ? " wait" : ""}`} onClick={() => pickDay(d)}><span className="dn">{n}</span>
+                    <span className="pill danger">🌴 {lv.part === "full" ? leaveLabel(lv.kind) : `Half day ${lv.part}`}</span><span className="note">{lv.status === "approved" ? "Approved" : "Waiting"}</span></button>;
+                  return <div key={d} className="mc future"><span className="dn">{n}</span></div>;
+                }
+                const cls = x.leave ? "lv" : x.open && d === today ? "now" : x.half ? "half" : x.late ? "late" : "ok";
+                return <button type="button" key={d} className={`mc ${cls}${d === day ? " sel" : ""}`} onClick={() => pickDay(d)}>
+                  <span className="dn">{n}</span>
+                  {x.first ? <span className="mono hh">{n1(x.m / 60)}h{x.open && d === today ? " so far" : ""}</span> : null}
+                  {x.first ? <span className="mono tt2">{ct(x.first)}{x.last && !x.open ? ` – ${ct(x.last)}` : ""}</span> : null}
+                  {x.leave ? <span className="pill danger">{x.booked ? leaveLabel(x.booked) : "Leave"}</span>
+                    : x.open && d === today ? <span className="pill ok">● Working</span>
+                    : x.half ? <span className="pill info">Half day</span>
+                    : x.late ? <span className="pill warn">Late {time(x.first)}</span> : null}
+                </button>;
+              })}
+            </div>
+            <div className="mlegend"><span><i className="c-ok" />Present</span><span><i className="c-late" />Late</span><span><i className="c-half" />Half day</span><span><i className="c-lv" />Leave</span><span><i className="c-bk" />Booked leave</span></div>
+            <p className="note" style={{ margin: "0 14px 14px" }}>Office hours: Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break, so 8h 15m a day. Sunday is off. Late = log in after 7:45 am. If you start after 7:30, your suggested log-out time moves later so you still work 8h 15m.</p>
+          </div>
+
+          <div className="panel" id="ts-daybyday">
+            <div className="ph"><h2>Day by day</h2><span className="note">Log in, log out and job time</span></div>
+            <div className="tablebox solo" style={{ margin: 0, border: 0 }}>
+              {!rows.length ? <div className="empty"><strong>Nothing recorded this month yet.</strong>Your log-ins show here.</div> : (
+                <table><thead><tr><th>Date</th><th>Logged in</th><th>Logged out</th><th>Hours</th><th>On jobs</th><th>Status</th><th></th></tr></thead>
+                  <tbody>{rows.map((d) => { const jh = jobH(d.date); return (
+                    <tr key={d.date} className={d.date === day ? "sel" : undefined}><td><button type="button" className="link" onClick={() => pickDay(d.date)}>{short(d.date)}</button></td>
+                      <td className="mono">{time(d.first || null) || "—"}</td>
+                      <td className="mono">{d.open ? (d.date === today ? "Still in" : <span className="warn">Not logged out</span>) : time(d.last) || "—"}</td>
+                      <td className="mono">{d.m ? hmS(d.m) : "—"}</td>
+                      <td className="mono">{jh ? `${hmS(jh * 60)}${d.m ? ` (${Math.round((jh * 60 / d.m) * 100)}%)` : ""}` : "—"}</td>
+                      <td><span className={`pill ${statusCls(d)}`}>{statusText(d)}{d.late && d.request === "pending" ? " · asked" : ""}</span></td>
+                      <td className="note">{d.late && !d.request ? <button type="button" onClick={() => onExplain(d)}>Explain</button>
+                        : d.open && d.date < today ? "Forgot to log out? Ask your manager to fix it."
+                        : d.early ? `Left ${hmS(d.early)} early (suggested ${time(d.suggested)})`
+                        : d.lateExcused ? `Suggested log out was ${time(d.suggested)}` : null}</td></tr>); })}</tbody></table>)}
+            </div>
+          </div>
+
+          <div id="ts-dayjobs">{dayEl}</div>
+        </div>
+
+        <div className="section">
+          <div className="panel">
+            <div className="ph"><h2>My leave this year</h2><span className="note">{today.slice(0, 4)}</span></div>
+            <div className="lvbal">
+              <div className="row" style={{ justifyContent: "space-between" }}><strong>Sick / personal</strong><span className="note">{LEAVE_ALLOWANCE} days a year</span></div>
+              <div className="lvbar"><b className="sp" style={{ width: `${Math.min(100, (spTaken / LEAVE_ALLOWANCE) * 100)}%` }} /><i style={{ width: `${Math.min(100, (spBooked / LEAVE_ALLOWANCE) * 100)}%` }} /></div>
+              <div className="row" style={{ justifyContent: "space-between" }}><span className="note">Taken {n1(spTaken)}{spBooked ? ` · Booked ${n1(spBooked)}` : ""}{spWait ? ` · Waiting ${n1(spWait)}` : ""}</span><strong>{n1(spLeft)} left</strong></div>
+            </div>
+            <div className="lvbal">
+              <div className="row" style={{ justifyContent: "space-between" }}><strong>Unpaid leave</strong><span className="note">No limit, needs approval</span></div>
+              <div className="lvbar"><b className="up" style={{ width: `${Math.min(100, upTaken * 5)}%` }} /><i className="up" style={{ width: `${Math.min(100, upBooked * 5)}%` }} /></div>
+              <div className="row" style={{ justifyContent: "space-between" }}><span className="note">Taken {n1(upTaken)} · Booked {n1(upBooked)} · Waiting {n1(upWait)}</span><strong>{n1(upTaken + upBooked)} days</strong></div>
+            </div>
+            <p className="note" style={{ margin: "0 14px 14px" }}>There is no annual leave. Time off you plan ahead is unpaid leave.</p>
+          </div>
+
+          <div className="panel" id="ts-apply">
+            <div className="ph"><h2>Apply for leave</h2></div>
+            {leaveMissing ? <p className="note" style={{ margin: "0 14px 14px" }}>Leave booking isn&apos;t switched on yet. Ask your master admin to run the leave database update.</p> : <div className="lvform">
+              <span className="lbl2">Type</span>
+              <div className="seg">{LEAVE_KINDS.map((k) => <button key={k.id} type="button" className={v.kind === k.id ? "on" : undefined} onClick={() => setV({ ...v, kind: k.id })}>{k.label.replace(" leave", "")}</button>)}</div>
+              <div className="row" style={{ gap: 8 }}>
+                <label className="f" style={{ flex: 1 }}>{v.part === "full" ? "From" : "Date"}<input id="lv-from" type="date" value={v.from} onChange={(e) => e.target.value && setV({ ...v, from: e.target.value, to: e.target.value > v.to ? e.target.value : v.to })} /></label>
+                {v.part === "full" ? <label className="f" style={{ flex: 1 }}>To<input id="lv-to" type="date" min={v.from} value={v.to} onChange={(e) => e.target.value && setV({ ...v, to: e.target.value })} /></label> : null}
+              </div>
+              <span className="lbl2">Length</span>
+              <div className="seg">{([["full", "Full days"], ["am", "Half day (am)"], ["pm", "Half day (pm)"]] as [LeaveReq["part"], string][]).map(([k, l]) => <button key={k} type="button" className={v.part === k ? "on" : undefined} onClick={() => setV({ ...v, part: k })}>{l}</button>)}</div>
+              <label className="f">Reason (optional)<input id="lv-reason" value={v.reason} maxLength={1000} onChange={(e) => setV({ ...v, reason: e.target.value })} placeholder="e.g. Family trip" /></label>
+              {vDays ? <div className="lvsum">{v.part === "full" ? `${n1(vDays)} working day${vDays === 1 ? "" : "s"}` : "Half a day"} of {leaveLabel(v.kind).toLowerCase()}{v.part === "full" && vTo > v.from ? ` (${dayName(v.from)} to ${dayName(vTo)})` : ` (${dayName(v.from)})`}.{v.kind !== "unpaid" ? ` ${n1(spLeft)} sick / personal days left.` : ""}</div>
+                : <div className="lvsum warn">Those dates are all Sundays, which are already off.</div>}
+              <button type="button" className="primary" disabled={sending || !vDays} onClick={apply}>Send to manager for approval</button>
+              <span className="note">Your manager gets a notification. Approved leave shows on your calendar and the team&apos;s.</span>
+            </div>}
+          </div>
+
+          <div className="panel">
+            <div className="ph"><h2>My requests</h2></div>
+            {!reqs.length ? <div className="empty"><strong>No requests yet.</strong>Leave and late-start requests show here.</div> : (
+              <ul className="list reqs">{reqs.map(({ k, l, r }) => l ? (
+                <li key={k}><span className="ricon">🌴</span><div className="grow"><div className="t">{leaveSpan(l)} · {leaveLabel(l.kind)}{l.part !== "full" ? `, half day ${l.part}` : `, ${n1(leaveDays(l))} day${leaveDays(l) === 1 ? "" : "s"}`}</div>
+                  <div className="s">{l.status === "pending" ? `Sent ${fmtDate(l.created_at.slice(0, 10))}` : l.status === "approved" ? "Approved" : "Not approved"}{l.reason ? ` · ${l.reason}` : ""}</div></div>
+                  <div className="row"><span className={`pill ${l.status === "approved" ? "ok" : l.status === "rejected" ? "danger" : "warn"}`}>{l.status === "approved" ? "Approved" : l.status === "rejected" ? "Not approved" : "Waiting"}</span>
+                    {l.end_date >= today && (l.status === "pending" || l.start_date > today) ? <button type="button" onClick={() => cancel(l)}>Cancel</button> : null}</div></li>
+              ) : r ? (
+                <li key={k}><span className="ricon">⏰</span><div className="grow"><div className="t">{fmtDate(r.work_date)} · Late start</div><div className="s">&ldquo;{r.reason || "No reason given"}&rdquo;</div></div>
+                  <span className={`pill ${r.status === "approved" ? "ok" : r.status === "rejected" ? "danger" : "warn"}`}>{r.status === "approved" ? "Late approved" : r.status === "rejected" ? "Not approved" : "Waiting"}</span></li>
+              ) : null)}</ul>)}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
