@@ -22,7 +22,7 @@ const WHAT: Record<Notice["kind"], string> = {
   sign_handover: "handed you a job to send to the client for signing",
   review_note: "left you a review note to fix",
   review_fixed: "fixed a review note for you to check",
-  leave_request: "asked for leave. Approve or decline it under Timesheet, Requests",
+  leave_request: "asked for leave",
   leave_decided: "decided on your leave request",
   leave_cancelled: "cancelled approved leave",
 };

@@ -167,7 +167,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <span className="count">Client queries <i className={c.cq ? "warn" : ""}>{c.cq}</i></span>
           <button type="button" className="count" onClick={() => go("jp-work")}>Review notes <i className={flag?.rn ? "red" : ""}>{flag?.rn ?? 0}</i></button>
           <button type="button" className="count" onClick={() => go("jp-files")}>Files <i className="blue">{flag?.f ?? 0}</i></button>
-          {total ? <button type="button" className="count" onClick={() => go("jp-work")}>{STEPS[job.service] ? "Steps" : "Checklist"} <i className="green">{c.checks}/{total}</i></button> : null}
+          {prog.total ? <button type="button" className="count" onClick={() => go("jp-work")}>{STEPS[job.service] ? "Steps" : "Checklist"} <i className={prog.total && prog.marked >= prog.total ? "green" : undefined}>{Math.min(prog.marked, prog.total)}/{prog.total}</i></button> : null}
           <span className="count">Stage <i className="blue">{Math.min(stage + 1, 4)} of 4</i></span>
           <button type="button" className="count" onClick={() => go("jp-history")}>Time logged <i className="dark">{fmtHours(hours)}</i></button>
           {related && client ? <button type="button" className="count" onClick={() => onOpenClient(client.id)}>🔗 Related clients ({related})</button> : null}

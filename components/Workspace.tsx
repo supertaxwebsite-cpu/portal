@@ -1107,7 +1107,11 @@ export default function Workspace({ me }: { me: Profile }) {
   async function openNotice(n: Notice) {
     if (n.job_id) {
       const j = jobs.find((x) => x.id === n.job_id);
-      if (j) setModal({ kind: "job", job: j, ...(n.kind === "internal_query" || n.kind === "query_answered" ? { tab: "queries" as const } : {}) }); else say("That job has been deleted or is no longer visible to you.", true);
+      if (!j) { say("That job has been deleted or is no longer visible to you.", true); return; }
+      openJob(j);
+      // Scroll to the part of the job the notification is about.
+      const target = n.kind === "review_note" || n.kind === "review_fixed" ? "review-notes" : "jp-work";
+      setTimeout(() => { const el = (target === "review-notes" ? document.querySelector(".task.rn:not(.cleared)") ?? document.querySelector(".task.rn") : null) ?? document.getElementById("jp-work"); el?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 400);
     } else if (n.kind === "leave_request" || n.kind === "leave_decided" || n.kind === "leave_cancelled") {
       setTsTab(n.kind === "leave_request" ? "req" : "mine"); setNavTick((t) => t + 1); go("timesheet");
     } else if (n.meeting_id) {
