@@ -21,6 +21,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (body.reportsTo === null || body.reportsTo === "") update.reports_to = null;
   else if (typeof body.reportsTo === "string") update.reports_to = body.reportsTo;
   if (update.role === "manager" || update.role === "master") update.reports_to = null;
+  if (body.managerId === null || body.managerId === "") update.manager_id = null;
+  else if (typeof body.managerId === "string") { if (body.managerId === id) return NextResponse.json({ error: "Someone can't be their own manager." }, { status: 400 }); update.manager_id = body.managerId; }
+  if (update.role === "master") update.manager_id = null;
   if (typeof body.canDelete === "boolean") update.can_delete = body.canDelete;
   if (typeof body.canSeeWorkload === "boolean") update.can_see_workload = body.canSeeWorkload;
   if (typeof body.canPickReviewer === "boolean") update.can_pick_reviewer = body.canPickReviewer;
@@ -42,6 +45,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!mgr || mgr.role !== "manager") return NextResponse.json({ error: "Choose a manager from the list." }, { status: 400 });
   }
 
+  if (typeof update.manager_id === "string") {
+    const { data: boss } = await admin.from("profiles").select("role").eq("id", update.manager_id).maybeSingle();
+    if (!boss || (boss.role !== "manager" && boss.role !== "master")) return NextResponse.json({ error: "Choose a manager from the list." }, { status: 400 });
+  }
+
   if (typeof body.active === "boolean") {
     // Banning also signs them out everywhere within the hour (token expiry).
     const { error } = await admin.auth.admin.updateUserById(id, { ban_duration: body.active ? "none" : "876000h" });
@@ -49,9 +57,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   if (Object.keys(update).length) {
     let { error } = await admin.from("profiles").update(update).eq("id", id);
-    if (error && /can_create_clients/.test(error.message) && update.can_create_clients !== false) {
+    if (error && /can_create_clients|manager_id/.test(error.message) && update.can_create_clients !== false && !update.manager_id) {
       // The client-permission database update isn't run yet: save everything else.
-      delete update.can_create_clients;
+      delete update.can_create_clients; delete update.manager_id;
       ({ error } = await admin.from("profiles").update(update).eq("id", id));
     }
     if (error && /gets_sign_reminders/.test(error.message) && !update.gets_sign_reminders) {
@@ -64,7 +72,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       delete update.can_see_mgmt_notes; delete update.client_types; delete update.practices;
       ({ error } = await admin.from("profiles").update(update).eq("id", id));
     }
-    if (error) return NextResponse.json({ error: /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders|can_create_clients/.test(error.message) ? "Run the latest database update first." : error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders|can_create_clients|manager_id/.test(error.message) ? "Run database-update-client-permissions.sql in Supabase first." : error.message }, { status: 500 });
   }
   const role = (update.role as string | undefined) ?? target.role;
   if (role === "manager" && Array.isArray(body.team)) {

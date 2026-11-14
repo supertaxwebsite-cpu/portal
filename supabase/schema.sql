@@ -2790,4 +2790,5 @@ create policy "members add clients" on public.clients
       )
     )
   );
+alter table public.profiles add column if not exists manager_id uuid references public.profiles (id) on delete set null;
 notify pgrst, 'reload schema';

@@ -1059,7 +1059,7 @@ export default function Workspace({ me }: { me: Profile }) {
                 <span className={`pill ${roleCls(p.role)}`} style={{ marginLeft: "auto" }}>{roleLabel(p.role)}</span></div>
               <div className={`mnow${t ? " on" : ""}`}>{!p.active ? "Access switched off" : p.must_change_password ? "Hasn't signed in yet" : t ? <>● Working now · {tj ? `${clientName(tj.client_id)} · ${svcLabel(tj.service)}` : "a job"}</> : "Not on a job right now"}</div>
               <div className="mrow"><span>Practices <b>{p.role !== "staff" || !p.practices?.length ? "All" : p.practices.join(", ")}</b></span></div>
-              <div className="mrow"><span>Team leader <b>{p.role === "staff" ? personName(p.reports_to ?? null) || "—" : "—"}</b></span><span>Clients <b>{p.role !== "staff" || !p.client_types?.length ? "All" : p.client_types.join(", ")}</b></span></div>
+              <div className="mrow"><span>Team leader <b>{p.role === "staff" ? personName(p.reports_to ?? null) || "—" : "—"}</b></span><span>Manager <b>{personName(p.manager_id ?? null) || "—"}</b></span></div><div className="mrow"><span>Clients <b>{p.role !== "staff" || !p.client_types?.length ? "All" : p.client_types.join(", ")}</b></span></div>
               <div className="mrow"><span><b>{oj.length} open job{oj.length === 1 ? "" : "s"}</b></span><span style={{ color: od ? "var(--danger)" : "var(--muted)" }}>{od} overdue</span></div>
               <div className={`mbar${od >= 3 ? " red" : ""}`}><i style={{ width: `${(oj.length / maxOpen) * 100}%` }} /></div>
               <div className="perms">
@@ -1153,7 +1153,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} practices={myPractices} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
-      {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} staff={profiles.filter((p) => p.active && p.role === "staff")} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
+      {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} bosses={profiles.filter((p) => p.active && (p.role === "manager" || p.role === "master"))} staff={profiles.filter((p) => p.active && p.role === "staff")} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
         <Overlay onClose={close}><div className="modal"><header><h2>Give {modal.name} their sign-in</h2><button type="button" onClick={close}>Close</button></header>
           <div className="body"><div className="full stack">
@@ -1552,14 +1552,14 @@ function ClientModal({ client, practices = [...PRACTICES], clients, team, canDel
   );
 }
 
-function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, confirm, say }: {
-  member?: Profile; managers: Profile[]; staff: Profile[]; adminCall: (url: string, method: string, body?: unknown) => Promise<{ tempPassword?: string } | null>; onClose: () => void;
+function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTemp, confirm, say }: {
+  member?: Profile; managers: Profile[]; bosses: Profile[]; staff: Profile[]; adminCall: (url: string, method: string, body?: unknown) => Promise<{ tempPassword?: string } | null>; onClose: () => void;
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
-  const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
+  const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "", managerId: member?.manager_id ?? "" });
   const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], practices: v.role === "staff" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role === "staff" ? perm.canCreateClients : true, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], practices: v.role === "staff" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role === "staff" ? perm.canCreateClients : true, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1584,8 +1584,10 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
         <label className="f">Job title<input id="u-title" value={v.title} onChange={set("title")} placeholder="e.g. Senior accountant" /></label>
         <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Team leader (manager)</option><option value="master">Master admin (full control)</option></select></label>
         {v.role === "staff" ? (
-          <label className="f">Team leader<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No team leader</option>{managers.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select></label>
+          <label className="f">Team leader<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No team leader</option>{managers.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select>
+            {!managers.filter((m) => m.id !== member?.id).length ? <span className="note">Nobody is a team leader yet. Open the person who leads the team and set their Role to Team leader (manager), then pick them here.</span> : null}</label>
         ) : null}
+        {v.role !== "master" ? <label className="f">Manager<select id="u-manager" value={v.managerId} onChange={set("managerId")}><option value="">No manager</option>{bosses.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}{m.role === "master" ? " (master admin)" : " (team leader)"}</option>)}</select></label> : null}
         <p className="full hint" style={{ margin: 0 }}>{v.role === "staff" ? "Staff see and work on the jobs assigned to them, add and update clients and jobs, and fill in their timesheet."
           : v.role === "manager" ? "A team leader sees their team members here, their timesheets and attendance, what they are working on right now, and their workload. They can assign jobs and book meetings."
           : "A master admin can do everything: add people, change roles and permissions, delete clients and jobs, and see the whole practice."}</p>

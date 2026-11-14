@@ -16,6 +16,8 @@ export interface Profile {
   gets_sign_reminders?: boolean;
   /** Staff only: may add new clients (default yes). Limited to their practices if they have any. */
   can_create_clients?: boolean;
+  /** Who they report to above their team leader (a team leader or master admin). */
+  manager_id?: string | null;
   can_see_mgmt_notes?: boolean;
   client_types?: string[];
   /** Staff only: practices whose clients they can see. Empty = every practice. */
