@@ -851,3 +851,17 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .signwho .seg button{border:0;border-radius:0;background:#fff;padding:7px 12px;font-size:13px}
 .signwho .seg button+button{border-left:1px solid var(--line)}
 .signwho .seg button.on{background:#e6f1fa;color:#1f6fa8;font-weight:700}
+.rtally .ph{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rttable{width:100%;border-collapse:collapse;font-size:13px}
+.rttable th,.rttable td{text-align:left;padding:7px 12px;border-top:1px solid var(--line)}
+.rttable th{font-size:11.5px;color:var(--muted,#667);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.rttable tr.click{cursor:pointer}.rttable tr.click:hover{background:#f6f9fc}
+.rttable .rtdetail td{background:#fafbfc;padding:4px 12px 10px}
+.task.rnsum{padding:8px 16px;background:#fffaf0}
+@media (max-width:700px){.rttable th:nth-child(4),.rttable td:nth-child(4),.rttable th:nth-child(7),.rttable td:nth-child(7){display:none}}
+.rtnotes{list-style:none;margin:0;padding:0}
+.rtnotes li{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.rtnotes li:last-child{border-bottom:0}
+.rtnotes .pill{flex:none;width:auto}
+.rtnotes .grow{flex:1;min-width:0}.rtnotes .t{font-weight:600}.rtnotes .s{font-size:12.5px;color:var(--muted,#667)}
+.rtnotes .link{flex:none;white-space:nowrap}

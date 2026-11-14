@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Job } from "@/lib/types";
 import { svcLabel, todayISO } from "@/lib/domain";
@@ -111,23 +111,59 @@ export function ReviewTypes({ supabase, personName, visible }: { supabase: SB; p
   );
 }
 
-/** Review notes raised this month for each person: who needs training on what. */
-export function ReviewByPerson({ supabase, people }: { supabase: SB; people: { id: string; full_name: string }[] }) {
-  const [rows, setRows] = useState<{ to_id: string | null; severity: string; category: string }[] | null>(null);
+/** Every review note counts, open or cleared: how many mistakes each person made, by period, severity and type. */
+type RN = { id: string; job_id: string; to_id: string | null; author_id: string | null; severity: string; category: string; status: string; body: string; created_at: string };
+const PERIODS: [string, string][] = [["month", "This month"], ["last", "Last month"], ["fy", "This financial year"], ["year", "This calendar year"], ["all", "All time"]];
+function periodRange(p: string): [string | null, string | null] {
+  const t = todayISO(); const y = +t.slice(0, 4), m = +t.slice(5, 7);
+  const ym = (yy: number, mm: number) => `${yy}-${String(mm).padStart(2, "0")}-01`;
+  if (p === "month") return [ym(y, m), null];
+  if (p === "last") return m === 1 ? [ym(y - 1, 12), ym(y, 1)] : [ym(y, m - 1), ym(y, m)];
+  if (p === "fy") return [m >= 7 ? ym(y, 7) : ym(y - 1, 7), null];
+  if (p === "year") return [ym(y, 1), null];
+  return [null, null];
+}
+export function ReviewByPerson({ supabase, people, personName, jobLabel, onOpenJob }: {
+  supabase: SB; people: { id: string; full_name: string }[]; personName: (id: string | null) => string; jobLabel?: (id: string) => string; onOpenJob?: (id: string) => void;
+}) {
+  const [period, setPeriod] = useState("month");
+  const [rows, setRows] = useState<RN[] | null>(null);
+  const [openP, setOpenP] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    supabase.from("review_notes").select("to_id,severity,category").gte("created_at", `${todayISO().slice(0, 7)}-01`).then(({ data, error }) => { if (live) setRows(error ? null : (data as { to_id: string | null; severity: string; category: string }[])); });
+    const [from, to] = periodRange(period);
+    let q = supabase.from("review_notes").select("id,job_id,to_id,author_id,severity,category,status,body,created_at").order("created_at", { ascending: false }).limit(5000);
+    if (from) q = q.gte("created_at", from);
+    if (to) q = q.lt("created_at", to);
+    q.then(({ data, error }) => { if (live) setRows(error ? null : (data as RN[])); });
     return () => { live = false; };
-  }, [supabase]);
+  }, [supabase, period]);
   if (!rows) return null;
-  const list = people.map((p) => { const mine = rows.filter((r) => r.to_id === p.id); return { p, n: mine.length, major: mine.filter((r) => r.severity === "major").length, top: [...new Set(mine.map((r) => r.category))].slice(0, 2) }; }).sort((a, b) => b.n - a.n);
-  const max = Math.max(1, ...list.map((x) => x.n));
+  const ids = [...new Set([...people.map((p) => p.id), ...rows.map((r) => r.to_id).filter((x): x is string => !!x)])];
+  const list = ids.map((id) => { const mine = rows.filter((r) => r.to_id === id);
+    const types = [...new Set(mine.map((r) => r.category))].map((c) => ({ c, n: mine.filter((r) => r.category === c).length })).sort((a, b) => b.n - a.n);
+    return { id, name: people.find((p) => p.id === id)?.full_name ?? personName(id) ?? "Someone", mine, n: mine.length, major: mine.filter((r) => r.severity === "major").length, open: mine.filter((r) => r.status !== "cleared").length, types };
+  }).filter((x) => x.n || people.some((p) => p.id === x.id)).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  const total = rows.length;
+  const when = (s: string) => new Date(s).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" });
   return (
-    <div className="panel">
-      <div className="ph"><h2>Review notes this month</h2></div>
-      <div className="leaveleft">{list.map(({ p, n, major, top }) => (
-        <div key={p.id} className="row" title={top.join(", ")}><span className="nm" style={{ fontWeight: 600 }}>{p.full_name.split(" ")[0]}</span><i><b style={{ width: `${(n / max) * 100}%`, background: "#b26a00" }} /></i><span className="note" style={{ width: 120 }}>{n ? `${n} note${n === 1 ? "" : "s"}${major ? ` · ${major} major` : ""}` : "none"}</span></div>))}</div>
-      <p className="note" style={{ margin: "0 16px 14px" }}>Helps spot who needs training on what. Hover a name to see the types of mistakes.</p>
+    <div className="panel rtally" id="review-tally">
+      <div className="ph"><h2>Review notes by person</h2>
+        <select aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value)}>{PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+      <p className="note" style={{ margin: "0 16px 8px" }}>Every review note counts, including ones that were fixed and cleared. {total} in this period. Click a name to see each note.</p>
+      <table className="rttable"><thead><tr><th>Person</th><th>Total</th><th>Major</th><th>Minor</th><th>Still open</th><th>Cleared</th><th>Most common</th></tr></thead>
+        <tbody>{list.map((x) => <Fragment key={x.id}>
+          <tr className={x.n ? "click" : undefined} onClick={() => x.n && setOpenP(openP === x.id ? null : x.id)}>
+            <td><strong>{x.name}</strong>{x.n ? <span className="note"> {openP === x.id ? "▾" : "▸"}</span> : null}</td><td><strong>{x.n}</strong></td>
+            <td>{x.major ? <span className="pill danger">{x.major}</span> : "0"}</td><td>{x.n - x.major}</td>
+            <td>{x.open ? <span className="pill warn">{x.open}</span> : "0"}</td><td>{x.n - x.open}</td>
+            <td className="note">{x.types.slice(0, 3).map((t) => `${t.c} ${t.n}`).join(" · ") || "—"}</td></tr>
+          {openP === x.id ? <tr className="rtdetail"><td colSpan={7}><ul className="rtnotes">{x.mine.map((r) => (
+            <li key={r.id}><span className={`pill ${r.severity === "major" ? "danger" : "warn"}`}>{r.severity === "major" ? "Major" : "Minor"}</span>
+              <div className="grow"><div className="t">{r.category} · {r.status === "cleared" ? "Cleared" : r.status === "fixed" ? "Fixed, to check" : "Open"}{jobLabel ? ` · ${jobLabel(r.job_id)}` : ""}</div>
+                <div className="s">{when(r.created_at)} · by {personName(r.author_id) || "reviewer"} · {r.body.length > 140 ? `${r.body.slice(0, 140)}…` : r.body}</div></div>
+              {onOpenJob ? <button type="button" className="link" onClick={() => onOpenJob(r.job_id)}>Open job</button> : null}</li>))}</ul></td></tr> : null}
+        </Fragment>)}</tbody></table>
     </div>
   );
 }

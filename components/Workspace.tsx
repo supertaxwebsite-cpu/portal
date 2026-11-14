@@ -1074,8 +1074,10 @@ export default function Workspace({ me }: { me: Profile }) {
               <tbody><tr><td>See and work on own jobs</td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Pick up unassigned jobs</td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>See clients</td><td>Allowed types</td><td>All</td><td>All</td></tr><tr><td>Create and assign jobs</td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Review and approve jobs</td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Management notes</td><td>If allowed</td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Book meetings, prospects</td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td><td><span className="yes">✓</span></td></tr><tr><td>Team page and permissions</td><td><span className="muted">–</span></td><td>Own team</td><td><span className="yes">✓</span></td></tr><tr><td>Delete clients and jobs</td><td><span className="muted">–</span></td><td><span className="muted">–</span></td><td><span className="yes">✓</span></td></tr></tbody></table>
             <p className="note" style={{ margin: "8px 16px 14px" }}>Click the Can delete notes or Sees team workload tags on a card to switch them, or use Edit for everything else.</p>
           </div>
-          <ReviewByPerson supabase={supabase} people={sorted.filter((p) => p.active && p.role === "staff")} />
         </div>
+        <ReviewByPerson supabase={supabase} people={sorted.filter((p) => p.active && p.role === "staff")} personName={personName}
+          jobLabel={(id) => { const j = jobs.find((x) => x.id === id); return j ? `${clientName(j.client_id)} · ${svcLabel(j.service)}${j.period ? ` ${j.period}` : ""}` : "Job"; }}
+          onOpenJob={(id) => { const j = jobs.find((x) => x.id === id); if (j) openJob(j); else say("That job isn't in your list.", true); }} />
       </>
     );
   }

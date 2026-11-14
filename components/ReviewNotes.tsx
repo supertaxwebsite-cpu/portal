@@ -155,8 +155,12 @@ export default function ReviewNotes({ job, meId, canAnswerAll, readOnly, supabas
         <button type="button" disabled={busy} onClick={() => run(supabase.from("review_notes").update({ status: "open" }).eq("id", n.id), "Sent back to fix again")}>Not fixed, send back</button>
       </div> : null}</>;
   };
+  const all = notes ?? [];
+  const summary = all.length ? <li className="task rnsum"><span className="note"><strong>Review notes on this job: {all.length}</strong>
+    {` · ${all.filter((n) => n.severity === "major").length} major · ${open} still open · ${all.length - open} cleared. Cleared notes stay here and still count towards the preparer's mistakes.`}</span></li> : null;
   if (asTasks) return (
     <>
+      {summary}
       {(notes ?? []).map((n) => { const [lbl, cls] = STATUS[n.status]; return (
         <li key={n.id} className={`task rn ${n.status}`} id={`rn-${n.id}`}>
           <div className="taskhead"><span className="tdot">{n.status === "cleared" ? "✓" : "!"}</span>
