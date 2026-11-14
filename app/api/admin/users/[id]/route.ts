@@ -32,12 +32,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (typeof body.canCreateClients === "boolean") update.can_create_clients = body.canCreateClients;
   if (typeof body.canSeeTeamTab === "boolean") update.can_see_team_tab = body.canSeeTeamTab;
   if (typeof body.canAccessTimesheet === "boolean") update.can_access_timesheet = body.canAccessTimesheet;
+  if (typeof body.canSelfReview === "boolean") update.can_self_review = body.canSelfReview;
   if (Array.isArray(body.clientTypes)) update.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (Array.isArray(body.practices)) update.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   if (update.role === "master") { update.gets_sign_reminders = true; update.can_delete = false; update.can_see_workload = false; }
   if (update.role === "master") { update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; update.client_types = []; update.practices = []; update.can_create_clients = true; }
   if (update.role === "manager") update.can_pick_reviewer = false;
-  if (update.role && update.role !== "manager") { update.can_see_team_tab = false; update.can_access_timesheet = false; }
+  if (update.role && update.role !== "manager") { update.can_see_team_tab = false; update.can_access_timesheet = false; update.can_self_review = false; }
   if (!Object.keys(update).length && !Array.isArray(body.team)) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
 
   const admin = createAdminClient();
@@ -61,6 +62,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   if (Object.keys(update).length) {
     let { error } = await admin.from("profiles").update(update).eq("id", id);
+    if (error && /can_self_review/.test(error.message)) {
+      if (update.can_self_review) return NextResponse.json({ error: "Run database-update-team-leader-review.sql in Supabase first, then try again." }, { status: 500 });
+      delete update.can_self_review;
+      ({ error } = await admin.from("profiles").update(update).eq("id", id));
+    }
     if (error && /can_see_team_tab|can_access_timesheet/.test(error.message)) {
       if (update.can_see_team_tab || update.can_access_timesheet) return NextResponse.json({ error: "Run database-update-team-leader-access.sql in Supabase first, then try again." }, { status: 500 });
       delete update.can_see_team_tab; delete update.can_access_timesheet;

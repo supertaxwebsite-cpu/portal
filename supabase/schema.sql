@@ -3026,3 +3026,59 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.can_view_person(uuid) from public, anon;
 grant execute on function public.can_view_person(uuid) to authenticated;
+
+-- ===== database-update-team-leader-review.sql =====
+-- Team leader review rules. Add-only.
+-- A team leader sends work for review only to their manager or a master admin, never to staff.
+-- They can review their own job only when "Can review their own jobs" is ticked (off by default).
+alter table public.profiles add column if not exists can_self_review boolean not null default false;
+
+create or replace function public.submit_for_review(p_job uuid, p_to uuid, p_note text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; me uuid := auth.uid(); who text; mp public.profiles;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into j from public.jobs where id = p_job for update;
+  if not found then raise exception 'That job no longer exists'; end if;
+  if j.assignee_id is distinct from me and public.my_role() not in ('master', 'manager') then
+    raise exception 'Only the person working on this job can submit it for review' using errcode = '42501';
+  end if;
+  if j.status in ('review', 'to_lodge', 'sent_for_sign', 'lodged', 'done') then
+    raise exception 'This job has already been submitted';
+  end if;
+  if p_to is null or not exists (select 1 from public.profiles where id = p_to and active) then
+    raise exception 'Choose who should review this job';
+  end if;
+  select * into mp from public.profiles where id = me;
+  if mp.role = 'manager' then
+    -- Team leaders: themselves only with the tick; otherwise their manager or a master admin.
+    if p_to = me then
+      if not coalesce(mp.can_self_review, false) then
+        raise exception 'Send it to your manager or a master admin to review' using errcode = '42501';
+      end if;
+    elsif p_to is distinct from mp.manager_id and p_to is distinct from mp.reports_to
+          and not exists (select 1 from public.profiles where id = p_to and role = 'master') then
+      raise exception 'Team leaders send work for review to their manager or a master admin' using errcode = '42501';
+    end if;
+  elsif p_to = me and j.reviewer_id is distinct from me and not coalesce(mp.can_pick_reviewer, false) then
+    -- Submitting to yourself only if you've been made this job's reviewer.
+    raise exception 'Choose another team member to review this job';
+  end if;
+  if exists (select 1 from public.job_timers where user_id = me and job_id = p_job and ended_at is null) then
+    perform public.end_job_timer(me);
+  end if;
+  who := mp.full_name;
+  perform set_config('supertax.job_handover', 'on', true);
+  update public.jobs set
+    status = 'review',
+    reviewer_id = p_to,
+    notes = case when coalesce(trim(p_note), '') = '' then notes
+                 else trim(both E'\n' from coalesce(notes, '') || E'\n' || 'Submitted for review by ' || coalesce(who, 'a team member') || ' (' || to_char(now() at time zone 'Australia/Sydney', 'FMDD Mon') || '): ' || trim(p_note)) end
+  where id = p_job;
+  perform set_config('supertax.job_handover', 'off', true);
+  if coalesce(trim(p_note), '') <> '' then
+    insert into public.job_activity (job_id, actor_id, kind, body) values (p_job, me, 'comment', 'For review: ' || trim(p_note));
+  end if;
+end $$;
+revoke all on function public.submit_for_review(uuid, uuid, text) from public, anon;
+grant execute on function public.submit_for_review(uuid, uuid, text) to authenticated;

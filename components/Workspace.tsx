@@ -414,7 +414,7 @@ export default function Workspace({ me }: { me: Profile }) {
     if (!error) await load();
   }
   async function myStatus(j: Job, status: StatusId) {
-    if (me.role === "staff" && status === "review") { await submitForReview(j); return; }
+    if ((me.role === "staff" || (me.role === "manager" && j.assignee_id === me.id)) && status === "review") { await submitForReview(j); return; }
     if (running?.job_id === j.id && (!isOpen(status) || status === "client_query") && !(await stopJob())) return;
     await setStatus(j, status);
   }
@@ -538,7 +538,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // Staff never set a status by hand: it moves on its own as they work through the job's tasks.
   const StatusSelect = ({ j }: { j: Job }) => me.role === "staff"
     ? <span className={`pill status ${statusCls(j)}`} title="The status changes on its own as the job's tasks are done">{ST[j.status]?.label ?? j.status}</span> : (
-    <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j) || staffSubmitted(j) || staffNotStarted(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : staffSubmitted(j) ? SUBMITTED_LOCK_MSG : staffNotStarted(j) ? "Not started yet. The person it's assigned to presses Start first, then the status can change" : undefined} onChange={(e) => (me.role === "staff" && e.target.value === "review" ? submitForReview(j) : setStatus(j, e.target.value as StatusId))}>
+    <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j) || staffSubmitted(j) || staffNotStarted(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : staffSubmitted(j) ? SUBMITTED_LOCK_MSG : staffNotStarted(j) ? "Not started yet. The person it's assigned to presses Start first, then the status can change" : undefined} onChange={(e) => ((me.role === "staff" || (me.role === "manager" && j.assignee_id === me.id)) && e.target.value === "review" ? submitForReview(j) : setStatus(j, e.target.value as StatusId))}>
       {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={me.role === "staff" && STAFF_CANT_PICK.has(s.id) && s.id !== j.status && j.reviewer_id !== me.id}>{s.label}</option>)}
     </select>
   );
@@ -1183,7 +1183,7 @@ export default function Workspace({ me }: { me: Profile }) {
           </div></div>
           <footer><span /><button type="button" className="primary" onClick={close}>Done</button></footer></div></Overlay>
       ) : null}
-      {modal?.kind === "submit" ? <SubmitModal job={modal.job} me={me} team={team} suggested={myReviewer(modal.job)} clientName={clientName} onClose={close}
+      {modal?.kind === "submit" ? <SubmitModal job={modal.job} me={me} team={me.role === "manager" ? team.filter((p) => p.id === me.id || p.id === me.manager_id || p.id === me.reports_to || profiles.find((x) => x.id === p.id)?.role === "master") : team} suggested={myReviewer(modal.job)} clientName={clientName} onClose={close}
         run={(to, note) => sendForReview(modal.job, to, note)} /> : null}
       {modal?.kind === "handsign" ? <HandSignModal job={modal.job} me={me} team={team} clientName={clientName} personName={personName} onClose={close}
         run={async (to, note) => { if (await save(() => supabase.rpc("hand_signing", { p_job: modal.job.id, p_to: to, p_note: note }), `Handed to ${personName(to)}. It's in their My jobs now`)) close(); }} /> : null}
@@ -1577,9 +1577,9 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "", managerId: member?.manager_id ?? "" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, canSelfReview: !!member?.can_self_review, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, canSelfReview: v.role === "manager" && perm.canSelfReview, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1619,6 +1619,7 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
           <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? ` (not just their own team${perm.practices.length ? `; ${perm.practices.join(", ")} work only` : ""})` : ""}</label>
           <label className="row" style={{ gap: 8 }}><input id="u-createclients" type="checkbox" checked={perm.canCreateClients} onChange={(e) => setPerm({ ...perm, canCreateClients: e.target.checked })} /> Can create new clients{perm.practices.length ? ` (only for ${perm.practices.join(", ")})` : ""}</label>
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-teamtab" type="checkbox" checked={perm.canSeeTeamTab} onChange={(e) => setPerm({ ...perm, canSeeTeamTab: e.target.checked })} /> See the Team tab</label> : null}
+          {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-selfreview" type="checkbox" checked={perm.canSelfReview} onChange={(e) => setPerm({ ...perm, canSelfReview: e.target.checked })} /> Can review their own jobs (otherwise they send for review to their manager or a master admin)</label> : null}
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-timesheet" type="checkbox" checked={perm.canAccessTimesheet} onChange={(e) => setPerm({ ...perm, canAccessTimesheet: e.target.checked })} /> See their team&apos;s timesheets, attendance and leave (otherwise only their own timesheet)</label> : null}
           <label className="row" style={{ gap: 8 }}><input id="u-signrem" type="checkbox" checked={perm.signReminders} onChange={(e) => setPerm({ ...perm, signReminders: e.target.checked })} /> Get the bell reminders to chase client signatures and client query replies on jobs they send out (otherwise the reminders go to the master admins)</label>
           <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label>
@@ -1729,8 +1730,9 @@ function SubmitModal({ job, me, team, suggested, clientName, run, onClose }: {
   job: Job; me: Profile; team: Person[]; suggested: string | null; clientName: (id: string) => string;
   run: (to: string, note: string) => Promise<void>; onClose: () => void;
 }) {
-  // "Myself" only when a manager has made you this job's reviewer.
-  const others = [...team.filter((p) => p.id !== me.id), ...(job.reviewer_id === me.id || me.can_pick_reviewer ? [{ id: me.id, full_name: "Myself", title: "I'm the reviewer" } as Person] : [])];
+  // "Myself" only when a manager has made you this job's reviewer. Team leaders: only with the "review own jobs" tick.
+  const selfOk = me.role === "manager" ? !!me.can_self_review : job.reviewer_id === me.id || me.can_pick_reviewer;
+  const others = [...team.filter((p) => p.id !== me.id), ...(selfOk ? [{ id: me.id, full_name: "Myself", title: "I'm the reviewer" } as Person] : [])];
   const [to, setTo] = useState(suggested && others.some((p) => p.id === suggested) ? suggested : "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);

@@ -44,13 +44,14 @@ export async function POST(req: Request) {
   if (role !== "master" && body.canCreateClients === false) perms.can_create_clients = false;
   if (role === "manager" && body.canSeeTeamTab === true) perms.can_see_team_tab = true;
   if (role === "manager" && body.canAccessTimesheet === true) perms.can_access_timesheet = true;
+  if (role === "manager" && body.canSelfReview === true) perms.can_self_review = true;
   if (managerId) perms.manager_id = managerId;
   if (role !== "master" && Array.isArray(body.clientTypes) && body.clientTypes.length) perms.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (role !== "master" && Array.isArray(body.practices) && body.practices.length) perms.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   let { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) });
-  if (pErr && /can_see_team_tab|can_access_timesheet/.test(pErr.message)) {
+  if (pErr && /can_see_team_tab|can_access_timesheet|can_self_review/.test(pErr.message)) {
     // Team leader access update not run yet: add them without those ticks.
-    delete perms.can_see_team_tab; delete perms.can_access_timesheet;
+    delete perms.can_see_team_tab; delete perms.can_access_timesheet; delete perms.can_self_review;
     ({ error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) }));
   }
   if (pErr && /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders|can_create_clients|manager_id/.test(pErr.message)) {

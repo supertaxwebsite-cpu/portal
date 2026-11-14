@@ -21,6 +21,7 @@ export interface Profile {
   /** Team leaders: may open the Team tab / see their team's timesheets (master admins always can). */
   can_see_team_tab?: boolean;
   can_access_timesheet?: boolean;
+  can_self_review?: boolean;
   can_see_mgmt_notes?: boolean;
   client_types?: string[];
   /** Staff only: practices whose clients they can see. Empty = every practice. */
