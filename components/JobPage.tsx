@@ -4,7 +4,7 @@ import type { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person } from "@/lib/types";
 import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel } from "@/lib/domain";
 import { STEPS, checklistFor } from "@/lib/checklists";
-import JobBrief from "./JobBrief";
+import JobBrief, { type PrepRow } from "./JobBrief";
 import JobFiles from "./JobFiles";
 import JobHistory from "./JobHistory";
 import { fmtHours } from "./MyJobs";
@@ -106,9 +106,35 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
     }
     return null;
   };
+  // Preparation time in a window (Initial review, or one Processing step), by the timesheet line's time.
+  const prepTime = useCallback((from: string | null, to: string | null) => ents
+    .filter((e) => !isAnswer(e) && stageOf(e) === 0 && (!from || e.created_at >= from) && (!to || e.created_at < to))
+    .reduce((t, e) => t + e.hours, 0), [ents]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prepHead = (r: PrepRow) => {
+    const me = job.assignee_id === meId;
+    const title = r.kind === "ir" ? "Initial review" : r.afterQuery ? "Processing (after query)" : "Processing";
+    const sub = r.current
+      ? (!wasStarted(job) && r.kind === "ir" ? "Not started yet: press Start" : `${on ? "" : "Press Start to work on it · "}checklist ${r.marked} of ${r.total}${r.marked >= r.total ? ": ready to complete" : ""}`)
+      : r.kind === "ir" ? "Documents checked and data in the software" : "Done";
+    const canDo = r.current && open && !readOnly && (me || canAnswerAll);
+    const ready = r.total === 0 || r.marked >= r.total;
+    return <div className={`taskhead ${r.done ? "done" : r.current ? "now" : ""}`}>
+      <span className="tdot">{r.done ? "✓" : r.n}</span>
+      <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">{title}{job.assignee_id ? ` · ${personName(job.assignee_id)}${me ? " (you)" : ""}` : ""}</div>
+        <div className="tks">{r.current && on ? <span className="runtxt">● Running · </span> : null}{sub}</div></div>
+      {r.hours ? <span className="tasktime mono" title="Time logged on this task">{hm(r.hours)}</span> : null}
+      <div className="row jsact">
+        {canDo ? <>{me ? timerBtn("Start") : null}
+          {r.kind === "ir"
+            ? <button type="button" className={on ? "primary" : undefined} disabled={busy || !ready} title={ready ? "Stops the timer. Processing opens next." : `Mark every item Checked or N/A first (${r.marked} of ${r.total})`} onClick={() => r.complete?.()}>Complete initial review</button>
+            : onComplete ? <button type="button" className={on ? "primary" : undefined} disabled={busy || !ready} title={ready ? "Stops the timer and sends it to review" : `Mark every item Checked or N/A first (${r.marked} of ${r.total})`}
+              onClick={async () => { if (on) await onStop(); onComplete(job); }}>Complete processing</button> : null}</> : null}
+        {job.assignee_id ? <span className="av" title={personName(job.assignee_id)}>{initials(personName(job.assignee_id))}</span> : <span className="av">—</span>}
+      </div></div>;
+  };
   const head = (i: number) => { const r = rows[i]; const cls = i < stage ? "done" : i === stage ? "now" : "";
     return <div className={`taskhead ${cls}`}>
-      <span className="tdot">{i < stage ? "✓" : i + 1}</span>
+      <span className="tdot">{i < stage ? "✓" : ""}</span>
       <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">{r.t}{r.who ? ` · ${personName(r.who)}${r.who === meId ? " (you)" : ""}` : ""}</div>
         <div className="tks">{i === stage && on ? <span className="runtxt">● Running · </span> : null}{r.s}</div></div>
       {stageHrs[i] ? <span className="tasktime mono" title="Time logged on this task">{hm(stageHrs[i])}</span> : null}
@@ -152,7 +178,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
             <div className="ph"><h2>Tasks</h2><span className="note">Press Start on the current task. Finish it and the next task opens on its own.</span></div>
             <JobBrief job={job} clientName={client?.name ?? ""} showInfo={false} meId={meId} canAnswerAll={canAnswerAll} team={team} defaultTo={job.reviewer_id} readOnly={readOnly}
               supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }} queryHours={queryHours} onProgress={onProgress}
-              tasks={{ prep: head(0), after: <>
+              tasks={{ head: prepHead, active: stage === 0 && open && job.status !== "internal_query" && job.status !== "client_query", prepTime, onClientReplied: onReplied && !readOnly ? () => onReplied(job) : undefined, after: <>
                 <li className={`task${stage === 1 ? " now" : stage > 1 ? " done" : " later"}`}>{head(1)}
                   {reviewing ? <div className="taskbody"><p className="note" style={{ margin: "0 0 8px" }}>Found a mistake? Add a review note above. When everything is cleared, approve it.</p>
                     <div className="row">{onSendBack ? <button type="button" disabled={busy} onClick={() => onSendBack(job)}>↩ Send back to {personName(job.assignee_id).split(" ")[0] || "the preparer"}</button> : null}
