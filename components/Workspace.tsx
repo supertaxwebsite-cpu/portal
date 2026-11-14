@@ -768,7 +768,6 @@ export default function Workspace({ me }: { me: Profile }) {
           ["Internal queries", { status: "internal_query" }, openJobs.filter((j) => j.status === "internal_query").length, "hot"],
         ] as [string, Partial<JobFilter>, number, string][] : [
           ["All open", { status: "open" }, openJobs.length, ""],
-          ["ATO & SGC", { service: "ato_payment,sgc,ato_comm" }, openJobs.filter((j) => ["ato_payment", "sgc", "ato_comm"].includes(j.service)).length, ""],
           ["Overdue", { due: "overdue" }, openJobs.filter((j) => j.due_date && daysFrom(j.due_date) < 0).length, "hot"],
           ["Unassigned", { assignee: "__none" }, openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).length, ""],
           ["Waiting for review", { status: "review" }, openJobs.filter((j) => j.status === "review").length, ""],
@@ -847,13 +846,6 @@ export default function Workspace({ me }: { me: Profile }) {
               <div className="count">{list.length} job{list.length === 1 ? "" : "s"}{list.length > 500 ? " · showing the first 500, narrow the filters to see the rest" : ""}</div>
             </>
           )}
-        </div>
-        <div className="panel newtypes">
-          <div className="ph"><h2>New job types</h2><span className="note">Choose them in New job. Each comes with its own checklist.</span></div>
-          <div className="ntgrid">{([["ato_payment", "🏦", "Help a client pay the ATO: the amount, how and by when."], ["sgc", "🧾", "Late or missed super: work out the charge and lodge the statement."], ["ato_comm", "✉️", "An ATO letter or portal message that needs action."], ["company_formation", "🏢", "Set up a new company from start to handover."]] as [string, string, string][]).map(([id, icon, blurb]) => (
-            <div key={id} className="nt"><strong>{icon} {svcLabel(id)}</strong><p className="note">{blurb}</p>
-              <ol>{(STEPS[id] ? STEPS[id].map((x) => x.title) : CHECKLISTS[id] ?? []).map((x) => <li key={x}>{x}</li>)}</ol>
-              <button type="button" className="link" onClick={() => setModal({ kind: "job", service: id })}>+ Start one in New job</button></div>))}</div>
         </div>
         <p className="note" style={{ margin: "10px 2px 0" }}>Stage bar: green = done, blue = current (Preparation → Review → Signing → Lodge). Flags show open internal queries, review notes and file counts. Click a job to open its job page.</p>
       </>
