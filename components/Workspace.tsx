@@ -1236,7 +1236,13 @@ function Shell({ me, view, go, live, showTeam, showTeamTab = showTeam, bell, wid
   return (
     <>
       <header className="top"><div className="wrap">
-        <div className="brand"><img src="/logo.webp" alt="Supertax" width={136} height={34} /><small>Practice Desk</small></div>
+        <div className="brand">{(() => {
+          // One practice only: that practice's logo. More than one (or all): Supertax.
+          const only = me.role !== "master" && me.practices?.length === 1 ? me.practices[0] : null;
+          return only === "Monarch Accounting" ? <img className="plogo light" src="/logo-monarch.webp" alt="Monarch Accounting" width={94} height={34} />
+            : only === "Titantax" ? <img className="plogo" src="/logo-titantax.webp" alt="Titan Tax" width={98} height={34} />
+            : <img src="/logo.webp" alt="Supertax" width={136} height={34} />;
+        })()}<small>Practice Desk</small></div>
         <nav className="tabs" aria-label="Sections">{tabs.map(([v, l]) => (
           <a key={v} href={`#${v}`} aria-current={view === v ? "page" : undefined} onClick={(e) => { e.preventDefault(); go(v); }}>{l}{badges?.[v] ? <span className="navbadge" title={`${badges[v]} follow-up${badges[v] === 1 ? "" : "s"} due`}>{badges[v]}</span> : null}</a>))}</nav>
         <div className="userbox">{bell}<span><strong>{me.full_name}</strong></span><SignOutButton /></div>

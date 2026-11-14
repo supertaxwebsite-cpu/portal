@@ -167,6 +167,7 @@ body{font-size:14px;min-height:100vh}
 header.top{background:var(--navy);border-bottom:0;color:#e6eef6}
 header.top::after{content:"";display:block;height:3px;background:linear-gradient(90deg,var(--brand-blue) 0 62%,var(--brand-orange) 62% 100%)}
 header.top .brand img{height:34px;width:auto;display:block}
+header.top .brand img.plogo.light{border-radius:6px}
 header.top .brand small{color:#9db0c4}
 nav.tabs a{color:#b8c7d6}
 nav.tabs a:hover{color:#fff;background:rgba(255,255,255,.08)}
