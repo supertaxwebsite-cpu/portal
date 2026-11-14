@@ -1100,6 +1100,7 @@ export default function Workspace({ me }: { me: Profile }) {
               <div className="row">{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Edit</button> : null}<button onClick={() => gotoJobs({ assignee: p.id })}>View jobs</button></div>
             </div>); })}</div>
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Ask for team members to be allocated to you.</p> : null}
+        {isMaster ? <SignInCodePanel /> : null}
         <div className="grid2" style={{ marginTop: 16 }}>
           <div className="panel" id="roles">
             <div className="ph"><h2>What each role can do</h2></div>
@@ -1219,6 +1220,30 @@ export default function Workspace({ me }: { me: Profile }) {
 
       {toast ? <div className={`toast${toast.err ? " err" : ""}`} role="status">{toast.msg}</div> : null}
     </Shell>
+  );
+}
+
+/** Master admins: readiness of the email sign-in code, with a test email. */
+function SignInCodePanel() {
+  const [st, setSt] = useState<{ mail: boolean; from: string; table: boolean; envOn: boolean; on: boolean } | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { fetch("/api/email/test").then((r) => (r.ok ? r.json() : null)).then(setSt).catch(() => {}); }, []);
+  if (!st) return null;
+  const Row = ({ ok, children }: { ok: boolean; children: React.ReactNode }) => <li><span className={`pill ${ok ? "ok" : "warn"}`}>{ok ? "✓ Done" : "To do"}</span> {children}</li>;
+  return (
+    <div className="panel" style={{ marginTop: 16 }}>
+      <div className="ph"><h2>Email sign-in code</h2><span className={`pill ${st.on ? "ok" : "info"}`}>{st.on ? "On: everyone enters a code from their email" : "Off"}</span></div>
+      <ul className="list" style={{ padding: "0 16px 8px", listStyle: "none" }}>
+        <Row ok={st.table}>Database update for codes (database-update-email-codes.sql)</Row>
+        <Row ok={st.mail}>Email sending set up in Vercel{st.mail && st.from ? ` (from ${st.from})` : ""}</Row>
+        <Row ok={st.envOn}>LOGIN_CODE = on in Vercel</Row>
+      </ul>
+      <div className="row" style={{ padding: "0 16px 14px" }}>
+        <button type="button" disabled={busy || !st.mail} onClick={async () => { setBusy(true); setMsg(""); const r = await fetch("/api/email/test", { method: "POST" }); const d = await r.json().catch(() => ({})); setBusy(false); setMsg(r.ok ? `Test email sent to ${d.to}. Check the inbox (and junk).` : d.error || "Couldn't send"); }}>Send me a test email</button>
+        <span className="note">{msg || "Send a test first. Switch LOGIN_CODE on only once the test email arrives, so nobody gets locked out."}</span>
+      </div>
+    </div>
   );
 }
 
