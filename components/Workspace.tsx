@@ -1106,7 +1106,7 @@ export default function Workspace({ me }: { me: Profile }) {
     if (n.job_id) {
       const j = jobs.find((x) => x.id === n.job_id);
       if (j) setModal({ kind: "job", job: j, ...(n.kind === "internal_query" || n.kind === "query_answered" ? { tab: "queries" as const } : {}) }); else say("That job has been deleted or is no longer visible to you.", true);
-    } else if (n.kind === "leave_request" || n.kind === "leave_decided") {
+    } else if (n.kind === "leave_request" || n.kind === "leave_decided" || n.kind === "leave_cancelled") {
       setTsTab(n.kind === "leave_request" ? "req" : "mine"); setNavTick((t) => t + 1); go("timesheet");
     } else if (n.meeting_id) {
       let m = meetings.find((x) => x.id === n.meeting_id);

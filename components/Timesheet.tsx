@@ -10,7 +10,10 @@ import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
 type SB = ReturnType<typeof createClient>;
 
 const time = (ts: string | null) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "");
-const mins = (a: Attendance, now: number) => Math.max(0, ((a.clock_out ? Date.parse(a.clock_out) : now) - Date.parse(a.clock_in)) / 60000);
+// A session counts up to its log-out, but never past midnight (India time) of the day it started:
+// a forgotten log-out closed days later must not add days of hours.
+const mins = (a: Attendance, now: number) => { const dayEnd = Date.parse(`${a.work_date}T23:59:59+05:30`);
+  return Math.max(0, (Math.min(a.clock_out ? Date.parse(a.clock_out) : now, isNaN(dayEnd) ? Infinity : dayEnd) - Date.parse(a.clock_in)) / 60000); };
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const hrs = (n: number) => `${Number(n.toFixed(2))} h`;
 // Office rules (India office): Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break
@@ -83,7 +86,7 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
     const lateExcused = wasLate && request === "approved";
     // A master admin's status change wins over the automatic Leave / Half day marks.
     const bk = booked.get(k);
-    const leave = override ? override === "leave" : bk ? bk.part === "full" : d.h === 0 && d.date < today;
+    const leave = override ? override === "leave" : bk ? bk.part === "full" : d.h === 0 && d.m === 0 && d.date < today;
     const half = override ? override === "half_day" : bk && bk.part !== "full" ? true : !d.open && d.m > 0 && d.m < HALF_DAY_MIN;
     const suggested = d.first ? suggestedOut(d.first) : "";
     const earlyMin = !override && !half && !d.open && d.last && suggested ? Math.round((Date.parse(suggested) - Date.parse(d.last)) / 60000) : 0;
@@ -92,7 +95,7 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
 }
 
 const Status = ({ d }: { d: Day }) => (
-  <>{d.leave ? <span className={`pill ${d.booked ? "info" : "danger"}`}>{d.booked ? leaveLabel(d.booked) : "Leave"}</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day{d.booked && !d.leave ? ` · ${leaveLabel(d.booked)}` : ""}</span> : null} {d.early ? <span className="pill warn" title={`Suggested log out was ${time(d.suggested)}`}>Left {hm(d.early)} early</span> : null}
+  <>{d.leave ? <span className={`pill ${d.booked ? "info" : "danger"}`}>{d.booked ? leaveLabel(d.booked) : d.override === "leave" ? "Leave" : "Absent"}</span> : null} {d.late ? <span className="pill warn">Late{d.request === "pending" ? " · approval asked" : d.request === "rejected" ? " · not approved" : ""}</span> : null} {d.half ? <span className="pill info">Half day{d.booked && !d.leave ? ` · ${leaveLabel(d.booked)}` : ""}</span> : null} {d.early ? <span className="pill warn" title={`Suggested log out was ${time(d.suggested)}`}>Left {hm(d.early)} early</span> : null}
     {!d.leave && !d.late && !d.half && !d.early ? <span className="pill ok">{d.open ? "Working" : d.override === "present" ? "Working day" : "Present"}</span> : null}
     {d.lateExcused ? <> <span className="pill ok">Late approved</span></> : null}
     {d.override ? <span className="note" title="Changed by your manager"> ✎</span> : null}</>
@@ -176,7 +179,10 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const myHours = myDay.reduce((s, e) => s + e.hours, 0);
   // Clock out is allowed only once the shift's day has at least one timesheet line.
   // Previous days are locked (except the master admin, and the day of a shift still clocked in).
-  const dayOpen = day >= todayISO() || me.role === "master" || (!!openShift && openShift.work_date === day);
+  // Leave booked for the chosen day (approved): a full day takes no timesheet lines.
+  const dayLeave = leaves.find((l) => l.user_id === me.id && l.status === "approved" && l.start_date <= day && l.end_date >= day);
+  const dayFuture = day > todayISO();
+  const dayOpen = !dayFuture && !(dayLeave && dayLeave.part === "full") && (day >= todayISO() || me.role === "master" || (!!openShift && openShift.work_date === day));
   const shiftFilled = !!openShift && entries.some((e) => e.user_id === me.id && e.work_date === openShift.work_date);
   // While clocked in, show the shift's own day (a shift that started before midnight stays on that day).
   const jumped = useRef("");
@@ -306,19 +312,20 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
 
   const dayEl = (
     <div className="panel">
-      <div className="ph"><h2>Jobs and time · {fmtDate(day)}</h2><label className="row note">Date <input type="date" id="ts-day" value={day} max={todayISO()} onChange={(e) => e.target.value && setDay(e.target.value)} /></label></div>
+      <div className="ph"><h2>Jobs and time · {fmtDate(day)}</h2><label className="row note">Date <input type="date" id="ts-day" value={day} max={todayISO()} onChange={(e) => { const v = e.target.value; if (!v) return; if (v > todayISO()) { say("Time can't be added for a future day.", true); setDay(todayISO()); } else setDay(v); }} /></label></div>
       <p className="note" style={{ padding: "4px 14px 0", margin: 0 }}>
-        {myDayAtt.length ? <>Logged in {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No log-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
+        {dayLeave ? <><span className="pill info">On {leaveLabel(dayLeave.kind).toLowerCase()}{dayLeave.part !== "full" ? ` (${dayLeave.part === "am" ? "morning" : "afternoon"})` : ""}</span> · </> : null}{myDayAtt.length ? <>Logged in {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No log-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
       </p>
       <div className="tablebox solo" style={{ margin: 12 }}>
         <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>What you did</th><th></th></tr></thead>
           <tbody>
             {myDay.map((e) => <EntryRow key={e.id} e={e} locked={!dayOpen} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
-            {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">Nothing was recorded for this day.</td></tr> : null}
+            {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">{dayFuture ? "This day hasn't happened yet, so no time can be added." : dayLeave && dayLeave.part === "full" ? "You're on leave this day, so no time can be added." : "Nothing was recorded for this day."}</td></tr> : null}
             {dayOpen ? <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} /> : null}
           </tbody></table>
       </div>
-      {!dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask your manager if something needs correcting.</p> : null}
+      {dayLeave && dayLeave.part !== "full" && dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>Half day leave: add only the hours you worked (about 4h).</p> : null}
+      {!dayOpen && !dayFuture && !(dayLeave && dayLeave.part === "full") ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask your manager if something needs correcting.</p> : null}
     </div>
   );
   const mineEl = <MyTimesheet me={me} supabase={supabase} embedded={canSeeTeam} month={mm} setMonth={setMm} att={att} entries={entries} leaves={leaves} requests={requests} overrides={overrides}
@@ -509,7 +516,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
   const shift = (n: number) => { const [y, m] = month.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`); };
   const monthName = new Date(`${month}-01T00:00:00`).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
   const pickDay = (d: string) => { setDay(d); setTimeout(() => document.getElementById("ts-dayjobs")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); };
-  const statusText = (d: Day) => d.leave ? (d.booked ? leaveLabel(d.booked) : "Leave") : d.open && d.date === today ? "Working" : d.half ? "Half day" : d.late ? "Late" : d.lateExcused ? "Late · approved" : "Present";
+  const statusText = (d: Day) => d.leave ? (d.booked ? leaveLabel(d.booked) : d.override === "leave" ? "Leave" : "Absent") : d.open && d.date === today ? "Working" : d.half ? "Half day" : d.late ? "Late" : d.lateExcused ? "Late · approved" : "Present";
   const statusCls = (d: Day) => d.leave ? "danger" : d.open && d.date === today ? "ok" : d.half ? "info" : d.late ? "warn" : d.lateExcused ? "warn" : "ok";
 
   function download() {
@@ -587,7 +594,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
                   <span className="dn">{n}</span>
                   {x.first ? <span className="mono hh">{n1(x.m / 60)}h{x.open && d === today ? " so far" : ""}</span> : null}
                   {x.first ? <span className="mono tt2">{ct(x.first)}{x.last && !x.open ? ` – ${ct(x.last)}` : ""}</span> : null}
-                  {x.leave ? <span className="pill danger">{x.booked ? leaveLabel(x.booked) : "Leave"}</span>
+                  {x.leave ? <span className={`pill ${x.booked ? "info" : "danger"}`}>{x.booked ? leaveLabel(x.booked) : x.override === "leave" ? "Leave" : "Absent"}</span>
                     : x.open && d === today ? <span className="pill ok">● Working</span>
                     : x.half ? <span className="pill info">Half day</span>
                     : x.late ? <span className="pill warn">Late {time(x.first)}</span> : null}

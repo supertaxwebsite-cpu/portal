@@ -2805,7 +2805,7 @@ alter table public.notifications drop constraint if exists notifications_kind_ch
 alter table public.notifications add constraint notifications_kind_check
   check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned',
                   'sign_reminder', 'client_query_reminder', 'sign_handover', 'review_note', 'review_fixed',
-                  'leave_request', 'leave_decided'));
+                  'leave_request', 'leave_decided', 'leave_cancelled'));
 
 -- A person's manager can approve their leave too (as well as their team leader and master admins).
 create or replace function public.can_approve_leave(target uuid) returns boolean
@@ -2853,5 +2853,39 @@ join public.profiles x on x.active and x.id <> l.user_id
   and (x.id = me.reports_to or x.id = me.manager_id or (me.reports_to is null and me.manager_id is null and x.role = 'master'))
 where l.status = 'pending'
   and not exists (select 1 from public.notifications n where n.leave_id = l.id and n.user_id = x.id);
+
+-- Cancelling leave that was already approved tells the approvers (the request itself is removed).
+create or replace function public.leave_cancel_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.status = 'approved' then
+    insert into public.notifications (user_id, actor_id, kind, body)
+    select x.id, old.user_id, 'leave_cancelled', 'Cancelled: ' || public.leave_label(old)
+    from public.profiles me join public.profiles x on x.active and x.id <> old.user_id
+      and (x.id = me.reports_to or x.id = me.manager_id or (me.reports_to is null and me.manager_id is null and x.role = 'master'))
+    where me.id = old.user_id;
+  end if;
+  return old;
+end $$;
+drop trigger if exists leave_cancel_notify on public.leave_requests;
+create trigger leave_cancel_notify before delete on public.leave_requests
+  for each row execute function public.leave_cancel_notify();
+
+-- Timesheet lines can't be added for a future day, or for a day of approved full-day leave.
+create or replace function public.timesheet_day_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.work_date > (now() at time zone 'Asia/Kolkata')::date then
+    raise exception 'Time can''t be added for a future day';
+  end if;
+  if exists (select 1 from public.leave_requests l where l.user_id = new.user_id and l.status = 'approved' and l.part = 'full'
+             and new.work_date between l.start_date and l.end_date) then
+    raise exception 'That day is booked as leave, so no time can be added';
+  end if;
+  return new;
+end $$;
+drop trigger if exists timesheet_day_check on public.timesheet_entries;
+create trigger timesheet_day_check before insert on public.timesheet_entries
+  for each row execute function public.timesheet_day_check();
 
 notify pgrst, 'reload schema';
