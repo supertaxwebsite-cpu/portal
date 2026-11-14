@@ -8,8 +8,6 @@ import { OFFICES, localMinutes, localTime, officeOf, suggestedOutFor, type Offic
 import type { Day, LateRequest } from "./Timesheet";
 
 type SB = ReturnType<typeof createClient>;
-/** Sick and personal leave allowance, days a year per person. */
-export const LEAVE_ALLOWANCE = 10;
 const time = (ts: string | null | undefined, o: Office = OFFICES.India) => localTime(ts, o);
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const n1 = (n: number) => String(Number(n.toFixed(1)));
@@ -149,14 +147,14 @@ export function RightNow({ people, att, timers, leaves, requests, jobs, clients,
 }
 
 
-/** Leave and late starts waiting for this person's decision, and sick / personal leave left this year. */
+/** Leave and late starts waiting for this person's decision, and leave taken this year (there is no leave balance). */
 export function Approvals({ me, people, leaves, requests, att, canApprove, onLeave, onLate }: {
   me: Profile; people: Profile[]; leaves: LeaveReq[]; requests: LateRequest[]; att: Attendance[]; canApprove: (uid: string) => boolean;
   onLeave: (l: LeaveReq, s: "approved" | "rejected") => void; onLate: (r: LateRequest, s: "approved" | "rejected") => void;
 }) {
   const name = (id: string) => people.find((p) => p.id === id)?.full_name ?? "Former staff";
   const year = todayISO().slice(0, 4);
-  const used = (uid: string) => leaves.filter((l) => l.user_id === uid && l.status === "approved" && (l.kind === "sick" || l.kind === "personal")).reduce((s, l) => s + leaveDays(l, `${year}-01-01`, `${year}-12-31`), 0);
+  const used = (uid: string) => leaves.filter((l) => l.user_id === uid && l.status === "approved").reduce((s, l) => s + leaveDays(l, `${year}-01-01`, todayISO()), 0);
   const lv = leaves.filter((l) => l.status === "pending" && canApprove(l.user_id)).sort((a, b) => a.start_date.localeCompare(b.start_date));
   const late = me.role === "master" ? requests.filter((r) => r.status === "pending" && people.some((p) => p.id === r.user_id)) : [];
   const span = (l: LeaveReq) => (l.start_date === l.end_date ? fmtDate(l.start_date) : `${fmtDate(l.start_date)} to ${fmtDate(l.end_date)}`);
@@ -169,7 +167,7 @@ export function Approvals({ me, people, leaves, requests, att, canApprove, onLea
           <ul className="list apprlist">
             {lv.map((l) => { const c = clash(l); const d = leaveDays(l); return (
               <li key={l.id}><span className="av">{initials(name(l.user_id))}</span><div style={{ minWidth: 0, flex: 1 }}><div className="t">{first(name(l.user_id))} <span className="note">· {leaveLabel(l.kind)}, {span(l)}{l.part !== "full" ? ` half day ${l.part}` : ` (${d} day${d === 1 ? "" : "s"})`}</span></div>
-                <div className="s">{l.reason ? `"${l.reason}" · ` : ""}{l.kind !== "unpaid" ? `${n1(LEAVE_ALLOWANCE - used(l.user_id))} days left · ` : ""}{c.length ? <span className="warn">⚠ {c.join(" and ")} also off</span> : "nobody else off"}</div></div>
+                <div className="s">{l.reason ? `"${l.reason}" · ` : ""}{`${n1(used(l.user_id))} days of leave taken this year · `}{c.length ? <span className="warn">⚠ {c.join(" and ")} also off</span> : "nobody else off"}</div></div>
                 <div className="row"><button type="button" className="ok" onClick={() => onLeave(l, "approved")}>Approve</button><button type="button" className="dangerlink" onClick={() => onLeave(l, "rejected")}>Reject</button></div></li>); })}
             {late.map((r) => { const f = att.filter((a) => a.user_id === r.user_id && a.work_date === r.work_date).map((a) => a.clock_in).sort()[0]; return (
               <li key={`${r.user_id}|${r.work_date}`}><span className="av">{initials(name(r.user_id))}</span><div style={{ minWidth: 0, flex: 1 }}><div className="t">{first(name(r.user_id))} <span className="note">· Late start {r.work_date === todayISO() ? "today" : fmtDate(r.work_date)}{f ? ` ${time(f, officeOf(people.find((p) => p.id === r.user_id)))}` : ""}</span></div>
@@ -178,10 +176,10 @@ export function Approvals({ me, people, leaves, requests, att, canApprove, onLea
           </ul>)}
       </div>
       <div className="panel">
-        <div className="ph"><h2>Sick / personal leave left</h2><span className="note">{LEAVE_ALLOWANCE} days a year each</span></div>
-        <div className="leaveleft">{people.map((p) => { const left = Math.max(0, LEAVE_ALLOWANCE - used(p.id)); return (
-          <div key={p.id} className="row"><span className="nm">{first(p.full_name)}</span><i><b className={left < 3 ? "low" : undefined} style={{ width: `${(left / LEAVE_ALLOWANCE) * 100}%` }} /></i><span className="mono">{n1(left)} d</span></div>); })}</div>
-        <p className="note" style={{ margin: "0 16px 14px" }}>Counts approved sick and personal leave from 1 January. Unpaid leave doesn&apos;t use the allowance.</p>
+        <div className="ph"><h2>Leave taken this year</h2><span className="note">No leave balance · all leave needs approval</span></div>
+        <div className="leaveleft">{people.map((p) => (
+          <div key={p.id} className="row"><span className="nm">{first(p.full_name)}</span><span className="note" style={{ flex: 1 }}>{LEAVE_KINDS.map((k) => { const n = leaves.filter((l) => l.user_id === p.id && l.status === "approved" && l.kind === k.id).reduce((s, l) => s + leaveDays(l, `${year}-01-01`, todayISO()), 0); return n ? `${k.label} ${n1(n)}` : ""; }).filter(Boolean).join(" · ") || "None"}</span><span className="mono">{n1(used(p.id))} d</span></div>))}</div>
+        <p className="note" style={{ margin: "0 16px 14px" }}>Approved leave from 1 January to today, all types.</p>
       </div>
     </div>
   );

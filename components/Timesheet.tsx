@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, JobTimer, Person, Profile, TimeEntry } from "@/lib/types";
-import { AddLeave, Approvals, LEAVE_ALLOWANCE, MonthGrid, RightNow, monthDays } from "./TeamAttendance";
+import { AddLeave, Approvals, MonthGrid, RightNow, monthDays } from "./TeamAttendance";
 import ClientPicker from "./ClientPicker";
 import { leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
 import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
@@ -461,7 +461,6 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
   const spTaken = yr(sp.filter((l) => l.status === "approved"), yStart, today);
   const spBooked = yr(sp.filter((l) => l.status === "approved"), addDays(today, 1));
   const spWait = yr(sp.filter((l) => l.status === "pending"));
-  const spLeft = Math.max(0, LEAVE_ALLOWANCE - spTaken - spBooked);
   const up = myLeaves.filter((l) => l.kind === "unpaid");
   const upTaken = yr(up.filter((l) => l.status === "approved"), yStart, today);
   const upBooked = yr(up.filter((l) => l.status === "approved"), addDays(today, 1));
@@ -554,7 +553,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
 
       <div className="atiles">
         <div className="panel b-ok"><span className="val">{worked}<small> of {workDays}</small></span><span className="lbl">Days worked ({o.daysText})</span></div>
-        <div className="panel b-blue"><span className="val">{n1(tsH)}<small>h</small></span><span className="lbl">Hours worked (target {hmS(workDays * TARGET)})</span></div>
+        <div className="panel b-blue"><span className="val">{n1(tsH)}<small>h</small></span><span className="lbl">Hours worked (target {hmS(workDays * TARGET)}: {workDays} working day{workDays === 1 ? "" : "s"} × {hmS(TARGET)})</span></div>
         <div className="panel b-blue"><span className="val">{inH ? Math.round((jobsH / inH) * 100) : 0}<small>%</small></span><span className="lbl">Time on jobs</span></div>
         <div className="panel b-warn"><span className="val">{lateN}</span><span className="lbl">Late start (after {clockText(o.lateAfter)})</span></div>
         <div className="panel b-blue"><span className="val">{halfN}</span><span className="lbl">Half day</span></div>
@@ -620,16 +619,14 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
           <div className="panel">
             <div className="ph"><h2>My leave this year</h2><span className="note">{today.slice(0, 4)}</span></div>
             <div className="lvbal">
-              <div className="row" style={{ justifyContent: "space-between" }}><strong>Sick / personal</strong><span className="note">{LEAVE_ALLOWANCE} days a year</span></div>
-              <div className="lvbar"><b className="sp" style={{ width: `${Math.min(100, (spTaken / LEAVE_ALLOWANCE) * 100)}%` }} /><i style={{ width: `${Math.min(100, (spBooked / LEAVE_ALLOWANCE) * 100)}%` }} /></div>
-              <div className="row" style={{ justifyContent: "space-between" }}><span className="note">Taken {n1(spTaken)}{spBooked ? ` · Booked ${n1(spBooked)}` : ""}{spWait ? ` · Waiting ${n1(spWait)}` : ""}</span><strong>{n1(spLeft)} left</strong></div>
+              <div className="row" style={{ justifyContent: "space-between" }}><strong>Sick / personal</strong><span className="note">No paid leave balance, needs approval</span></div>
+              <div className="row" style={{ justifyContent: "space-between" }}><span className="note">Taken {n1(spTaken)} · Booked {n1(spBooked)} · Waiting {n1(spWait)}</span><strong>{n1(spTaken + spBooked)} days</strong></div>
             </div>
             <div className="lvbal">
-              <div className="row" style={{ justifyContent: "space-between" }}><strong>Unpaid leave</strong><span className="note">No limit, needs approval</span></div>
-              <div className="lvbar"><b className="up" style={{ width: `${Math.min(100, upTaken * 5)}%` }} /><i className="up" style={{ width: `${Math.min(100, upBooked * 5)}%` }} /></div>
+              <div className="row" style={{ justifyContent: "space-between" }}><strong>Unpaid leave</strong><span className="note">Needs approval</span></div>
               <div className="row" style={{ justifyContent: "space-between" }}><span className="note">Taken {n1(upTaken)} · Booked {n1(upBooked)} · Waiting {n1(upWait)}</span><strong>{n1(upTaken + upBooked)} days</strong></div>
             </div>
-            <p className="note" style={{ margin: "0 14px 14px" }}>There is no annual leave. Time off you plan ahead is unpaid leave.</p>
+            <p className="note" style={{ margin: "0 14px 14px" }}>There is no leave balance. All leave is recorded here and needs approval from your manager.</p>
           </div>
 
           <div className="panel" id="ts-apply">
@@ -644,7 +641,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
               <span className="lbl2">Length</span>
               <div className="seg">{([["full", "Full days"], ["am", "Half day (am)"], ["pm", "Half day (pm)"]] as [LeaveReq["part"], string][]).map(([k, l]) => <button key={k} type="button" className={v.part === k ? "on" : undefined} onClick={() => setV({ ...v, part: k })}>{l}</button>)}</div>
               <label className="f">Reason (optional)<input id="lv-reason" value={v.reason} maxLength={1000} onChange={(e) => setV({ ...v, reason: e.target.value })} placeholder="e.g. Family trip" /></label>
-              {vDays ? <div className="lvsum">{v.part === "full" ? `${n1(vDays)} working day${vDays === 1 ? "" : "s"}` : "Half a day"} of {leaveLabel(v.kind).toLowerCase()}{v.part === "full" && vTo > v.from ? ` (${dayName(v.from)} to ${dayName(vTo)})` : ` (${dayName(v.from)})`}.{v.kind !== "unpaid" ? ` ${n1(spLeft)} sick / personal days left.` : ""}</div>
+              {vDays ? <div className="lvsum">{v.part === "full" ? `${n1(vDays)} working day${vDays === 1 ? "" : "s"}` : "Half a day"} of {leaveLabel(v.kind).toLowerCase()}{v.part === "full" && vTo > v.from ? ` (${dayName(v.from)} to ${dayName(vTo)})` : ` (${dayName(v.from)})`}.</div>
                 : <div className="lvsum warn">Those dates are all Sundays, which are already off.</div>}
               <button type="button" className="primary" disabled={sending || !vDays} onClick={apply}>Send to manager for approval</button>
               <span className="note">Your manager gets a notification. Approved leave shows on your calendar and the team&apos;s.</span>
