@@ -3,12 +3,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Job, JobTimer } from "@/lib/types";
 import { ST, daysFrom, fmtDate, svcLabel, todayISO } from "@/lib/domain";
-import { START, officeMinutes, suggestedOut } from "./Timesheet";
 
 type SB = ReturnType<typeof createClient>;
 const WEEK_TARGET = 6 * 8.25;
 const hm = (h: number) => { const m = Math.round(h * 60); return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`; };
-const clock = (ts: string) => new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 const elapsed = (from: string, now: number) => { const m = Math.max(0, Math.floor((now - Date.parse(from)) / 60000)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const monday = () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return iso(d); };
@@ -75,7 +73,6 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
   const list = ordered.filter(f);
   const shown = all ? list : list.slice(0, 10);
 
-  const late = s?.firstIn ? officeMinutes(s.firstIn) - START : 0;
   const daysTarget = workDaysSoFar();
   const openNotes = s?.notes?.length ?? 0;
 
@@ -121,7 +118,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
         <div className="quickpills" style={{ margin: 0 }}>{PILLS.map(([k, l, pf, hot]) => { const n = ordered.filter(pf).length; return (
           <button key={k} type="button" className={kind === k ? "on" : undefined} onClick={() => setKind(k)}>{l} <i className={hot && n && kind !== k ? "hot" : undefined}>{n}</i></button>); })}</div>
       </div>
-      {s?.firstIn ? <div className={`loginbar${late > 0 ? " late" : ""}`}>🕘 Suggested log-out today: <b>{clock(suggestedOut(s.firstIn))}</b></div> : null}
+
       <div className="stattiles">
         <div className="panel"><span className="lbl">Days at work this month</span><span className="val">{s ? s.daysAt : "…"} <small>of {daysTarget} working day{daysTarget === 1 ? "" : "s"}</small></span>
           <i className="bar"><b style={{ width: `${s ? Math.min(100, (s.daysAt / Math.max(1, daysTarget)) * 100) : 0}%` }} /></i></div>
