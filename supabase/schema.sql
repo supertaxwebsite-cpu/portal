@@ -3082,3 +3082,85 @@ begin
 end $$;
 revoke all on function public.submit_for_review(uuid, uuid, text) from public, anon;
 grant execute on function public.submit_for_review(uuid, uuid, text) to authenticated;
+
+
+-- ===== database-update-location-and-auto-logout.sql =====
+-- Work location (India or Australia) and auto log-out at midnight. Add-only.
+-- 1. Each person gets a work location. Everyone starts as India; set Australia staff on the Team page.
+alter table public.profiles add column if not exists work_location text not null default 'India';
+do $$ begin
+  alter table public.profiles add constraint profiles_work_location_check check (work_location in ('India', 'Australia'));
+exception when duplicate_object then null; end $$;
+
+-- The time zone a person works in.
+create or replace function public.person_tz(uid uuid) returns text
+language sql stable security definer set search_path = public as $$
+  select case (select work_location from public.profiles where id = uid) when 'Australia' then 'Australia/Sydney' else 'Asia/Kolkata' end;
+$$;
+revoke all on function public.person_tz(uuid) from public, anon;
+grant execute on function public.person_tz(uuid) to authenticated;
+
+-- 2. "Future day" check uses the person's own time zone (Australia is ahead of India).
+create or replace function public.timesheet_day_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.work_date > (now() at time zone public.person_tz(new.user_id))::date then
+    raise exception 'Time can''t be added for a future day';
+  end if;
+  if exists (select 1 from public.leave_requests l where l.user_id = new.user_id and l.status = 'approved' and l.part = 'full'
+             and new.work_date between l.start_date and l.end_date) then
+    raise exception 'That day is booked as leave, so no time can be added';
+  end if;
+  return new;
+end $$;
+
+-- 3. Auto log-out: anyone still logged in, or with a job timer running, when the date changes where they work
+--    is logged out at 11:59:59 pm (their time) on the day they started. The day is flagged "Auto logged out".
+alter table public.attendance add column if not exists auto_closed boolean not null default false;
+
+create or replace function public.auto_logout_stale() returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  t record; a record; j public.jobs; e uuid; tz text; stop_at timestamptz; hrs numeric; n integer := 0;
+begin
+  -- Running job timers started before today (their time): the time goes to the timesheet up to midnight.
+  for t in select * from public.job_timers where ended_at is null loop
+    tz := public.person_tz(t.user_id);
+    continue when (t.started_at at time zone tz)::date >= (now() at time zone tz)::date;
+    stop_at := (((t.started_at at time zone tz)::date + 1)::timestamp - interval '1 second') at time zone tz;
+    hrs := least(24, greatest(0.01, round((extract(epoch from stop_at - t.started_at) / 3600)::numeric, 2)));
+    e := null;
+    begin
+      select * into j from public.jobs where id = t.job_id;
+      perform set_config('supertax.timer_stop', 'on', true);
+      insert into public.timesheet_entries (user_id, work_date, client_id, job_id, hours, description)
+      values (t.user_id, (t.started_at at time zone 'Australia/Sydney')::date, j.client_id, t.job_id, hrs,
+              'Timer ' || lower(to_char(t.started_at at time zone tz, 'FMHH12:MIAM')) || ', stopped automatically at midnight (forgot to stop)')
+      returning id into e;
+    exception when others then e := null;  -- e.g. the job is closed or it's a leave day: just stop the timer
+    end;
+    perform set_config('supertax.timer_stop', 'off', true);
+    update public.job_timers set ended_at = stop_at, entry_id = e where id = t.id;
+    n := n + 1;
+  end loop;
+  -- Log-ins still open from before today (their time).
+  for a in select * from public.attendance where clock_out is null loop
+    tz := public.person_tz(a.user_id);
+    continue when (a.clock_in at time zone tz)::date >= (now() at time zone tz)::date;
+    update public.attendance
+      set clock_out = (((a.clock_in at time zone tz)::date + 1)::timestamp - interval '1 second') at time zone tz,
+          auto_closed = true
+      where id = a.id;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+revoke all on function public.auto_logout_stale() from public, anon, authenticated;
+
+-- Runs every 15 minutes; it only closes sessions from an earlier day, so it fires just after each midnight.
+select cron.schedule('supertax-auto-logout', '*/15 * * * *', 'select public.auto_logout_stale()');
+
+-- Close the sessions already left open from earlier days.
+select public.auto_logout_stale();
+
+notify pgrst, 'reload schema';

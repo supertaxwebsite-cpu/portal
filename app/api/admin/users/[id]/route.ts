@@ -33,6 +33,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (typeof body.canSeeTeamTab === "boolean") update.can_see_team_tab = body.canSeeTeamTab;
   if (typeof body.canAccessTimesheet === "boolean") update.can_access_timesheet = body.canAccessTimesheet;
   if (typeof body.canSelfReview === "boolean") update.can_self_review = body.canSelfReview;
+  if (body.workLocation === "India" || body.workLocation === "Australia") update.work_location = body.workLocation;
   if (Array.isArray(body.clientTypes)) update.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (Array.isArray(body.practices)) update.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   if (update.role === "master") { update.gets_sign_reminders = true; update.can_delete = false; update.can_see_workload = false; }
@@ -62,6 +63,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   if (Object.keys(update).length) {
     let { error } = await admin.from("profiles").update(update).eq("id", id);
+    if (error && /work_location/.test(error.message)) {
+      if (update.work_location === "Australia") return NextResponse.json({ error: "Run database-update-location-and-auto-logout.sql in Supabase first, then try again." }, { status: 500 });
+      delete update.work_location;
+      ({ error } = await admin.from("profiles").update(update).eq("id", id));
+    }
     if (error && /can_self_review/.test(error.message)) {
       if (update.can_self_review) return NextResponse.json({ error: "Run database-update-team-leader-review.sql in Supabase first, then try again." }, { status: 500 });
       delete update.can_self_review;

@@ -6,74 +6,59 @@ import { AddLeave, Approvals, LEAVE_ALLOWANCE, MonthGrid, RightNow, monthDays } 
 import ClientPicker from "./ClientPicker";
 import { leaveLabel, leaveDays, LEAVE_KINDS, type LeaveReq } from "./Leave";
 import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
+import { OFFICES, dayEndMs, isWorkDay, localMinutes, localTime, officeOf, suggestedOutFor, clockText, type Office } from "@/lib/office";
 
 type SB = ReturnType<typeof createClient>;
 
-const time = (ts: string | null) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "");
-// A session counts up to its log-out, but never past midnight (India time) of the day it started:
+const time = (ts: string | null, o: Office = OFFICES.India) => localTime(ts, o);
+// A session counts up to its log-out, but never past midnight (local office time) of the day it started:
 // a forgotten log-out closed days later must not add days of hours.
-const mins = (a: Attendance, now: number) => { const dayEnd = Date.parse(`${a.work_date}T23:59:59+05:30`);
+const mins = (a: Attendance, now: number, o: Office = OFFICES.India) => { const dayEnd = dayEndMs(a.work_date, o);
   return Math.max(0, (Math.min(a.clock_out ? Date.parse(a.clock_out) : now, isNaN(dayEnd) ? Infinity : dayEnd) - Date.parse(a.clock_in)) / 60000); };
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const hrs = (n: number) => `${Number(n.toFixed(2))} h`;
-// Office rules (India office): Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break
-// (8h 15m of work, 9h logged in). Sunday is off. No annual leave.
-// Log in after 7:45 am = Late; a past working day with no timesheet = Leave;
-// a finished day under 6 hours logged in = Half day; logging out before the suggested time = Left early.
-const OFFICE_TZ = "Asia/Kolkata";
-export const START = 7 * 60 + 30;
-const LATE_AFTER = 7 * 60 + 45;
-const HALF_DAY_MIN = 6 * 60;
-const SHIFT_MIN = 9 * 60; // 8h 15m work + 45 min break
-const WORK_DAY_H = 8.25;
+// Office rules come from each person's work location (lib/office.ts): India office Monday to Saturday,
+// 7:30 am to 4:30 pm; Australia office Monday to Friday, 9:00 am to 5:30 pm; both with a 45 min break.
+// Log in after the late time = Late; a past working day with no timesheet = Absent;
+// a finished day under the half-day minimum = Half day; logging out before the suggested time = Left early.
 const EARLY_GRACE_MIN = 5;
-export const officeMinutes = (ts: string) => {
-  const parts = new Intl.DateTimeFormat("en-AU", { timeZone: OFFICE_TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ts));
-  const n = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
-  return n("hour") * 60 + n("minute");
-};
 const addDays = (d: string, n: number) => { const [y, m, dd] = d.split("-").map(Number); const x = new Date(Date.UTC(y, m - 1, dd + n)); return x.toISOString().slice(0, 10); };
-/** A working day: Monday to Saturday (Sunday is off). */
-const isWeekday = (d: string) => { const [y, m, dd] = d.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay(); return w >= 1 && w <= 6; };
-/** When someone should log out: 9 hours after they started (or after 7:30 am if they came in early). */
-export const suggestedOut = (firstIn: string) => {
-  const t = Date.parse(firstIn);
-  const base = Math.max(t, t - (officeMinutes(firstIn) - START) * 60000);
-  return new Date(base + SHIFT_MIN * 60000).toISOString();
-};
 
 export interface Override { user_id: string; work_date: string; status: "present" | "leave" | "half_day"; note: string }
 export interface LateRequest { user_id: string; work_date: string; reason: string; status: "pending" | "approved" | "rejected" }
 
-export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean; early: number; suggested: string; booked?: LeaveReq["kind"]; bookedPart?: LeaveReq["part"]; override?: Override["status"]; request?: LateRequest["status"]; lateExcused: boolean }
+export interface Day { user: string; date: string; first: string; last: string | null; open: boolean; m: number; h: number; late: boolean; leave: boolean; half: boolean; early: number; suggested: string; booked?: LeaveReq["kind"]; bookedPart?: LeaveReq["part"]; override?: Override["status"]; request?: LateRequest["status"]; lateExcused: boolean; auto: boolean; office: Office }
 
-function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string; created_at?: string }[], from: string, to: string, now: number,
+function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string; created_at?: string; work_location?: string | null }[], from: string, to: string, now: number,
   overrides: Override[] = [], requests: LateRequest[] = [], leaves: LeaveReq[] = []): Day[] {
   const ids = new Set(people.map((p) => p.id));
+  const offices = new Map(people.map((p) => [p.id, officeOf(p)]));
+  const officeFor = (uid: string) => offices.get(uid) ?? OFFICES.India;
   const map = new Map<string, Day>();
   const get = (user: string, date: string) => {
     const k = `${date}|${user}`;
     let d = map.get(k);
-    if (!d) { d = { user, date, first: "", last: null, open: false, m: 0, h: 0, late: false, leave: false, half: false, early: 0, suggested: "", lateExcused: false }; map.set(k, d); }
+    if (!d) { d = { user, date, first: "", last: null, open: false, m: 0, h: 0, late: false, leave: false, half: false, early: 0, suggested: "", lateExcused: false, auto: false, office: officeFor(user) }; map.set(k, d); }
     return d;
   };
   att.filter((a) => ids.has(a.user_id) && a.work_date >= from && a.work_date <= to).forEach((a) => {
     const d = get(a.user_id, a.work_date);
     if (!d.first || a.clock_in < d.first) d.first = a.clock_in;
     if (!a.clock_out) d.open = true; else if (!d.last || a.clock_out > d.last) d.last = a.clock_out;
-    d.m += mins(a, now);
+    if (a.auto_closed) d.auto = true;
+    d.m += mins(a, now, d.office);
   });
   entries.filter((e) => ids.has(e.user_id) && e.work_date >= from && e.work_date <= to).forEach((e) => { get(e.user_id, e.work_date).h += e.hours; });
-  // Past working days (Mon to Sat) with nothing recorded count as leave (from the day the person was added).
+  // Past working days (by office) with nothing recorded count as leave (from the day the person was added).
   const today = todayISO();
   people.forEach((p) => {
     const start = p.created_at && p.created_at.slice(0, 10) > from ? p.created_at.slice(0, 10) : from;
-    for (let d = start; d <= to && d < today; d = addDays(d, 1)) if (isWeekday(d)) get(p.id, d);
+    for (let d = start; d <= to && d < today; d = addDays(d, 1)) if (isWorkDay(d, officeFor(p.id))) get(p.id, d);
   });
   // Approved leave: the booked days show with their leave type.
   const booked = new Map<string, LeaveReq>();
   leaves.filter((l) => l.status === "approved" && ids.has(l.user_id)).forEach((l) => {
-    for (let d = l.start_date > from ? l.start_date : from; d <= l.end_date && d <= to && d <= today; d = addDays(d, 1)) if (isWeekday(d)) { get(l.user_id, d); booked.set(`${d}|${l.user_id}`, l); }
+    for (let d = l.start_date > from ? l.start_date : from; d <= l.end_date && d <= to && d <= today; d = addDays(d, 1)) if (isWorkDay(d, officeFor(l.user_id))) { get(l.user_id, d); booked.set(`${d}|${l.user_id}`, l); }
   });
   overrides.filter((o) => ids.has(o.user_id) && o.work_date >= from && o.work_date <= to).forEach((o) => { get(o.user_id, o.work_date); });
   const ov = new Map(overrides.map((o) => [`${o.work_date}|${o.user_id}`, o.status]));
@@ -82,13 +67,14 @@ function buildDays(att: Attendance[], entries: TimeEntry[], people: { id: string
     const k = `${d.date}|${d.user}`;
     const override = ov.get(k);
     const request = rq.get(k);
-    const wasLate = !!d.first && officeMinutes(d.first) > LATE_AFTER;
+    const o = d.office;
+    const wasLate = !!d.first && localMinutes(d.first, o) > o.lateAfter;
     const lateExcused = wasLate && request === "approved";
     // A master admin's status change wins over the automatic Leave / Half day marks.
     const bk = booked.get(k);
     const leave = override ? override === "leave" : bk ? bk.part === "full" : d.h === 0 && d.m === 0 && d.date < today;
-    const half = override ? override === "half_day" : bk && bk.part !== "full" ? true : !d.open && d.m > 0 && d.m < HALF_DAY_MIN;
-    const suggested = d.first ? suggestedOut(d.first) : "";
+    const half = override ? override === "half_day" : bk && bk.part !== "full" ? true : !d.open && d.m > 0 && d.m < o.halfDayMin;
+    const suggested = d.first ? suggestedOutFor(d.first, o) : "";
     const earlyMin = !override && !half && !d.open && d.last && suggested ? Math.round((Date.parse(suggested) - Date.parse(d.last)) / 60000) : 0;
     return { ...d, booked: bk?.kind, bookedPart: bk?.part, override, request, lateExcused, late: wasLate && !lateExcused, leave, half, suggested, early: earlyMin > EARLY_GRACE_MIN ? earlyMin : 0 };
   });
@@ -207,15 +193,16 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const monthEnd = addDays(addDays(monthStart, 32).slice(0, 8) + "01", -1);
   const myLeaveMonth = leaves.filter((l) => l.user_id === me.id && l.status === "approved");
   const leaveByKind = LEAVE_KINDS.map((k) => ({ ...k, n: myLeaveMonth.filter((l) => l.kind === k.id).reduce((s, l) => s + leaveDays(l, monthStart, monthEnd), 0) })).filter((k) => k.n);
-  // Suggested log-out for the shift that's running (9 hours after the start, or after 7:30 am).
+  // Suggested log-out for the shift that's running (a full shift after the start, or after the office start).
   const shiftFirst = openShift ? att.filter((a) => a.user_id === me.id && a.work_date === openShift.work_date).map((a) => a.clock_in).sort()[0] : "";
-  const outAt = shiftFirst ? suggestedOut(shiftFirst) : "";
-  const startedLate = !!shiftFirst && officeMinutes(shiftFirst) > START;
-  // Hours this month against the target (working days so far, Mon to Sat, 8h 15m each).
+  const myOffice = officeOf(me);
+  const outAt = shiftFirst ? suggestedOutFor(shiftFirst, myOffice) : "";
+  const startedLate = !!shiftFirst && localMinutes(shiftFirst, myOffice) > myOffice.start;
+  // Hours this month against the target (working days so far for their office).
   let workDays = 0;
-  for (let d = monthStart; d <= todayISO(); d = addDays(d, 1)) if (isWeekday(d) && !myMonth.some((x) => x.date === d && (x.override === "leave" || (x.booked && x.bookedPart === "full")))) workDays++;
+  for (let d = monthStart; d <= todayISO(); d = addDays(d, 1)) if (isWorkDay(d, myOffice) && !myMonth.some((x) => x.date === d && (x.override === "leave" || (x.booked && x.bookedPart === "full")))) workDays++;
   const monthHours = entries.filter((e) => e.user_id === me.id && e.work_date >= monthStart).reduce((s, e) => s + e.hours, 0);
-  const target = workDays * WORK_DAY_H;
+  const target = workDays * myOffice.workDayH;
   const isMaster = me.role === "master";
 
   async function askApproval(d: Day) {
@@ -255,7 +242,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
     const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = [["Date", "Person", "Client", "Job", "Hours", "Description"], ...teamEntries.map((e) => [e.work_date, name(e.user_id), clientName(e.client_id), jobLabel(e.job_id), e.hours, e.description])];
     rows.push([], ["Date", "Person", "Logged in", "Logged out", "Time logged in (hours)", "Timesheet hours", "Status"]);
-    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null), d.open ? "Still logged in" : time(d.last), (d.m / 60).toFixed(2), d.h, [d.leave && (d.booked ? leaveLabel(d.booked) : "Absent"), d.half && d.booked && !d.leave && leaveLabel(d.booked), d.late && "Late", d.half && "Half day", d.early && `Left ${d.early} min early`].filter(Boolean).join(", ") || "Present"]));
+    summary.forEach((d) => rows.push([d.date, name(d.user), time(d.first || null, d.office), d.open ? "Still logged in" : d.auto ? "Auto logged out" : time(d.last, d.office), (d.m / 60).toFixed(2), d.h, [d.leave && (d.booked ? leaveLabel(d.booked) : "Absent"), d.half && d.booked && !d.leave && leaveLabel(d.booked), d.late && "Late", d.half && "Half day", d.early && `Left ${d.early} min early`].filter(Boolean).join(", ") || "Present"]));
     const blob = new Blob(["﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -299,7 +286,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
       const ds = gm1.filter((d) => d.user === p.id);
       rows.push([p.full_name, ds.filter((d) => (d.first || d.h) && !d.leave).length, ds.reduce((s, d) => s + d.h, 0).toFixed(2),
         entries.filter((e) => e.user_id === p.id && e.job_id && e.work_date.startsWith(gm)).reduce((s, e) => s + e.hours, 0).toFixed(2),
-        ds.reduce((s, d) => s + Math.max(0, d.h - WORK_DAY_H), 0).toFixed(2), ds.filter((d) => d.late).length, ds.filter((d) => d.half).length, ds.filter((d) => d.leave && !d.booked && !d.override).length,
+        ds.reduce((s, d) => s + Math.max(0, d.h - d.office.workDayH), 0).toFixed(2), ds.filter((d) => d.late).length, ds.filter((d) => d.half).length, ds.filter((d) => d.leave && !d.booked && !d.override).length,
         ...LEAVE_KINDS.map((k) => leaves.filter((l) => l.user_id === p.id && l.status === "approved" && l.kind === k.id).reduce((s, l) => s + leaveDays(l, gStart, gEnd), 0))]);
     });
     const blob = new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
@@ -349,8 +336,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
             {!summary.length ? <div className="empty"><strong>Nothing recorded for these dates.</strong>Log-ins and timesheet entries show here.</div> : (
               <table><thead><tr><th>Date</th><th>Person</th><th>Logged in</th><th>Logged out</th><th style={{ textAlign: "right" }}>Time logged in</th><th style={{ textAlign: "right" }}>Timesheet</th><th>Status</th></tr></thead>
                 <tbody>{summary.map((d) => (
-                  <tr key={`${d.date}|${d.user}`}><td>{fmtDate(d.date)}</td><td className="client">{name(d.user)}</td><td>{time(d.first || null) || "—"}</td>
-                    <td>{d.open ? <span className="pill info">Still in</span> : time(d.last) || "—"}</td>
+                  <tr key={`${d.date}|${d.user}`}><td>{fmtDate(d.date)}</td><td className="client">{name(d.user)}</td><td>{time(d.first || null, d.office) || "—"}</td>
+                    <td>{d.open ? <span className="pill info">Still in</span> : d.auto ? <span className="pill warn" title="Forgot to log out: logged out automatically at midnight India time">Auto logged out</span> : time(d.last, d.office) || "—"}</td>
                     <td className="mono" style={{ textAlign: "right" }}>{d.m ? hm(d.m) : "—"}</td>
                     <td className="mono" style={{ textAlign: "right" }}>{d.h ? hrs(d.h) : "—"}</td><td><Status d={d} />
                       {isMaster ? <select aria-label="Change status" value={d.override ?? ""} onChange={(e) => setOverride(d, e.target.value)} style={{ marginLeft: 6, fontSize: 12, padding: "2px 4px" }}>
@@ -387,7 +374,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
       {tab === "grid" ? <>
         <RightNow people={team} att={att} timers={timers} leaves={leaves} requests={requests} jobs={jobs} clients={clients} now={now} canMark={canApproveLeave} onMarkSick={markSick} />
         <div className="atiles">
-          <div className="panel b-blue"><span className="val">{Math.round(teamH)}<small>h</small></span><span className="lbl">Team hours this month (8h 15m a day, Mon to Sat)</span></div>
+          <div className="panel b-blue"><span className="val">{Math.round(teamH)}<small>h</small></span><span className="lbl">Team hours this month</span></div>
           <div className="panel b-blue"><span className="val">{teamIn ? Math.round((onJobsH / teamIn) * 100) : 0}<small>%</small></span><span className="lbl">Time on jobs (timesheet hours on jobs out of hours logged in)</span></div>
           <div className="panel b-warn"><span className="val">{gm1.filter((d) => d.late).length}</span><span className="lbl">Late starts</span></div>
           <div className="panel b-blue"><span className="val">{gm1.filter((d) => d.half).length}</span><span className="lbl">Half days</span></div>
@@ -417,7 +404,6 @@ const dowOf = (d: string) => { const [y, m, dd] = d.split("-").map(Number); retu
 const short = (d: string) => { const [y, m, dd] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }); };
 const n1 = (n: number) => String(Number(n.toFixed(1)));
 /** Compact time for the calendar, e.g. 7:28. */
-const ct = (ts: string) => time(ts).replace(/\s?[ap]m$/i, "");
 const hmS = (m: number) => { const t = Math.max(0, Math.round(m)); return t < 60 ? `${t}m` : `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const leaveSpan = (l: LeaveReq) => { const a = Number(l.start_date.slice(8)), b = Number(l.end_date.slice(8)); const mon = new Date(`${l.end_date}T00:00:00`).toLocaleDateString("en-AU", { month: "short" });
   return l.start_date === l.end_date ? `${a} ${mon}` : l.start_date.slice(0, 7) === l.end_date.slice(0, 7) ? `${a}–${b} ${mon}` : `${fmtDate(l.start_date)} to ${fmtDate(l.end_date)}`; };
@@ -429,6 +415,9 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
   day: string; setDay: (d: string) => void; onClock: (k: "clock_in" | "clock_out") => void; onExplain: (d: Day) => void; onSaved: () => void; say: (m: string, e?: boolean) => void; dayEl: React.ReactNode;
 }) {
   const today = todayISO();
+  const o = officeOf(me);
+  const time = (ts: string | null) => localTime(ts, o);
+  const ct = (ts: string) => time(ts).replace(/\s?[ap]m$/i, "");
   const mDays = monthDays(month);
   const mStart = mDays[0], mEnd = mDays[mDays.length - 1];
   const upTo = mEnd < today ? mEnd : today;
@@ -442,19 +431,19 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
   const tDate = openShift?.work_date ?? today;
   const tAtt = att.filter((a) => a.user_id === me.id && a.work_date === tDate);
   const tFirst = tAtt.map((a) => a.clock_in).sort()[0] ?? "";
-  const tMin = tAtt.reduce((s, a) => s + mins(a, now), 0);
+  const tMin = tAtt.reduce((s, a) => s + mins(a, now, o), 0);
   const myTimer = timers.find((t) => t.user_id === me.id && !t.ended_at);
   const runMin = myTimer ? Math.max(0, (now - Date.parse(myTimer.started_at)) / 60000) : 0;
   const tJobMin = jobH(tDate) * 60 + runMin;
   const runJob = myTimer?.job_id ? jobs.find((j) => j.id === myTimer.job_id) : undefined;
-  const outAt = tFirst ? suggestedOut(tFirst) : "";
-  const afterStart = tFirst ? officeMinutes(tFirst) - START : 0;
-  const TARGET = 8.25 * 60; // work a day
-  const DAY_IN = 9 * 60; // logged in a day: 7:30 am to 4:30 pm, including the 45 min break
+  const outAt = tFirst ? suggestedOutFor(tFirst, o) : "";
+  const afterStart = tFirst ? localMinutes(tFirst, o) - o.start : 0;
+  const TARGET = o.workDayH * 60; // work a day
+  const DAY_IN = o.shiftMin; // logged in a day, including the 45 min break
 
   // ----- this month -----
   let workDays = 0;
-  for (let d = mStart; d <= upTo; d = addDays(d, 1)) if (isWeekday(d) && !days.some((x) => x.date === d && (x.override === "leave" || (x.booked && x.bookedPart === "full")))) workDays++;
+  for (let d = mStart; d <= upTo; d = addDays(d, 1)) if (isWorkDay(d, o) && !days.some((x) => x.date === d && (x.override === "leave" || (x.booked && x.bookedPart === "full")))) workDays++;
   const worked = days.filter((d) => d.first && !d.leave).length;
   const tsH = entries.filter((e) => e.user_id === me.id && e.work_date >= mStart && e.work_date <= mEnd).reduce((s, e) => s + e.hours, 0);
   const inH = days.reduce((s, d) => s + d.m, 0) / 60;
@@ -479,7 +468,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
   const upWait = yr(up.filter((l) => l.status === "pending"));
 
   // ----- apply for leave -----
-  const nextWork = (() => { let d = addDays(today, 1); while (!isWeekday(d)) d = addDays(d, 1); return d; })();
+  const nextWork = (() => { let d = addDays(today, 1); while (!isWorkDay(d, o)) d = addDays(d, 1); return d; })();
   const [v, setV] = useState({ from: nextWork, to: nextWork, kind: "unpaid" as LeaveReq["kind"], part: "full" as LeaveReq["part"], reason: "" });
   const [sending, setSending] = useState(false);
   const vTo = v.part === "full" ? v.to : v.from;
@@ -547,11 +536,11 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
         <div className="tb-l">
           <span className="lbl2">Today · {short(tDate)}</span>
           <span className="big mono">{tFirst ? hmS(tMin) : "—"}</span>
-          <span className="note">{tFirst ? <>Logged in {time(tFirst)}{afterStart > 0 ? ` · ${hmS(afterStart)} after 7:30` : ""}</> : "Not logged in yet. Log in when you start work."}</span>
+          <span className="note">{tFirst ? <>Logged in {time(tFirst)}{afterStart > 0 ? ` · ${hmS(afterStart)} after ${clockText(o.start)}` : ""}</> : "Not logged in yet. Log in when you start work."}</span>
           {openShift && outAt ? <span className="pill warn">🕓 Suggested log out <strong>&nbsp;{time(outAt)}</strong></span> : null}
         </div>
         <div className="tb-m">
-          <div className="row" style={{ justifyContent: "space-between" }}><strong>Logged in {hmS(tMin)} of 9h</strong> <span className="note">(7:30 am to 4:30 pm India time, including the 45 min break)</span><span className="note">On jobs {hmS(tJobMin)}{tMin ? ` (${Math.round((tJobMin / tMin) * 100)}%)` : ""}</span></div>
+          <div className="row" style={{ justifyContent: "space-between" }}><strong>Logged in {hmS(tMin)} of {hmS(o.shiftMin)}</strong> <span className="note">({o.hoursText.replace(/ with a 45 min break.*$/, "")}, including the 45 min break)</span><span className="note">On jobs {hmS(tJobMin)}{tMin ? ` (${Math.round((tJobMin / tMin) * 100)}%)` : ""}</span></div>
           <div className="tbbar"><b style={{ width: `${Math.min(100, (Math.min(tJobMin, tMin) / DAY_IN) * 100)}%` }} /><i style={{ width: `${Math.min(100, (Math.max(0, tMin - tJobMin) / DAY_IN) * 100)}%` }} /></div>
           <span className="note">{myTimer ? <>▶ Running now: <strong>{runJob ? clients.find((c) => c.id === runJob.client_id)?.name ?? "a job" : "a job"}</strong>{runJob ? ` · ${svcLabel(runJob.service)} ${runJob.period}` : ""} · {hmS(runMin)}</> : openShift ? "No job timer running. Start a job from My tasks so your time goes on the right job." : ""}</span>
           {openShift && !shiftFilled ? <span className="pill warn" style={{ whiteSpace: "normal" }}>Add at least one timesheet line for {fmtDate(openShift.work_date)} (below) before you log out.</span> : null}
@@ -564,10 +553,10 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
       </div>
 
       <div className="atiles">
-        <div className="panel b-ok"><span className="val">{worked}<small> of {workDays}</small></span><span className="lbl">Days worked (Mon to Sat)</span></div>
+        <div className="panel b-ok"><span className="val">{worked}<small> of {workDays}</small></span><span className="lbl">Days worked ({o.daysText})</span></div>
         <div className="panel b-blue"><span className="val">{n1(tsH)}<small>h</small></span><span className="lbl">Hours worked (target {hmS(workDays * TARGET)})</span></div>
         <div className="panel b-blue"><span className="val">{inH ? Math.round((jobsH / inH) * 100) : 0}<small>%</small></span><span className="lbl">Time on jobs</span></div>
-        <div className="panel b-warn"><span className="val">{lateN}</span><span className="lbl">Late start (after 7:45)</span></div>
+        <div className="panel b-warn"><span className="val">{lateN}</span><span className="lbl">Late start (after {clockText(o.lateAfter)})</span></div>
         <div className="panel b-blue"><span className="val">{halfN}</span><span className="lbl">Half day</span></div>
         <div className="panel b-danger"><span className="val">{n1(leaveTaken)}{leaveAhead ? <small> + {n1(leaveAhead)} booked</small> : null}</span><span className="lbl">Leave days this month</span></div>
       </div>
@@ -602,7 +591,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
               })}
             </div>
             <div className="mlegend"><span><i className="c-ok" />Present</span><span><i className="c-late" />Late</span><span><i className="c-half" />Half day</span><span><i className="c-lv" />Leave</span><span><i className="c-bk" />Booked leave</span></div>
-            <p className="note" style={{ margin: "0 14px 14px" }}>Office hours (India time): Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break, so 8h 15m a day. Sunday is off. Late = log in after 7:45 am. If you start after 7:30, your suggested log-out time moves later so you still work 8h 15m.</p>
+            <p className="note" style={{ margin: "0 14px 14px" }}>Office hours ({o.location} office): {o.daysText}, {o.hoursText}. Late = log in after {clockText(o.lateAfter)} am. If you start after {clockText(o.start)}, your suggested log-out time moves later so you still work a full day.</p>
           </div>
 
           <div className="panel" id="ts-daybyday">
@@ -613,7 +602,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
                   <tbody>{rows.map((d) => { const jh = jobH(d.date); return (
                     <tr key={d.date} className={d.date === day ? "sel" : undefined}><td><button type="button" className="link" onClick={() => pickDay(d.date)}>{short(d.date)}</button></td>
                       <td className="mono">{time(d.first || null) || "—"}</td>
-                      <td className="mono">{d.open ? (d.date === today ? "Still in" : <span className="warn">Not logged out</span>) : time(d.last) || "—"}</td>
+                      <td className="mono">{d.open ? (d.date === today ? "Still in" : <span className="warn">Not logged out</span>) : d.auto ? <span className="pill warn" title="Forgot to log out: logged out automatically at midnight India time">Auto logged out</span> : time(d.last) || "—"}</td>
                       <td className="mono">{d.m ? hmS(d.m) : "—"}</td>
                       <td className="mono">{jh ? `${hmS(jh * 60)}${d.m ? ` (${Math.round((jh * 60 / d.m) * 100)}%)` : ""}` : "—"}</td>
                       <td><span className={`pill ${statusCls(d)}`}>{statusText(d)}{d.late && d.request === "pending" ? " · asked" : ""}</span></td>

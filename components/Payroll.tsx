@@ -114,16 +114,21 @@ export default function PayrollView({ jobs, clients, meId, canSignOff, clientNam
                     </tr>); })}</tbody></table></div>)}
             <div className="count">Steps: processed → super paid → STP lodged. Click a client name to open the pay run.</div>
           </div>
-        </div>
-        <aside className="jobside">
           <div className="panel">
-            <div className="ph"><h2>Coming up in the next 30 days</h2><span className="note">Created on each pay day</span></div>
-            {coming.length ? <ul className="list paycoming">{coming.slice(0, 8).map((u) => { const dt = new Date(`${u.due}T00:00:00`); return (
-              <li key={`${u.client.id}-${u.key}`}><span className="caldate"><small>{dt.toLocaleDateString("en-AU", { weekday: "short" })}</small><b>{dt.getDate()}</b></span>
-                <div style={{ minWidth: 0, flex: 1 }}><div className="t">{u.client.name}</div><div className="s">{u.client.payroll_freq ? `${u.client.payroll_freq[0].toUpperCase()}${u.client.payroll_freq.slice(1)}` : ""} · {(personName(u.who) || "nobody").split(" ")[0]}</div></div>
-                <span className="pill">Auto-created</span></li>); })}</ul>
+            <div className="ph"><h2>Coming up in the next 30 days</h2><span className="note">{coming.length} pay run{coming.length === 1 ? "" : "s"} · each one is created automatically on its pay day</span></div>
+            {coming.length ? <div style={{ overflowX: "auto" }}><table className="jobtable paytable"><thead><tr><th>Pay day</th><th>Client</th><th>Frequency</th><th>Assigned</th><th></th></tr></thead>
+              <tbody>{coming.map((u) => (
+                <tr key={`${u.client.id}-${u.key}`}>
+                  <td style={{ whiteSpace: "nowrap" }}>{dayLabel(u.due)}<div className="note">{(() => { const n = daysFrom(u.due); return n === 0 ? "Today" : n === 1 ? "Tomorrow" : `In ${n} days`; })()}</div></td>
+                  <td className="client">{u.client.name}</td>
+                  <td>{u.client.payroll_freq ? `${u.client.payroll_freq[0].toUpperCase()}${u.client.payroll_freq.slice(1)}` : "—"}</td>
+                  <td title={personName(u.who)}>{(personName(u.who) || "").split(" ")[0] || <span className="muted">Nobody</span>}</td>
+                  <td style={{ textAlign: "right" }}><span className="pill">Auto-created</span></td>
+                </tr>))}</tbody></table></div>
               : <div className="empty">No automatic pay runs in the next 30 days. Set the pay frequency on a client to create them.</div>}
           </div>
+        </div>
+        <aside className="jobside">
           <div className="panel">
             <div className="ph"><h2>How a pay run moves</h2></div>
             <ol className="howpay">

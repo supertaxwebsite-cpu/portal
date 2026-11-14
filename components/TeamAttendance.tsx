@@ -4,13 +4,13 @@ import type { createClient } from "@/lib/supabase/client";
 import type { Attendance, Client, Job, JobTimer, Profile, TimeEntry } from "@/lib/types";
 import { fmtDate, svcLabel, todayISO } from "@/lib/domain";
 import { leaveDays, leaveLabel, LEAVE_KINDS, type LeaveReq } from "./Leave";
+import { OFFICES, localMinutes, localTime, officeOf, suggestedOutFor, type Office } from "@/lib/office";
 import type { Day, LateRequest } from "./Timesheet";
 
 type SB = ReturnType<typeof createClient>;
-const WORK_DAY_H = 8.25;
 /** Sick and personal leave allowance, days a year per person. */
 export const LEAVE_ALLOWANCE = 10;
-const time = (ts: string | null | undefined) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "");
+const time = (ts: string | null | undefined, o: Office = OFFICES.India) => localTime(ts, o);
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const n1 = (n: number) => String(Number(n.toFixed(1)));
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join("").toUpperCase();
@@ -34,8 +34,8 @@ function cellOf(rec: Day | undefined, lv: LeaveReq | undefined, d: string, today
   if (rec.half) return { cls: "half", t: "½", tip: rec.booked ? `Half day · ${leaveLabel(rec.booked)}` : "Half day" };
   if (lv?.status === "pending") return { cls: "pend", t: "?", tip: "Leave waiting for approval" };
   if (leaveOnly) return { cls: "", t: "", tip: "" };
-  if (rec.late) return { cls: "late", t: "", tip: `Late · in ${time(rec.first)}` };
-  if (rec.first || rec.h) return { cls: "ok", t: "", tip: rec.first ? `In ${time(rec.first)}` : "Present" };
+  if (rec.late) return { cls: "late", t: "", tip: `Late · in ${time(rec.first, rec.office)}` };
+  if (rec.first || rec.h) return { cls: "ok", t: "", tip: rec.first ? `In ${time(rec.first, rec.office)}` : "Present" };
   return { cls: "", t: "", tip: "" };
 }
 
@@ -82,7 +82,7 @@ export function MonthGrid({ month, people, days, leaves, entries, requests, leav
                   <td className="num mono">{mine.filter((d) => d.half).length}</td>
                   <td className="num mono" style={{ color: lvDays ? "var(--danger)" : undefined }}>{n1(lvDays)}</td>
                   <td className="num mono" style={{ color: pct !== null && pct < 80 ? "var(--danger)" : undefined }}>{pct === null ? "—" : `${pct}%`}</td>
-                  <td className="num mono">{n1(mine.reduce((s, d) => s + Math.max(0, d.h - WORK_DAY_H), 0))}</td></>}
+                  <td className="num mono">{n1(mine.reduce((s, d) => s + Math.max(0, d.h - d.office.workDayH), 0))}</td></>}
               </tr>); })}</tbody>
         </table>
       </div>
@@ -95,7 +95,7 @@ export function MonthGrid({ month, people, days, leaves, entries, requests, leav
         <div className="row" style={{ justifyContent: "space-between" }}><strong>{first(who(pick.uid))} · {new Date(`${pick.date}T00:00:00`).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" })}</strong><button type="button" className="link" aria-label="Close" onClick={() => setPick(null)}>✕</button></div>
         <dl>
           {selLv ? <><dt>Leave</dt><dd>{leaveLabel(selLv.kind)}{selLv.part !== "full" ? " (half day)" : ""} · {selLv.status === "approved" ? "approved" : selLv.status === "pending" ? "waiting" : "not approved"}</dd></> : null}
-          {sel?.first ? <><dt>Logged in</dt><dd>{time(sel.first)}{sel.late ? " (late)" : sel.lateExcused ? " (late, approved)" : ""}</dd><dt>Logged out</dt><dd>{sel.open ? "Still logged in" : time(sel.last) || "—"}</dd><dt>Logged in for</dt><dd>{hm(sel.m)}</dd></> : null}
+          {sel?.first ? <><dt>Logged in</dt><dd>{time(sel.first, sel.office)}{sel.late ? " (late)" : sel.lateExcused ? " (late, approved)" : ""}</dd><dt>Logged out</dt><dd>{sel.open ? "Still logged in" : time(sel.last, sel.office) || "—"}</dd><dt>Logged in for</dt><dd>{hm(sel.m)}</dd></> : null}
           {sel ? <><dt>Timesheet</dt><dd>{n1(sel.h)}h</dd><dt>On jobs</dt><dd>{(() => { const js = jobHours(pick.uid, pick.date); return `${n1(js.reduce((s, e) => s + e.hours, 0))}h · ${new Set(js.map((e) => e.job_id)).size} job${new Set(js.map((e) => e.job_id)).size === 1 ? "" : "s"}`; })()}</dd></> : null}
           {selReq ? <><dt>Late reason</dt><dd>&ldquo;{selReq.reason || "No reason given"}&rdquo;</dd></> : null}
         </dl>
@@ -124,9 +124,10 @@ export function RightNow({ people, att, timers, leaves, requests, jobs, clients,
     const lv = leaves.find((l) => l.user_id === p.id && l.status === "approved" && l.start_date <= today && l.end_date >= today);
     const t = timers.find((x) => x.user_id === p.id);
     const j = t?.job_id ? jobs.find((x) => x.id === t.job_id) : undefined;
-    const late = !!firstIn && officeMin(firstIn) > 7 * 60 + 45;
+    const o = officeOf(p);
+    const late = !!firstIn && localMinutes(firstIn, o) > o.lateAfter;
     const asked = requests.some((r) => r.user_id === p.id && r.work_date === today && r.status === "pending");
-    return { p, firstIn, open, lastOut, lv, t, j, late, asked };
+    return { p, o, firstIn, open, lastOut, lv, t, j, late, asked };
   });
   const inN = rows.filter((r) => r.open).length, lvN = rows.filter((r) => r.lv && !r.open).length, noN = rows.filter((r) => !r.firstIn && !r.lv).length;
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name ?? "a client";
@@ -134,24 +135,19 @@ export function RightNow({ people, att, timers, leaves, requests, jobs, clients,
     <div className="panel rightnow">
       <div className="ph"><h2>Right now · {new Date(now).toLocaleString("en-AU", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</h2>
         <span className="note">{inN} of {rows.length} in · {lvN} on leave · {noN} not logged in</span></div>
-      <div className="rnchips">{rows.map(({ p, firstIn, open, lastOut, lv, t, j, late, asked }) => (
+      <div className="rnchips">{rows.map(({ p, o, firstIn, open, lastOut, lv, t, j, late, asked }) => (
         <span key={p.id} className={`rnchip ${lv && !open ? "leave" : !firstIn ? "none" : late ? "late" : open ? "in" : "out"}`}>
           <span className="av">{initials(p.full_name)}</span><b>{first(p.full_name)}</b>
           <span className="note">{lv && !open ? `🌴 ${leaveLabel(lv.kind).toLowerCase()}${lv.part !== "full" ? " (half day)" : ""}`
             : !firstIn ? "not logged in yet"
-            : !open ? `in ${time(firstIn)} · logged out ${time(lastOut)}`
-            : `${late ? "late " : "in "}${time(firstIn)}${late ? ` · log out ${time(new Date(Date.parse(firstIn) + 9 * 3600e3).toISOString())}` : ""} · ${t ? `on ${j ? `${clientName(j.client_id)} ${svcLabel(j.service)}` : "a job"}` : "no job running"}${asked ? " · approval asked" : ""}`}</span>
+            : !open ? `in ${time(firstIn, o)} · logged out ${time(lastOut, o)}`
+            : `${late ? "late " : "in "}${time(firstIn, o)}${late ? ` · log out ${time(suggestedOutFor(firstIn, o), o)}` : ""} · ${t ? `on ${j ? `${clientName(j.client_id)} ${svcLabel(j.service)}` : "a job"}` : "no job running"}${asked ? " · approval asked" : ""}`}</span>
           {!firstIn && !lv && canMark(p.id) ? <button type="button" onClick={() => onMarkSick(p.id)}>Mark sick</button> : null}
         </span>))}</div>
     </div>
   );
 }
 
-const officeMin = (ts: string) => {
-  const parts = new Intl.DateTimeFormat("en-AU", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ts));
-  const n = (t: string) => Number(parts.find((x) => x.type === t)?.value ?? 0);
-  return n("hour") * 60 + n("minute");
-};
 
 /** Leave and late starts waiting for this person's decision, and sick / personal leave left this year. */
 export function Approvals({ me, people, leaves, requests, att, canApprove, onLeave, onLate }: {
@@ -176,7 +172,7 @@ export function Approvals({ me, people, leaves, requests, att, canApprove, onLea
                 <div className="s">{l.reason ? `"${l.reason}" · ` : ""}{l.kind !== "unpaid" ? `${n1(LEAVE_ALLOWANCE - used(l.user_id))} days left · ` : ""}{c.length ? <span className="warn">⚠ {c.join(" and ")} also off</span> : "nobody else off"}</div></div>
                 <div className="row"><button type="button" className="ok" onClick={() => onLeave(l, "approved")}>Approve</button><button type="button" className="dangerlink" onClick={() => onLeave(l, "rejected")}>Reject</button></div></li>); })}
             {late.map((r) => { const f = att.filter((a) => a.user_id === r.user_id && a.work_date === r.work_date).map((a) => a.clock_in).sort()[0]; return (
-              <li key={`${r.user_id}|${r.work_date}`}><span className="av">{initials(name(r.user_id))}</span><div style={{ minWidth: 0, flex: 1 }}><div className="t">{first(name(r.user_id))} <span className="note">· Late start {r.work_date === todayISO() ? "today" : fmtDate(r.work_date)}{f ? ` ${time(f)}` : ""}</span></div>
+              <li key={`${r.user_id}|${r.work_date}`}><span className="av">{initials(name(r.user_id))}</span><div style={{ minWidth: 0, flex: 1 }}><div className="t">{first(name(r.user_id))} <span className="note">· Late start {r.work_date === todayISO() ? "today" : fmtDate(r.work_date)}{f ? ` ${time(f, officeOf(people.find((p) => p.id === r.user_id)))}` : ""}</span></div>
                 <div className="s">&ldquo;{r.reason || "No reason given"}&rdquo;</div></div>
                 <div className="row"><button type="button" className="ok" onClick={() => onLate(r, "approved")}>Approve</button><button type="button" className="dangerlink" onClick={() => onLate(r, "rejected")}>Reject</button></div></li>); })}
           </ul>)}

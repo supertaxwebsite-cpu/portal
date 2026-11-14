@@ -25,6 +25,7 @@ import RelatedClients from "./RelatedClients";
 import ProspectsView from "./Prospects";
 import ActivityLog from "./ActivityLog";
 import { CHECKLISTS, STEPS } from "@/lib/checklists";
+import { LOCATIONS, localDay, officeOf } from "@/lib/office";
 import TeamBoard from "./TeamBoard";
 import JobPage from "./JobPage";
 import Management from "./Management";
@@ -227,6 +228,24 @@ export default function Workspace({ me }: { me: Profile }) {
   const canTeamTab = isMaster || (me.role === "manager" && !!me.can_see_team_tab);
   const canTeamTimesheet = isMaster || (me.role === "manager" && !!me.can_access_timesheet);
   // A team leader picks assignees and reviewers from their own team, who can see the client's practice.
+  // Staff and team leaders are signed out when the date changes where they work (the database closes their day at midnight).
+  useEffect(() => {
+    if (me.role === "master") return;
+    const KEY = "supertax-ist-day";
+    const office = officeOf(me);
+    const istDay = () => localDay(office);
+    const out = async () => {
+      try { localStorage.removeItem(KEY); } catch { /* storage blocked */ }
+      try { await supabase.auth.signOut(); } catch { /* signed out locally anyway */ }
+      window.location.href = "/login?daychange=1";
+    };
+    let stored = ""; try { stored = localStorage.getItem(KEY) ?? ""; } catch { /* storage blocked */ }
+    const start = istDay();
+    if (stored && stored !== start) { out(); return; }
+    try { localStorage.setItem(KEY, start); } catch { /* storage blocked */ }
+    const t = setInterval(() => { if (istDay() !== start) out(); }, 60000);
+    return () => clearInterval(t);
+  }, [me.role, me.work_location, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
   // Team leaders can't read master admins' profiles, so ask the server who they are (for Submit for review).
   const [masterIds, setMasterIds] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -1582,10 +1601,10 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
   member?: Profile; managers: Profile[]; bosses: Profile[]; staff: Profile[]; adminCall: (url: string, method: string, body?: unknown) => Promise<{ tempPassword?: string } | null>; onClose: () => void;
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
-  const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "", managerId: member?.manager_id ?? "" });
+  const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "", managerId: member?.manager_id ?? "", workLocation: member?.work_location ?? "India" });
   const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, canSelfReview: !!member?.can_self_review, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, canSelfReview: v.role === "manager" && perm.canSelfReview, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ workLocation: v.workLocation, managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, canSelfReview: v.role === "manager" && perm.canSelfReview, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1609,6 +1628,7 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
         <label className="f">Email{member ? <input id="u-email" value={v.email} disabled /> : <input id="u-email" type="email" required value={v.email} onChange={set("email")} />}</label>
         <label className="f">Job title<input id="u-title" value={v.title} onChange={set("title")} placeholder="e.g. Senior accountant" /></label>
         <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Team leader</option><option value="master">Master admin (full control)</option></select></label>
+        <label className="f">Works from<select id="u-location" value={v.workLocation} onChange={set("workLocation")}>{LOCATIONS.map((l) => <option key={l} value={l}>{l}{l === "India" ? " (7:30 to 4:30, Mon to Sat, India time)" : " (9:00 to 5:30, Mon to Fri, Sydney time)"}</option>)}</select></label>
         {v.role === "staff" ? (
           <label className="f">Team leader<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No team leader</option>{bosses.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}{m.role === "master" ? " (master admin)" : ""}</option>)}</select></label>
         ) : null}

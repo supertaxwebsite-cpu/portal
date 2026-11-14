@@ -15,6 +15,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("idle")) setError("You were signed out after 20 minutes with no activity. Sign in again to carry on.");
+    if (new URLSearchParams(window.location.search).get("daychange")) setError("You were logged out because the day ended. Sign in again to start today.");
     fetch("/api/setup").then((r) => r.json()).then((d) => { if (d.needsSetup) router.replace("/setup"); }).catch(() => {});
   }, [router]);
 

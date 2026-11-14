@@ -22,6 +22,8 @@ export interface Profile {
   can_see_team_tab?: boolean;
   can_access_timesheet?: boolean;
   can_self_review?: boolean;
+  /** "India" or "Australia": sets office hours, late time and the midnight log-out. */
+  work_location?: string | null;
   can_see_mgmt_notes?: boolean;
   client_types?: string[];
   /** Staff only: practices whose clients they can see. Empty = every practice. */
@@ -94,6 +96,8 @@ export interface Attendance {
   work_date: string;
   clock_in: string;
   clock_out: string | null;
+  /** Closed automatically at midnight India time because they forgot to log out. */
+  auto_closed?: boolean;
 }
 
 export interface TimeEntry {
