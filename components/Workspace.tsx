@@ -524,7 +524,9 @@ export default function Workspace({ me }: { me: Profile }) {
   const statusCls = (j: Job) => { const s = ST[j.status] ?? ST.not_started; return s.open && j.due_date && daysFrom(j.due_date) < 0 ? "danger" : s.cls; };
   // Lodged and completed jobs are read-only for everyone except master admins.
   const closedFor = (j: Job) => !isOpen(j.status) && !isMaster;
-  const StatusSelect = ({ j }: { j: Job }) => (
+  // Staff never set a status by hand: it moves on its own as they work through the job's tasks.
+  const StatusSelect = ({ j }: { j: Job }) => me.role === "staff"
+    ? <span className={`pill status ${statusCls(j)}`} title="The status changes on its own as the job's tasks are done">{ST[j.status]?.label ?? j.status}</span> : (
     <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j) || staffSubmitted(j) || staffNotStarted(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : staffSubmitted(j) ? SUBMITTED_LOCK_MSG : staffNotStarted(j) ? "Not started yet. The person it's assigned to presses Start first, then the status can change" : undefined} onChange={(e) => (me.role === "staff" && e.target.value === "review" ? submitForReview(j) : setStatus(j, e.target.value as StatusId))}>
       {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={me.role === "staff" && STAFF_CANT_PICK.has(s.id) && s.id !== j.status && j.reviewer_id !== me.id}>{s.label}</option>)}
     </select>
@@ -1385,7 +1387,7 @@ function JobModal({ job, initialTab, onNewClient, presetClient, presetService, i
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked && !ownPick} value={v.reviewer_id} onChange={set("reviewer_id")}>{ownPick ? <><option value="">No reviewer</option>{team.map((p) => <option key={p.id} value={p.id}>{p.id === meId ? `${p.full_name} (me)` : p.full_name}</option>)}</> : opts("No reviewer")}</select></label>
-        <label className="f">Status<select id="m-status" disabled={readOnly || statusLocked} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status && job?.reviewer_id !== meId}>{s.label}</option>)}</select></label>
+        <label className="f">Status{isStaff ? <span className="hint"> · changes on its own from the tasks</span> : null}<select id="m-status" disabled={readOnly || statusLocked || isStaff} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status && job?.reviewer_id !== meId}>{s.label}</option>)}</select></label>
         {job && (job.status === "to_lodge" || job.status === "sent_for_sign") ? <div className="full hint">Signing handled by <strong>{personName(job.sign_owner ?? job.reviewer_id ?? job.assignee_id) || "nobody yet"}</strong>
           {canHandSign(job) ? <> · <button type="button" className="link" onClick={() => onHandSign(job)}>Hand to a team member</button></> : null}</div> : null}
         <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>

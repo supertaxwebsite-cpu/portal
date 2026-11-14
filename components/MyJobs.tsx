@@ -118,9 +118,9 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button className="primary" disabled={busy} onClick={() => onStart(j)}>Start</button>}
                 {incoming ? <button disabled={busy} onClick={() => onAnswer(j)}>Send back</button> : <>
-                <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy || (isStaff && staffSubmittedLock(j, myId)) || (!!wasStarted && !wasStarted(j))} title={isStaff && staffSubmittedLock(j, myId) ? SUBMITTED_LOCK_MSG : wasStarted && !wasStarted(j) ? "Press Start first, then you can change the status" : undefined} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
+                {isStaff ? <span className={`pill ${ST[j.status]?.cls ?? ""}`} title="The status changes on its own as you work through the tasks">{ST[j.status]?.label ?? j.status}</span> : <select aria-label="Status" className={`statussel ${ST[j.status]?.cls ?? ""}`} value={j.status} disabled={busy || (isStaff && staffSubmittedLock(j, myId)) || (!!wasStarted && !wasStarted(j))} title={isStaff && staffSubmittedLock(j, myId) ? SUBMITTED_LOCK_MSG : wasStarted && !wasStarted(j) ? "Press Start first, then you can change the status" : undefined} onChange={(e) => onStatus(j, e.target.value as StatusId)}>
                   {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== j.status && j.reviewer_id !== myId}>{s.label}</option>)}
-                </select>
+                </select>}
                 {canSubmit ? (wasStarted && !wasStarted(j)
                   ? <button disabled title="Press Start first. A job can only be submitted once it has been started.">Submit for review</button>
                   : <button disabled={busy} onClick={() => onSubmit(j)} title={reviewerName ? `Send to ${reviewerName} for review` : "Mark ready for review"}>Submit for review</button>) : null}
