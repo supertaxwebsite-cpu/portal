@@ -845,3 +845,4 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .checklist .cmark button.on.ok2{background:#e8f5e9;border-color:#2e7d32;color:#2e7d32;font-weight:700}
 .checklist .cmark button.on.na2{background:#eef1f4;border-color:#6b7785;color:#3d4752;font-weight:700}
 .checklist li.done .ci,.checklist label.done{text-decoration:none;color:inherit}
+.rnform{margin:0 0 10px}.rnadd{border-color:var(--warn,#c77700);color:var(--warn,#c77700)}

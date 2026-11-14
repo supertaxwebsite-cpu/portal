@@ -2768,3 +2768,8 @@ begin
   return new;
 end $$;
 revoke all on function public.job_query_posted() from public, anon, authenticated;
+
+-- Review note attachments (database-update-review-attachments.sql)
+alter table public.review_notes add column if not exists file_id uuid references public.job_files (id) on delete set null;
+alter table public.review_notes add column if not exists fix_file_id uuid references public.job_files (id) on delete set null;
+notify pgrst, 'reload schema';

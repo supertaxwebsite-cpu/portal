@@ -7,6 +7,7 @@ import { STEPS, checklistFor } from "@/lib/checklists";
 import JobBrief, { type PrepRow } from "./JobBrief";
 import JobFiles from "./JobFiles";
 import JobHistory from "./JobHistory";
+import { ReviewNoteForm } from "./ReviewNotes";
 import { fmtHours } from "./MyJobs";
 
 type SB = ReturnType<typeof createClient>;
@@ -180,7 +181,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
               supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }} queryHours={queryHours} onProgress={onProgress}
               tasks={{ head: prepHead, active: stage === 0 && open && job.status !== "internal_query" && job.status !== "client_query", prepTime, onClientReplied: onReplied && !readOnly ? () => onReplied(job) : undefined, after: <>
                 <li className={`task${stage === 1 ? " now" : stage > 1 ? " done" : " later"}`}>{head(1)}
-                  {reviewing ? <div className="taskbody"><p className="note" style={{ margin: "0 0 8px" }}>Found a mistake? Add a review note above. When everything is cleared, approve it.</p>
+                  {reviewing ? <div className="taskbody"><p className="note" style={{ margin: "0 0 8px" }}>Found a mistake? Add a review note with a screenshot or file. It goes back to {personName(job.assignee_id) || "the preparer"} to fix, and you clear it. When everything is cleared, approve it.</p>
+                    <ReviewNoteForm job={job} meId={meId} supabase={supabase} personName={personName} say={say} />
                     <div className="row">{onSendBack ? <button type="button" disabled={busy} onClick={() => onSendBack(job)}>↩ Send back to {personName(job.assignee_id).split(" ")[0] || "the preparer"}</button> : null}
                       {onApprove ? <button type="button" className="primary" disabled={busy} onClick={() => onApprove(job)}>{job.needs_signature === false ? "Approve and complete" : "Approve → Client signature"}</button> : null}</div></div> : null}</li>
                 <li className={`task${stage === 2 ? " now" : stage > 2 ? " done" : " later"}`}>{head(2)}</li>
