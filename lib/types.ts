@@ -18,6 +18,9 @@ export interface Profile {
   can_create_clients?: boolean;
   /** Who they report to above their team leader (a team leader or master admin). */
   manager_id?: string | null;
+  /** Team leaders: may open the Team tab / see their team's timesheets (master admins always can). */
+  can_see_team_tab?: boolean;
+  can_access_timesheet?: boolean;
   can_see_mgmt_notes?: boolean;
   client_types?: string[];
   /** Staff only: practices whose clients they can see. Empty = every practice. */

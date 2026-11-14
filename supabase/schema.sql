@@ -3006,3 +3006,23 @@ create policy "members add clients" on public.clients
     )
   );
 notify pgrst, 'reload schema';
+
+-- ===== database-update-team-leader-access.sql =====
+-- Team leader access: per-person "See the Team tab" and "See their team's timesheets" ticks.
+-- Add-only. Both ticks start OFF, so team leaders lose timesheet access to their team until you tick it.
+alter table public.profiles add column if not exists can_see_team_tab boolean not null default false;
+alter table public.profiles add column if not exists can_access_timesheet boolean not null default false;
+
+-- A team leader sees their team's timesheets, attendance and leave only when ticked.
+create or replace function public.can_view_person(target uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    target = auth.uid()
+    or public.my_role() = 'master'
+    or (public.my_role() = 'manager'
+        and coalesce((select can_access_timesheet from public.profiles where id = auth.uid()), false)
+        and exists (select 1 from public.profiles where id = target and reports_to = auth.uid()))
+  );
+$$;
+revoke all on function public.can_view_person(uuid) from public, anon;
+grant execute on function public.can_view_person(uuid) to authenticated;

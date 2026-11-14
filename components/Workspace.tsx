@@ -223,6 +223,11 @@ export default function Workspace({ me }: { me: Profile }) {
     return () => { live = false; };
   }, [supabase, view, jobs]);
   const canSeeTeam = canManage;
+  // Team leaders only get the Team tab and the team Timesheet when a master admin ticks them.
+  const canTeamTab = isMaster || (me.role === "manager" && !!me.can_see_team_tab);
+  const canTeamTimesheet = isMaster || (me.role === "manager" && !!me.can_access_timesheet);
+  // A team leader picks assignees and reviewers from their own team, who can see the client's practice.
+  const myTeamIds = useMemo(() => new Set([me.id, ...profiles.filter((p) => p.reports_to === me.id).map((p) => p.id)]), [profiles, me.id]);
   /** Team workload and Working now: master admins, plus anyone a master admin has allowed. */
   const canSeeWorkload = isMaster || !!me.can_see_workload;
   /** Team leaders without that permission still see their own team's workload and running jobs. */
@@ -302,12 +307,12 @@ export default function Workspace({ me }: { me: Profile }) {
   useEffect(() => {
     const route = () => {
       const h = window.location.hash.replace("#", "") as View;
-      setView(VIEWS.includes(h) && (h !== "management" || me.role === "master") && ((h !== "team" && h !== "meetings" && h !== "prospects") || canSeeTeam) ? h : "overview");
+      setView(VIEWS.includes(h) && (h !== "management" || me.role === "master") && ((h !== "team" && h !== "meetings" && h !== "prospects") || canSeeTeam) && (h !== "team" || canTeamTab) ? h : "overview");
     };
     route();
     window.addEventListener("hashchange", route);
     return () => window.removeEventListener("hashchange", route);
-  }, [canSeeTeam]);
+  }, [canSeeTeam, canTeamTab]);
   const go = (v: View) => { if (v !== "clients") setClientId(null); setJobPageId(null); window.location.hash = v; setView(v); window.scrollTo(0, 0); };
   // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
   const navGo = (v: View) => {
@@ -564,8 +569,9 @@ export default function Workspace({ me }: { me: Profile }) {
       .sort((a, b) => Number(b.priority === "high") - Number(a.priority === "high") || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
     const svcs = SERVICES.filter((s) => openJobs.some((j) => j.service === s.id));
     const cols = STATUSES.filter((s) => s.open);
-    const myTeam = new Set([me.id, ...profiles.filter((p) => p.reports_to === me.id).map((p) => p.id)]);
-    const rows = team.filter((p) => !seesOwnTeam || myTeam.has(p.id)).map((p) => ({ id: p.id, name: p.full_name, title: p.title, js: openJobs.filter((j) => j.assignee_id === p.id) }));
+    const myTeam = myTeamIds;
+    // Team leaders see only themselves and their own team.
+    const rows = team.filter((p) => isMaster || myTeam.has(p.id) || (me.role !== "manager" && canSeeWorkload && openJobs.some((j) => j.assignee_id === p.id))).map((p) => ({ id: p.id, name: p.full_name, title: p.title, js: openJobs.filter((j) => j.assignee_id === p.id) }));
     const un = openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active));
     if (un.length && !seesOwnTeam) rows.push({ id: "__none", name: "Unassigned", title: "", js: un });
     const projected = projectedWork(clients);
@@ -1098,7 +1104,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
   if (!loaded) {
     return (
-      <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam}>
+      <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab}>
         <div className="panel empty"><strong>{loadError ? "The practice database did not answer." : "Loading your practice…"}</strong>{loadError ? `${loadError}. Reload the page to try again.` : "Clients, jobs and due dates appear here in a moment."}</div>
       </Shell>
     );
@@ -1122,7 +1128,7 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   return (
-    <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
+    <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       <WorkGate supabase={supabase} meId={me.id} isStaff={me.role === "staff"} running={running} onTimesheet={view === "timesheet"} onMyJobs={() => navGo("overview")} say={say}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? (() => {
@@ -1140,8 +1146,8 @@ export default function Workspace({ me }: { me: Profile }) {
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "prospects" && canSeeTeam ? <ProspectsView key={navTick} supabase={supabase} meId={me.id} team={team} clients={clients} canDelete={canDelete} personName={personName} say={say} onOpenClient={openClient} onChanged={load} /> : null}
-      {view === "timesheet" ? <Timesheet key={navTick} timers={running && !teamRunning.some((t) => t.id === running.id) ? [...teamRunning, running] : teamRunning} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} startTab={tsTab} /> : null}
-      {view === "team" && canSeeTeam ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => openJob(j)} /></> : null}
+      {view === "timesheet" ? <Timesheet key={navTick} timers={running && !teamRunning.some((t) => t.id === running.id) ? [...teamRunning, running] : teamRunning} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canTeamTimesheet} say={say} startTab={tsTab} /> : null}
+      {view === "team" && canTeamTab ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => openJob(j)} /></> : null}
       {view === "management" && me.role === "master" ? <Management key={navTick} supabase={supabase} meId={me.id} clients={clients} personName={personName} say={say} /> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
@@ -1160,7 +1166,7 @@ export default function Workspace({ me }: { me: Profile }) {
           return true;
         }} /> : null}
       </WorkGate>
-      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} practices={myPractices} canCreateClient={canCreateClient} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onRaised={queryRaised} onAnswered={queryAnswered} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} teamOnly={me.role === "manager" ? myTeamIds : undefined} practicesOf={(id) => profiles.find((x) => x.id === id)?.practices ?? []} practices={myPractices} canCreateClient={canCreateClient} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onRaised={queryRaised} onAnswered={queryAnswered} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
       {modal?.kind === "client" ? <ClientModal client={modal.client} practices={myPractices} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
@@ -1200,8 +1206,8 @@ export default function Workspace({ me }: { me: Profile }) {
 }
 
 /* ---------- layout ---------- */
-function Shell({ me, view, go, live, showTeam, bell, wide, badges, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; wide?: boolean; badges?: Partial<Record<View, number>>; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : []), ...(me.role === "master" ? [["management", "Management"] as [View, string]] : [])];
+function Shell({ me, view, go, live, showTeam, showTeamTab = showTeam, bell, wide, badges, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; showTeamTab?: boolean; bell?: React.ReactNode; wide?: boolean; badges?: Partial<Record<View, number>>; children: React.ReactNode }) {
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeamTab ? [["team", "Team"] as [View, string]] : []), ...(showTeam ? [["meetings", "Meetings"] as [View, string]] : []), ...(me.role === "master" ? [["management", "Management"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
@@ -1244,8 +1250,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, practices = [...PRACTICES], canCreateClient = true, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onRaised, onAnswered, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; practices?: string[]; canCreateClient?: boolean; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACTICES], canCreateClient = true, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onRaised, onAnswered, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; teamOnly?: Set<string>; practicesOf?: (id: string) => string[]; practices?: string[]; canCreateClient?: boolean; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -1280,7 +1286,7 @@ function JobModal({ job, practices = [...PRACTICES], canCreateClient = true, ini
     if (error || !data) { say(`Client not added: ${error?.message ?? "try again"}`, true); return; }
     const c = data as Client;
     setAdded((x) => [...x, c]);
-    setV((cur) => ({ ...cur, client_id: c.id, assignee_id: cur.assignee_id || c.manager_id || "" }));
+    setV((cur) => ({ ...cur, client_id: c.id, assignee_id: cur.assignee_id || (c.manager_id && (!teamOnly || teamOnly.has(c.manager_id)) ? c.manager_id : "") }));
     setQuick(null); setQuickDupes(null);
     say(`${c.name} added`);
   }
@@ -1306,7 +1312,7 @@ function JobModal({ job, practices = [...PRACTICES], canCreateClient = true, ini
   const [payAnchor, setPayAnchor] = useState("");
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const next = { ...v, [k]: e.target.value };
-    if (k === "client_id" && !v.assignee_id) next.assignee_id = clients.find((c) => c.id === e.target.value)?.manager_id ?? "";
+    if (k === "client_id" && !v.assignee_id) { const m = clients.find((c) => c.id === e.target.value)?.manager_id ?? ""; next.assignee_id = teamOnly && m && !teamOnly.has(m) ? "" : m; }
     if (k === "service" && !job) { next.period = ""; if (autoDue) next.due_date = ""; setCustom(false); }
     if (k === "due_date") setAutoDue(false);
     setV(next);
@@ -1341,7 +1347,10 @@ function JobModal({ job, practices = [...PRACTICES], canCreateClient = true, ini
   // Staff only see themselves (and whoever is already on this job, or their team leader), not the whole team.
   // Staff allowed to choose their own reviewer: on their own open jobs, any team member (or themselves).
   const ownPick = canPickReviewer && !!job && job.assignee_id === meId && !readOnly;
-  const pick = isStaff ? team.filter((p) => p.id === meId || p.id === v.assignee_id || p.id === v.reviewer_id || p.id === leaderId) : team;
+  const jobPractice = (() => { const c = allClients.find((x) => x.id === v.client_id); return c ? practiceOf(c) : null; })();
+  const keep = (id: string) => !!job && (id === job.assignee_id || id === job.reviewer_id);
+  const pick = isStaff ? team.filter((p) => p.id === meId || p.id === v.assignee_id || p.id === v.reviewer_id || p.id === leaderId)
+    : teamOnly ? team.filter((p) => keep(p.id) || (teamOnly.has(p.id) && (!jobPractice || !practicesOf(p.id).length || practicesOf(p.id).includes(jobPractice)))) : team;
   const opts = (blank: string) => <><option value="">{blank}</option>{pick.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>;
   return (
     <Overlay onClose={onClose}><form className={`modal ${job ? "wide" : ""}`} onSubmit={submit}>
@@ -1568,9 +1577,9 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "", managerId: member?.manager_id ?? "" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1609,6 +1618,8 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
         {v.role !== "master" ? <div className="f full permbox"><span>Permissions</span>
           <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? ` (not just their own team${perm.practices.length ? `; ${perm.practices.join(", ")} work only` : ""})` : ""}</label>
           <label className="row" style={{ gap: 8 }}><input id="u-createclients" type="checkbox" checked={perm.canCreateClients} onChange={(e) => setPerm({ ...perm, canCreateClients: e.target.checked })} /> Can create new clients{perm.practices.length ? ` (only for ${perm.practices.join(", ")})` : ""}</label>
+          {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-teamtab" type="checkbox" checked={perm.canSeeTeamTab} onChange={(e) => setPerm({ ...perm, canSeeTeamTab: e.target.checked })} /> See the Team tab</label> : null}
+          {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-timesheet" type="checkbox" checked={perm.canAccessTimesheet} onChange={(e) => setPerm({ ...perm, canAccessTimesheet: e.target.checked })} /> See their team&apos;s timesheets, attendance and leave (otherwise only their own timesheet)</label> : null}
           <label className="row" style={{ gap: 8 }}><input id="u-signrem" type="checkbox" checked={perm.signReminders} onChange={(e) => setPerm({ ...perm, signReminders: e.target.checked })} /> Get the bell reminders to chase client signatures and client query replies on jobs they send out (otherwise the reminders go to the master admins)</label>
           <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label>
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-pickrev" type="checkbox" checked={perm.canPickReviewer} onChange={(e) => setPerm({ ...perm, canPickReviewer: e.target.checked })} /> Choose the reviewer on their own jobs (including themselves)</label> : null}
