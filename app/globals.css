@@ -835,3 +835,12 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .mts .reqs li .grow{flex:1;min-width:0}
 .mts .reqs li .row{flex:none;gap:6px}
 .mts .reqs li > .pill{flex:none}
+/* Checklist: Checked or N/A */
+.checklist li{align-items:center}
+.checklist .ci{font-size:14px;flex:1;min-width:200px}
+.checklist li.done .ci{color:var(--muted);text-decoration:line-through}
+.checklist li.na .ci{color:var(--muted)}
+.checklist .cmark{gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.checklist .cmark button{padding:3px 9px;font-size:12px;border-radius:999px;background:#fff}
+.checklist .cmark button.on.ok2{background:#e8f5e9;border-color:#2e7d32;color:#2e7d32;font-weight:700}
+.checklist .cmark button.on.na2{background:#eef1f4;border-color:#6b7785;color:#3d4752;font-weight:700}

@@ -19,7 +19,7 @@ const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_")
  *  and internal queries: question on the left, the manager's reply beside it. */
 const fmtHm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
-export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, timer, queryHours, tasks }: {
+export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, timer, queryHours, onProgress, tasks }: {
   tasks?: { prep: ReactNode; after: ReactNode };
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
   supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void; onNewClient?: () => void;
@@ -28,6 +28,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   /** A response was sent; stillOpen is how many internal queries on the job are still unanswered. */
   onAnswered?: (j: Job, stillOpen: number) => void;
   /** Job timer, so the person a query was raised to can time their answer onto their own timesheet. */
+  /** Checklist progress: items marked Checked or N/A, out of the total. */
+  onProgress?: (marked: number, total: number) => void;
   queryHours?: (q: { to_id: string | null; created_at: string; answered_at: string | null }) => number;
   timer?: { runningHere: boolean; busy: boolean; start: (j: Job) => void; stop: () => void };
 }) {
@@ -112,11 +114,13 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     onRaised?.(job, "client");
     return true;
   }
-  async function toggle(item: string, on: boolean) {
-    const { error } = on
-      ? await supabase.from("job_checks").delete().eq("job_id", job.id).eq("item", item)
-      : await supabase.from("job_checks").insert({ job_id: job.id, item, done_by: meId });
-    if (error) { say(`Not saved: ${error.message}`, true); return; }
+  async function mark(item: string, to: "done" | "na" | null) {
+    const del = await supabase.from("job_checks").delete().eq("job_id", job.id).in("item", [item, `N/A: ${item}`]);
+    if (del.error) { say(`Not saved: ${del.error.message}`, true); return; }
+    if (to) {
+      const { error } = await supabase.from("job_checks").insert({ job_id: job.id, item: to === "na" ? `N/A: ${item}` : item, done_by: meId });
+      if (error) { say(`Not saved: ${error.message}`, true); return; }
+    }
     load();
   }
   async function openFile(id: string | null) {
@@ -133,6 +137,17 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
 
   const items = checklistFor(job.service);
   const done = new Map(checks.map((c) => [c.item, c]));
+  // Each checklist item is marked Checked or N/A (N/A is saved as "N/A: <item>").
+  const NA = (i: string) => `N/A: ${i}`;
+  const markOf = (i: string) => { const c = done.get(i); if (c) return { c, na: false }; const n = done.get(NA(i)); return n ? { c: n, na: true } : null; };
+  const isMarked = (i: string) => !!markOf(i);
+  const markedN = items.filter(isMarked).length;
+  useEffect(() => { onProgress?.(markedN, items.length); }, [markedN, items.length, onProgress]);
+  const itemEl = (i: string) => { const m = markOf(i); return (
+    <li key={i} className={m ? (m.na ? "na" : "done") : undefined}><span className="ci">{i}</span>
+      <span className="row cmark">{m ? <span className="note">{m.na ? "N/A · " : ""}{personName(m.c.done_by) || "someone"} · {when(m.c.done_at)}</span> : null}
+        <button type="button" className={m && !m.na ? "on ok2" : undefined} disabled={readOnly || missing} aria-pressed={!!m && !m.na} onClick={() => mark(i, m && !m.na ? null : "done")}>✓ Checked</button>
+        <button type="button" className={m?.na ? "on na2" : undefined} disabled={readOnly || missing} aria-pressed={!!m?.na} onClick={() => mark(i, m?.na ? null : "na")}>N/A</button></span></li>); };
   const questions = (qs ?? []).filter((q) => !q.parent_id);
   const replies = (qs ?? []).filter((q) => q.parent_id);
   const d = job.due_date ? daysFrom(job.due_date) : null;
@@ -140,26 +155,22 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const checklistEl = (<>
         {STEPS[job.service] ? (() => {
         const steps = STEPS[job.service];
-        const nowIdx = steps.findIndex((s) => s.items.some((i) => !done.has(i)));
-        const allDone = items.filter((i) => done.has(i)).length;
+        const nowIdx = steps.findIndex((s) => s.items.some((i) => !isMarked(i)));
+        const allDone = markedN;
         return <section className="briefsec">
           <h3>Steps <span className="note">{allDone} of {items.length} done</span></h3>
           <div className="stepbar"><i style={{ width: `${(allDone / Math.max(1, items.length)) * 100}%` }} /></div>
-          <ol className="steps">{steps.map((s, n) => { const d = s.items.filter((i) => done.has(i)).length; const state = d === s.items.length ? "done" : n === nowIdx ? "now" : "";
+          <ol className="steps">{steps.map((s, n) => { const d = s.items.filter(isMarked).length; const state = d === s.items.length ? "done" : n === nowIdx ? "now" : "";
             return (
               <li key={s.title} className={state}>
                 <div className="stephead"><span className="dot">{state === "done" ? "✓" : n + 1}</span><strong>{s.title}</strong><span className="note">{d} of {s.items.length}</span></div>
-                {state !== "done" || n === steps.length - 1 ? <ul className="checklist">{s.items.map((i) => { const c = done.get(i); return (
-                  <li key={i}><label className={c ? "done" : ""}><input type="checkbox" checked={!!c} disabled={readOnly || missing} onChange={() => toggle(i, !!c)} /> {i}</label>
-                    {c ? <span className="note">{personName(c.done_by) || "someone"} · {when(c.done_at)}</span> : null}</li>); })}</ul> : null}
+                {state !== "done" || n === steps.length - 1 ? <ul className="checklist">{s.items.map(itemEl)}</ul> : null}
                 {n === steps.length - 1 && job.service === "company_formation" && onNewClient && !readOnly ? <button type="button" className="primary" style={{ marginTop: 8 }} onClick={onNewClient}>Create the new company as a client</button> : null}
               </li>); })}</ol>
         </section>;
       })() : items.length ? <section className="briefsec">
-        <h3>Checklist <span className="note">{items.filter((i) => done.has(i)).length} of {items.length} done</span></h3>
-        <ul className="checklist">{items.map((i) => { const c = done.get(i); return (
-          <li key={i}><label className={c ? "done" : ""}><input type="checkbox" checked={!!c} disabled={readOnly || missing} onChange={() => toggle(i, !!c)} /> {i}</label>
-            {c ? <span className="note">{personName(c.done_by) || "someone"} · {when(c.done_at)}</span> : null}</li>); })}</ul>
+        <h3>Checklist <span className="note">{markedN} of {items.length} done</span></h3>
+        <ul className="checklist">{items.map(itemEl)}</ul>
       </section> : null}
 
   </>);

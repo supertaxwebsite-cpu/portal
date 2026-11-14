@@ -114,7 +114,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                 </>}
               </div> : away ? <div className="row actions"><span className="pill danger">With {personName(j.assignee_id)} for internal query</span></div> : <div className="row actions">
                 {on ? <>
-                  <span className="timer mono" title={`Started ${new Date(running!.started_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}>● {elapsed(running!.started_at, now)}</span>
+                  <span className="timer mono" title={`Started ${new Date(running!.started_at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}`}>● {elapsed(running!.started_at, now)}</span>
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button className="primary" disabled={busy} onClick={() => onStart(j)}>Start</button>}
                 {incoming ? <button disabled={busy} onClick={() => onAnswer(j)}>Send back</button> : <>
@@ -161,7 +161,7 @@ export function TeamRunning({ timers, jobHours, jobById, clientName, personName,
                 <div className="s">{j ? <button className="link" onClick={() => onOpen(j)}>{clientName(j.client_id)}</button> : "A job"}{j ? ` · ${svcLabel(j.service)} · ${j.period}` : ""}</div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div className="timer mono" title={`Started ${new Date(t.started_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}>● {elapsed(t.started_at, now)}</div>
+                <div className="timer mono" title={`Started ${new Date(t.started_at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}`}>● {elapsed(t.started_at, now)}</div>
                 <div className="note">Total on job {fmtHours(total)}</div>
               </div>
             </li>);

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person } from "@/lib/types";
 import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel } from "@/lib/domain";
@@ -17,22 +17,34 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onRaised, onAnswered }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void;
+  /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
+  onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void;
   job: Job; client?: Client; meId: string; team: Person[]; canAnswerAll: boolean; canDelete: boolean; readOnly: boolean; supabase: SB;
   personName: (id: string | null) => string; say: (m: string, e?: boolean) => void; statusEl: ReactNode; hours: number;
   running: JobTimer | null; busy: boolean; onStart: (j: Job) => void; onStop: () => void; wasStarted: (j: Job) => boolean;
   onBack: () => void; onEdit: (tab?: "email") => void; onOpenClient: (id: string) => void; onNewClient: () => void;
 }) {
   const st = ST[job.status];
+  const total = checklistFor(job.service).length;
+  // Checklist progress from the task list: items marked Checked or N/A.
+  const [prog, setProg] = useState({ marked: 0, total });
+  const onProgress = useCallback((marked: number, t: number) => setProg({ marked, total: t }), []);
+  const checklistDone = prog.total === 0 || prog.marked >= prog.total;
+
   const d = job.due_date ? daysFrom(job.due_date) : null;
   const open = isOpen(job.status);
   const stage = !open ? 4 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
   const signer = job.sign_owner ?? job.reviewer_id ?? job.assignee_id;
   const rows: { t: string; who: string | null; s: string }[] = [
-    { t: "Preparation", who: job.assignee_id, s: stage > 0 ? "Done and sent to review" : `${st?.label ?? ""}${wasStarted(job) ? "" : " · not started yet"}` },
+    { t: "Preparation", who: job.assignee_id, s: stage > 0 ? "Done and sent to review"
+      : job.status === "internal_query" ? "Internal query raised: waiting for the answer"
+      : job.status === "client_query" ? "Query with the client: press Client replied when they answer"
+      : !wasStarted(job) ? "Not started yet: press Start processing"
+      : `In progress · checklist ${prog.marked} of ${prog.total}${checklistDone ? ": ready to complete" : ""}` },
     { t: "Review", who: job.reviewer_id, s: stage > 1 ? "Approved" : stage === 1 ? "Reviewing now" : "Opens when preparation is sent to review" },
     { t: "Client signature", who: job.needs_signature === false ? null : signer, s: job.needs_signature === false ? "Not needed for this job" : job.status === "sent_for_sign" ? `Sent for signing${job.sign_sent_at ? ` ${fmtDate(job.sign_sent_at.slice(0, 10))}` : ""}` : stage > 2 ? "Signed" : "Send for signing, then mark signed" },
     { t: job.needs_signature === false ? "Complete" : "Lodge", who: null, s: !open ? `${job.status === "done" ? "Completed" : "Lodged"}${job.lodged_on ? ` ${fmtDate(job.lodged_on)}` : ""}` : "Lodgment date and receipt" },
@@ -70,8 +82,30 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const queryHours = (q: { to_id: string | null; created_at: string; answered_at: string | null }) => ents
     .filter((e) => isAnswer(e) && e.user_id === q.to_id && e.created_at >= q.created_at && (!q.answered_at || Date.parse(e.created_at) <= Date.parse(q.answered_at) + 5 * 60e3))
     .reduce((t, e) => t + e.hours, 0);
-  const total = checklistFor(job.service).length;
   const reviewing = job.status === "review" && (job.reviewer_id === meId || canAnswerAll) && !readOnly;
+  // What you can do on the current task. Status moves on its own: nobody changes it by hand.
+  const mineRow = (i: number) => (i === 0 ? job.assignee_id === meId : i === 1 ? job.reviewer_id === meId : i === 2 ? signer === meId : false);
+  const timerBtn = (label: string) => on ? <><span className="timer mono">● running</span><button type="button" disabled={busy} onClick={onStop}>Stop</button></>
+    : <button type="button" className="primary" disabled={busy} onClick={() => onStart(job)}>{label}</button>;
+  const actions = (i: number) => {
+    const me = mineRow(i);
+    if (i === 0) {
+      if (job.status === "client_query") return <>{(me || canAnswerAll) && onReplied ? <button type="button" className="primary" disabled={busy} onClick={() => onReplied(job)}>Client replied</button> : null}</>;
+      if (job.status === "internal_query") return me ? timerBtn("Start") : null;
+      if (!me && !canAnswerAll) return null;
+      return <>{me ? timerBtn(wasStarted(job) ? "Start" : "Start processing") : null}
+        {onComplete && (wasStarted(job) || !me) ? <button type="button" className={on ? "primary" : undefined} disabled={busy || !checklistDone}
+          title={checklistDone ? "Stops the timer and sends it to review" : `Mark every checklist item Checked or N/A first (${prog.marked} of ${prog.total})`}
+          onClick={async () => { if (on) await onStop(); onComplete(job); }}>Complete preparation</button> : null}</>;
+    }
+    if (i === 1) return me ? timerBtn("Start review") : null;
+    if (i === 2) {
+      if (!me && !canAnswerAll) return null;
+      if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
+      if (job.status === "sent_for_sign") return onSigned ? <button type="button" className="primary" disabled={busy} onClick={() => onSigned(job)}>Client signed</button> : null;
+    }
+    return null;
+  };
   const head = (i: number) => { const r = rows[i]; const cls = i < stage ? "done" : i === stage ? "now" : "";
     return <div className={`taskhead ${cls}`}>
       <span className="tdot">{i < stage ? "✓" : i + 1}</span>
@@ -79,10 +113,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
         <div className="tks">{i === stage && on ? <span className="runtxt">● Running · </span> : null}{r.s}</div></div>
       {stageHrs[i] ? <span className="tasktime mono" title="Time logged on this task">{hm(stageHrs[i])}</span> : null}
       <div className="row jsact">
-        {i === stage && open ? <>
-          {(i === 0 && job.assignee_id === meId || i === 1 && job.reviewer_id === meId) && !readOnly ? (on ? <><span className="timer mono">● running</span><button type="button" disabled={busy} onClick={onStop}>Stop</button></> : <button type="button" disabled={busy} onClick={() => onStart(job)}>{i === 1 ? "Start review" : "Start"}</button>) : null}
-          {statusEl}
-        </> : null}
+        {i === stage && open && !readOnly ? actions(i) : null}
         {r.who ? <span className="av" title={personName(r.who)}>{initials(personName(r.who))}</span> : <span className="av">—</span>}
       </div></div>; };
 
@@ -118,9 +149,9 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
       <div className="jobgrid">
         <div className="jobmain">
           <div className="panel tasksp" id="jp-work">
-            <div className="ph"><h2>Tasks</h2><span className="note">Each task has its own stage and person. Change the stage from the list on the current row.</span></div>
+            <div className="ph"><h2>Tasks</h2><span className="note">Press Start on the current task. Finish it and the next task opens on its own.</span></div>
             <JobBrief job={job} clientName={client?.name ?? ""} showInfo={false} meId={meId} canAnswerAll={canAnswerAll} team={team} defaultTo={job.reviewer_id} readOnly={readOnly}
-              supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }} queryHours={queryHours}
+              supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }} queryHours={queryHours} onProgress={onProgress}
               tasks={{ prep: head(0), after: <>
                 <li className={`task${stage === 1 ? " now" : stage > 1 ? " done" : " later"}`}>{head(1)}
                   {reviewing ? <div className="taskbody"><p className="note" style={{ margin: "0 0 8px" }}>Found a mistake? Add a review note above. When everything is cleared, approve it.</p>

@@ -442,7 +442,8 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
   const runJob = myTimer?.job_id ? jobs.find((j) => j.id === myTimer.job_id) : undefined;
   const outAt = tFirst ? suggestedOut(tFirst) : "";
   const afterStart = tFirst ? officeMinutes(tFirst) - START : 0;
-  const TARGET = 8.25 * 60;
+  const TARGET = 8.25 * 60; // work a day
+  const DAY_IN = 9 * 60; // logged in a day: 7:30 am to 4:30 pm, including the 45 min break
 
   // ----- this month -----
   let workDays = 0;
@@ -543,8 +544,8 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
           {openShift && outAt ? <span className="pill warn">🕓 Suggested log out <strong>&nbsp;{time(outAt)}</strong></span> : null}
         </div>
         <div className="tb-m">
-          <div className="row" style={{ justifyContent: "space-between" }}><strong>Worked {hmS(tMin)} of 8h 15m</strong><span className="note">On jobs {hmS(tJobMin)}{tMin ? ` (${Math.round((tJobMin / tMin) * 100)}%)` : ""}</span></div>
-          <div className="tbbar"><b style={{ width: `${Math.min(100, (Math.min(tJobMin, tMin) / TARGET) * 100)}%` }} /><i style={{ width: `${Math.min(100, (Math.max(0, tMin - tJobMin) / TARGET) * 100)}%` }} /></div>
+          <div className="row" style={{ justifyContent: "space-between" }}><strong>Logged in {hmS(tMin)} of 9h</strong> <span className="note">(7:30 am to 4:30 pm India time, including the 45 min break)</span><span className="note">On jobs {hmS(tJobMin)}{tMin ? ` (${Math.round((tJobMin / tMin) * 100)}%)` : ""}</span></div>
+          <div className="tbbar"><b style={{ width: `${Math.min(100, (Math.min(tJobMin, tMin) / DAY_IN) * 100)}%` }} /><i style={{ width: `${Math.min(100, (Math.max(0, tMin - tJobMin) / DAY_IN) * 100)}%` }} /></div>
           <span className="note">{myTimer ? <>▶ Running now: <strong>{runJob ? clients.find((c) => c.id === runJob.client_id)?.name ?? "a job" : "a job"}</strong>{runJob ? ` · ${svcLabel(runJob.service)} ${runJob.period}` : ""} · {hmS(runMin)}</> : openShift ? "No job timer running. Start a job from My tasks so your time goes on the right job." : ""}</span>
           {openShift && !shiftFilled ? <span className="pill warn" style={{ whiteSpace: "normal" }}>Add at least one timesheet line for {fmtDate(openShift.work_date)} (below) before you log out.</span> : null}
         </div>

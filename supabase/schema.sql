@@ -2709,7 +2709,7 @@ begin
                when j.status = 'to_lodge' then 'Preparing for signing, timer '
                when j.status = 'sent_for_sign' then 'Signing follow-up, timer '
                else 'Timer ' end
-          || lower(to_char(t.started_at at time zone tz, 'FMHH12:MIAM')) || ' to ' || lower(to_char(now() at time zone tz, 'FMHH12:MIAM')))
+          || lower(to_char(t.started_at at time zone 'Asia/Kolkata', 'FMHH12:MIAM')) || ' to ' || lower(to_char(now() at time zone 'Asia/Kolkata', 'FMHH12:MIAM')) || ' IST')
   returning id into e;
   perform set_config('supertax.timer_stop', 'off', true);
   update public.job_timers set ended_at = now(), entry_id = e where id = t.id;
