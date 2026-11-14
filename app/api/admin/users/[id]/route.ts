@@ -33,7 +33,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (Array.isArray(body.clientTypes)) update.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (Array.isArray(body.practices)) update.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   if (update.role === "master") { update.gets_sign_reminders = true; update.can_delete = false; update.can_see_workload = false; }
-  if (update.role === "master" || update.role === "manager") { update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; update.client_types = []; update.practices = []; update.can_create_clients = true; }
+  if (update.role === "master") { update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; update.client_types = []; update.practices = []; update.can_create_clients = true; }
+  if (update.role === "manager") update.can_pick_reviewer = false;
   if (!Object.keys(update).length && !Array.isArray(body.team)) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
 
   const admin = createAdminClient();

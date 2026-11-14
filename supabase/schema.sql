@@ -2941,3 +2941,68 @@ do $$ begin
   end if;
 end $$;
 notify pgrst, 'reload schema';
+
+-- Team leader permissions (database-update-team-leader-permissions.sql)
+
+-- 1) Keep today's access for existing team leaders (they could always delete notes and see management notes).
+-- (Only on the first run, so re-running never undoes boxes you've unticked since.)
+do $$ begin
+  if pg_get_functiondef('public.can_delete_data'::regproc) like '%''manager''%' then
+    update public.profiles set can_delete = true, can_see_mgmt_notes = true where role = 'manager';
+  end if;
+end $$;
+
+-- 2) Delete notes and management notes: master admins always; everyone else only when ticked.
+create or replace function public.can_delete_data() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and active and (role = 'master' or can_delete));
+$$;
+create or replace function public.can_see_mgmt_notes() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and active and (role = 'master' or can_see_mgmt_notes));
+$$;
+
+-- 3) Clients: practices and client types now apply to team leaders as well as staff (none ticked = all).
+create or replace function public.can_see_client(p_id uuid, p_entity text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles p where p.id = auth.uid() and p.active and (
+    p.role = 'master'
+    or ((cardinality(p.client_types) = 0 or p_entity = any (p.client_types))
+        and (cardinality(p.practices) = 0
+             or (select c.practice from public.clients c where c.id = p_id) = any (p.practices)))
+    or exists (select 1 from public.jobs j where j.client_id = p_id
+               and (j.assignee_id = p.id or j.reviewer_id = p.id or j.sign_owner = p.id or j.query_from = p.id))
+  ));
+$$;
+
+-- 4) Jobs: a team leader sees jobs of the clients they can see, plus their own team's jobs.
+--    So a team leader allocated only Monarch Accounting sees Monarch work (and Monarch workload) only.
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() = 'master'
+    or (public.my_role() = 'manager' and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or (public.my_role() = 'manager' and exists (select 1 from public.profiles t where t.id = j.assignee_id and t.reports_to = auth.uid()))
+    or (j.assignee_id is null and j.status not in ('done', 'sent_for_sign', 'lodged')
+        and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or j.sign_owner = auth.uid()
+    or exists (select 1 from public.job_queries q where q.job_id = j.id and q.to_id = auth.uid())
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+  );
+$$;
+
+-- 5) Adding clients: "Can create clients" and practices apply to team leaders too.
+drop policy if exists "members add clients" on public.clients;
+create policy "members add clients" on public.clients
+  for insert to authenticated with check (
+    public.is_active_member() and exists (
+      select 1 from public.profiles p where p.id = auth.uid() and p.active and (
+        p.role = 'master'
+        or (p.can_create_clients and (cardinality(p.practices) = 0 or practice = any (p.practices)))
+      )
+    )
+  );
+notify pgrst, 'reload schema';

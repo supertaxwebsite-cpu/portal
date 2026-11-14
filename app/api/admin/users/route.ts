@@ -36,15 +36,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
   const perms: Record<string, boolean | string[] | string> = {};
-  if (role === "staff" && typeof body.canDelete === "boolean") perms.can_delete = body.canDelete;
+  if (role !== "master" && typeof body.canDelete === "boolean") perms.can_delete = body.canDelete;
   if (role !== "master" && body.canSeeWorkload === true) perms.can_see_workload = true;
   if (role === "staff" && body.canPickReviewer === true) perms.can_pick_reviewer = true;
-  if (role === "staff" && body.canSeeMgmt === true) perms.can_see_mgmt_notes = true;
+  if (role !== "master" && body.canSeeMgmt === true) perms.can_see_mgmt_notes = true;
   if (role !== "master" && body.signReminders === true) perms.gets_sign_reminders = true;
-  if (role === "staff" && body.canCreateClients === false) perms.can_create_clients = false;
+  if (role !== "master" && body.canCreateClients === false) perms.can_create_clients = false;
   if (managerId) perms.manager_id = managerId;
-  if (role === "staff" && Array.isArray(body.clientTypes) && body.clientTypes.length) perms.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
-  if (role === "staff" && Array.isArray(body.practices) && body.practices.length) perms.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
+  if (role !== "master" && Array.isArray(body.clientTypes) && body.clientTypes.length) perms.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
+  if (role !== "master" && Array.isArray(body.practices) && body.practices.length) perms.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   let { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) });
   if (pErr && /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders|can_create_clients|manager_id/.test(pErr.message)) {
     // Database update for a permission not run yet: add them without it.
