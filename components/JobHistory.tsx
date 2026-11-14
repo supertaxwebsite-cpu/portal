@@ -40,7 +40,7 @@ export default function JobHistory({ jobId, readOnly, meId, canDelete, supabase,
   }, [supabase, jobId]);
   useEffect(() => {
     load();
-    const ch = supabase.channel(`job-history-${jobId}`)
+    const ch = supabase.channel(`job-history-${jobId}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "job_activity", filter: `job_id=eq.${jobId}` }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "timesheet_entries", filter: `job_id=eq.${jobId}` }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "job_timers", filter: `job_id=eq.${jobId}` }, () => load())

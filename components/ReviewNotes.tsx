@@ -30,7 +30,7 @@ export default function ReviewNotes({ job, meId, canAnswerAll, readOnly, supabas
   }, [supabase, job.id]);
   useEffect(() => {
     load();
-    const ch = supabase.channel(`review-notes-${job.id}`).on("postgres_changes", { event: "*", schema: "public", table: "review_notes", filter: `job_id=eq.${job.id}` }, () => load()).subscribe();
+    const ch = supabase.channel(`review-notes-${job.id}-${Math.random().toString(36).slice(2)}`).on("postgres_changes", { event: "*", schema: "public", table: "review_notes", filter: `job_id=eq.${job.id}` }, () => load()).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [supabase, job.id, load]);
 

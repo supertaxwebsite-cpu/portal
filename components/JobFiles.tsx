@@ -38,7 +38,7 @@ export default function JobFiles({ jobId, meId, canDelete, readOnly, supabase, p
   }, [supabase, jobId, onCount]);
   useEffect(() => {
     load();
-    const ch = supabase.channel(`job-files-${jobId}`)
+    const ch = supabase.channel(`job-files-${jobId}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "job_files", filter: `job_id=eq.${jobId}` }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };

@@ -35,7 +35,7 @@ export default function WorkGate({ supabase, meId, isStaff, running, onTimesheet
   useEffect(() => {
     if (!isStaff) return;
     load();
-    const ch = supabase.channel(`my-shift-${meId}`)
+    const ch = supabase.channel(`my-shift-${meId}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance", filter: `user_id=eq.${meId}` }, () => load())
       .subscribe();
     const onFocus = () => load();

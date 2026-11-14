@@ -58,7 +58,7 @@ export default function ProspectsView({ supabase, meId, team, clients, canDelete
   }, [supabase]);
   useEffect(() => {
     load();
-    const ch = supabase.channel("prospects").on("postgres_changes", { event: "*", schema: "public", table: "prospects" }, () => load()).subscribe();
+    const ch = supabase.channel(`prospects-${Math.random().toString(36).slice(2)}`).on("postgres_changes", { event: "*", schema: "public", table: "prospects" }, () => load()).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [supabase, load]);
 

@@ -44,7 +44,7 @@ export default function ActivityLog({ supabase, jobs, clients, people, onOpenJob
   }, [supabase, days]);
   useEffect(() => {
     load();
-    const ch = supabase.channel("activity-log")
+    const ch = supabase.channel(`activity-log-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_activity" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => load())
       .subscribe();

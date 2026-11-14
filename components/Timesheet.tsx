@@ -155,7 +155,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
 
   useEffect(() => {
     load();
-    const ch = supabase.channel("timesheets")
+    const ch = supabase.channel(`timesheets-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "timesheet_entries" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance_overrides" }, () => load())

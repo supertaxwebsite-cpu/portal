@@ -46,7 +46,7 @@ export default function ClientNotes({ clientId, meId, isManager, canDelete, supa
   }, [supabase, clientId, table]);
   useEffect(() => {
     load();
-    const ch = supabase.channel(`${table}-${clientId}`)
+    const ch = supabase.channel(`${table}-${clientId}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table, filter: `client_id=eq.${clientId}` }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };

@@ -75,7 +75,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   }, [supabase, job.id, onQueries]);
   useEffect(() => {
     load();
-    const ch = supabase.channel(`job-brief-${job.id}`)
+    const ch = supabase.channel(`job-brief-${job.id}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "job_queries", filter: `job_id=eq.${job.id}` }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "job_checks", filter: `job_id=eq.${job.id}` }, () => load())
       .subscribe();

@@ -48,7 +48,7 @@ export default function Bell({ supabase, meId, personName, onOpen }: {
 
   useEffect(() => {
     load();
-    const ch = supabase.channel(`bell-${meId}`)
+    const ch = supabase.channel(`bell-${meId}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${meId}` }, () => load())
       .subscribe();
     const t = setInterval(load, 60000); // backup in case live updates drop
