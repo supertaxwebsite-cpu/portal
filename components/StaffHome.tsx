@@ -121,7 +121,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
         <div className="quickpills" style={{ margin: 0 }}>{PILLS.map(([k, l, pf, hot]) => { const n = ordered.filter(pf).length; return (
           <button key={k} type="button" className={kind === k ? "on" : undefined} onClick={() => setKind(k)}>{l} <i className={hot && n && kind !== k ? "hot" : undefined}>{n}</i></button>); })}</div>
       </div>
-      {s?.firstIn ? <div className={`loginbar${late > 0 ? " late" : ""}`}>🕘 Logged in <b>{clock(s.firstIn)}</b>{late > 0 ? <> · {late < 60 ? `${late} min` : hm(late / 60)} after 7:30, so your suggested log-out time today is <b>{clock(suggestedOut(s.firstIn))}</b></> : <> · your suggested log-out time today is <b>{clock(suggestedOut(s.firstIn))}</b></>} (India time. Office hours are 7:30 am to 4:30 pm with a 45 min break, and a late start moves the log-out later by the same minutes).</div> : null}
+      {s?.firstIn ? <div className={`loginbar${late > 0 ? " late" : ""}`}>🕘 Suggested log-out today: <b>{clock(suggestedOut(s.firstIn))}</b></div> : null}
       <div className="stattiles">
         <div className="panel"><span className="lbl">Days at work this month</span><span className="val">{s ? s.daysAt : "…"} <small>of {daysTarget} working day{daysTarget === 1 ? "" : "s"}</small></span>
           <i className="bar"><b style={{ width: `${s ? Math.min(100, (s.daysAt / Math.max(1, daysTarget)) * 100) : 0}%` }} /></i></div>
