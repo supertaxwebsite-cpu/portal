@@ -9,7 +9,7 @@ import { ST, fmtDate, iso, svcLabel, todayISO } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
 
-const time = (ts: string | null) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }) : "");
+const time = (ts: string | null) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "");
 const mins = (a: Attendance, now: number) => Math.max(0, ((a.clock_out ? Date.parse(a.clock_out) : now) - Date.parse(a.clock_in)) / 60000);
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const hrs = (n: number) => `${Number(n.toFixed(2))} h`;
@@ -594,7 +594,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
               })}
             </div>
             <div className="mlegend"><span><i className="c-ok" />Present</span><span><i className="c-late" />Late</span><span><i className="c-half" />Half day</span><span><i className="c-lv" />Leave</span><span><i className="c-bk" />Booked leave</span></div>
-            <p className="note" style={{ margin: "0 14px 14px" }}>Office hours: Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break, so 8h 15m a day. Sunday is off. Late = log in after 7:45 am. If you start after 7:30, your suggested log-out time moves later so you still work 8h 15m.</p>
+            <p className="note" style={{ margin: "0 14px 14px" }}>Office hours (India time): Monday to Saturday, 7:30 am to 4:30 pm with a 45 min break, so 8h 15m a day. Sunday is off. Late = log in after 7:45 am. If you start after 7:30, your suggested log-out time moves later so you still work 8h 15m.</p>
           </div>
 
           <div className="panel" id="ts-daybyday">

@@ -10,7 +10,7 @@ type SB = ReturnType<typeof createClient>;
 const WORK_DAY_H = 8.25;
 /** Sick and personal leave allowance, days a year per person. */
 export const LEAVE_ALLOWANCE = 10;
-const time = (ts: string | null | undefined) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }) : "");
+const time = (ts: string | null | undefined) => (ts ? new Date(ts).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "");
 const hm = (m: number) => { const t = Math.round(m); return `${Math.floor(t / 60)}h ${String(t % 60).padStart(2, "0")}m`; };
 const n1 = (n: number) => String(Number(n.toFixed(1)));
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join("").toUpperCase();
