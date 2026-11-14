@@ -227,6 +227,12 @@ export default function Workspace({ me }: { me: Profile }) {
   const canTeamTab = isMaster || (me.role === "manager" && !!me.can_see_team_tab);
   const canTeamTimesheet = isMaster || (me.role === "manager" && !!me.can_access_timesheet);
   // A team leader picks assignees and reviewers from their own team, who can see the client's practice.
+  // Team leaders can't read master admins' profiles, so ask the server who they are (for Submit for review).
+  const [masterIds, setMasterIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (me.role !== "manager") return;
+    fetch("/api/team/masters").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.ids) setMasterIds(new Set(d.ids as string[])); }).catch(() => {});
+  }, [me.role]);
   const myTeamIds = useMemo(() => new Set([me.id, ...profiles.filter((p) => p.reports_to === me.id).map((p) => p.id)]), [profiles, me.id]);
   /** Team workload and Working now: master admins, plus anyone a master admin has allowed. */
   const canSeeWorkload = isMaster || !!me.can_see_workload;
@@ -1183,7 +1189,7 @@ export default function Workspace({ me }: { me: Profile }) {
           </div></div>
           <footer><span /><button type="button" className="primary" onClick={close}>Done</button></footer></div></Overlay>
       ) : null}
-      {modal?.kind === "submit" ? <SubmitModal job={modal.job} me={me} team={me.role === "manager" ? team.filter((p) => p.id === me.id || p.id === me.manager_id || p.id === me.reports_to || profiles.find((x) => x.id === p.id)?.role === "master") : team} suggested={myReviewer(modal.job)} clientName={clientName} onClose={close}
+      {modal?.kind === "submit" ? <SubmitModal job={modal.job} me={me} team={me.role === "manager" ? team.filter((p) => p.id === me.id || p.id === me.manager_id || p.id === me.reports_to || masterIds.has(p.id) || profiles.find((x) => x.id === p.id)?.role === "master") : team} suggested={myReviewer(modal.job)} clientName={clientName} onClose={close}
         run={(to, note) => sendForReview(modal.job, to, note)} /> : null}
       {modal?.kind === "handsign" ? <HandSignModal job={modal.job} me={me} team={team} clientName={clientName} personName={personName} onClose={close}
         run={async (to, note) => { if (await save(() => supabase.rpc("hand_signing", { p_job: modal.job.id, p_to: to, p_note: note }), `Handed to ${personName(to)}. It's in their My jobs now`)) close(); }} /> : null}
