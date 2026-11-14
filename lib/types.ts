@@ -14,6 +14,8 @@ export interface Profile {
   /** Staff only: may choose the reviewer (anyone, including themselves) on their own jobs. */
   can_pick_reviewer?: boolean;
   gets_sign_reminders?: boolean;
+  /** Staff only: may add new clients (default yes). Limited to their practices if they have any. */
+  can_create_clients?: boolean;
   can_see_mgmt_notes?: boolean;
   client_types?: string[];
   /** Staff only: practices whose clients they can see. Empty = every practice. */

@@ -26,10 +26,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (typeof body.canPickReviewer === "boolean") update.can_pick_reviewer = body.canPickReviewer;
   if (typeof body.canSeeMgmt === "boolean") update.can_see_mgmt_notes = body.canSeeMgmt;
   if (typeof body.signReminders === "boolean") update.gets_sign_reminders = body.signReminders;
+  if (typeof body.canCreateClients === "boolean") update.can_create_clients = body.canCreateClients;
   if (Array.isArray(body.clientTypes)) update.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (Array.isArray(body.practices)) update.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   if (update.role === "master") { update.gets_sign_reminders = true; update.can_delete = false; update.can_see_workload = false; }
-  if (update.role === "master" || update.role === "manager") { update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; update.client_types = []; update.practices = []; }
+  if (update.role === "master" || update.role === "manager") { update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; update.client_types = []; update.practices = []; update.can_create_clients = true; }
   if (!Object.keys(update).length && !Array.isArray(body.team)) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
 
   const admin = createAdminClient();
@@ -48,6 +49,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   if (Object.keys(update).length) {
     let { error } = await admin.from("profiles").update(update).eq("id", id);
+    if (error && /can_create_clients/.test(error.message) && update.can_create_clients !== false) {
+      // The client-permission database update isn't run yet: save everything else.
+      delete update.can_create_clients;
+      ({ error } = await admin.from("profiles").update(update).eq("id", id));
+    }
     if (error && /gets_sign_reminders/.test(error.message) && !update.gets_sign_reminders) {
       // The signing-reminder setting's database update isn't run yet: save everything else.
       delete update.gets_sign_reminders;
@@ -58,7 +64,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       delete update.can_see_mgmt_notes; delete update.client_types; delete update.practices;
       ({ error } = await admin.from("profiles").update(update).eq("id", id));
     }
-    if (error) return NextResponse.json({ error: /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders/.test(error.message) ? "Run the latest database update first." : error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders|can_create_clients/.test(error.message) ? "Run the latest database update first." : error.message }, { status: 500 });
   }
   const role = (update.role as string | undefined) ?? target.role;
   if (role === "manager" && Array.isArray(body.team)) {

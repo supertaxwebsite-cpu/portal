@@ -2773,3 +2773,21 @@ revoke all on function public.job_query_posted() from public, anon, authenticate
 alter table public.review_notes add column if not exists file_id uuid references public.job_files (id) on delete set null;
 alter table public.review_notes add column if not exists fix_file_id uuid references public.job_files (id) on delete set null;
 notify pgrst, 'reload schema';
+
+-- Client permissions (database-update-client-permissions.sql)
+-- 1) New per-person setting. Everyone keeps today's access (allowed) until you untick it on the Team page.
+alter table public.profiles add column if not exists can_create_clients boolean not null default true;
+
+-- 2) Adding a client: masters and team leaders always can. Staff need "Can create clients" ticked,
+--    and if they have practices ticked, the new client must belong to one of those practices.
+drop policy if exists "members add clients" on public.clients;
+create policy "members add clients" on public.clients
+  for insert to authenticated with check (
+    public.is_active_member() and exists (
+      select 1 from public.profiles p where p.id = auth.uid() and p.active and (
+        p.role <> 'staff'
+        or (p.can_create_clients and (cardinality(p.practices) = 0 or practice = any (p.practices)))
+      )
+    )
+  );
+notify pgrst, 'reload schema';

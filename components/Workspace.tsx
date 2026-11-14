@@ -522,6 +522,9 @@ export default function Workspace({ me }: { me: Profile }) {
     return <div className={`tleft ${cls}`}><b>{d < 0 ? `${-d} day${d === -1 ? "" : "s"} overdue` : d === 0 ? "Due today" : `${d} day${d === 1 ? "" : "s"} left`}</b><small>{fmtDate(j.due_date)}</small></div>;
   };
   const statusCls = (j: Job) => { const s = ST[j.status] ?? ST.not_started; return s.open && j.due_date && daysFrom(j.due_date) < 0 ? "danger" : s.cls; };
+  // Staff can be limited to creating clients only for their own practices, or not at all.
+  const canCreateClient = me.role !== "staff" || me.can_create_clients !== false;
+  const myPractices: string[] = me.role === "staff" && me.practices?.length ? PRACTICES.filter((p) => me.practices!.includes(p)) : [...PRACTICES];
   // Lodged and completed jobs are read-only for everyone except master admins.
   const closedFor = (j: Job) => !isOpen(j.status) && !isMaster;
   // Staff never set a status by hand: it moves on its own as they work through the job's tasks.
@@ -613,7 +616,7 @@ export default function Workspace({ me }: { me: Profile }) {
             <p className="muted" style={{ margin: 0 }}>Every BAS, payroll run and tax return in one shared list, with who&apos;s on it, its status and its ATO due date.</p>
             <ol>
               {isMaster ? <li><button className="link" onClick={() => go("team")}>Add your team</button> so they can sign in and be assigned work.</li> : null}
-              <li><button className="link" onClick={() => setModal({ kind: "client" })}>Add your clients</button> and tick the services you do for each.</li>
+              <li>{canCreateClient ? <button className="link" onClick={() => setModal({ kind: "client" })}>Add your clients</button> : "Add your clients"} and tick the services you do for each.</li>
               <li><button className="link" onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button>, such as every quarterly BAS for Q2 FY{String(currentFY()).slice(2)}, in one step.</li>
             </ol></div>
             <div className="side"><strong>Signed in as {roleLabel(me.role)}</strong><span className="note">{isMaster ? "Only you can add team members, change roles and switch access off." : canManage ? "Only master admins can delete clients and jobs." : "You can add and update clients and jobs."}</span></div>
@@ -755,7 +758,7 @@ export default function Workspace({ me }: { me: Profile }) {
             {[["", "Any due date"], ["overdue", "Overdue"], ["week", "Due in 7 days"], ["week_or_overdue", "Overdue or due in 7 days"], ["month", "Due in 30 days"], ["nodate", "No due date"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <select id="jf-assignee" aria-label="Assigned to" value={jf.assignee} onChange={set("assignee")}>{me.role === "staff"
-            ? <><option value="">Mine and unassigned</option><option value="__none">Unassigned</option></>
+            ? <><option value="">Mine and unassigned</option><option value={me.id}>Mine only</option><option value="__none">Unassigned</option></>
             : <><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>}</select>
           <ClientPicker id="jf-client" clients={clients} value={jf.client} emptyLabel="All clients" onChange={(id) => setJf({ ...jf, client: id })} style={{ minWidth: 200 }} />
           {jf.client && links.some((l) => l.client_id === jf.client || l.related_id === jf.client) ? <label className="chip" style={{ whiteSpace: "nowrap" }}><input type="checkbox" id="jf-group" checked={!!jf.group} onChange={(e) => setJf({ ...jf, group: e.target.checked ? "1" : "" })} /> With related clients</label> : null}
@@ -852,7 +855,7 @@ export default function Workspace({ me }: { me: Profile }) {
     }
     return (
       <>
-        <div className="pagehead"><div><h1>Clients <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{clients.length.toLocaleString()}</span></h1><p>Who you act for, what you do for them, and what&apos;s open right now.</p></div><div className="row"><button onClick={exportClients} disabled={!shownC.length}>⬇ Export</button>{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}<button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button></div></div>
+        <div className="pagehead"><div><h1>Clients <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{clients.length.toLocaleString()}</span></h1><p>Who you act for, what you do for them, and what&apos;s open right now.</p></div><div className="row"><button onClick={exportClients} disabled={!shownC.length}>⬇ Export</button>{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}{canCreateClient ? <button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button> : null}</div></div>
         <div className="quickpills">{QUICK.map(([k, l, f]) => { const n = base.filter(f).length; return <button key={k || "all"} type="button" className={cquick === k ? "on" : undefined} onClick={() => setCquick(k)}>{l} <i className={k === "overdue" && n ? "hot" : undefined}>{n.toLocaleString()}</i></button>; })}</div>
         <div className="toolbar">
           <input type="search" id="cq" placeholder="Search name, ABN, contact, email, phone or address" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
@@ -1063,6 +1066,7 @@ export default function Workspace({ me }: { me: Profile }) {
                 {chip(p.role !== "staff" || !!p.can_delete, "Can delete notes", canToggleDelete ? async () => { if (await adminCall(`/api/team/${p.id}/delete-access`, "PATCH", { allow: !p.can_delete })) say(p.can_delete ? `${p.full_name} can no longer delete notes` : `${p.full_name} can now delete notes and comments`); } : undefined)}
                 {p.role === "staff" ? chip(!!p.can_pick_reviewer, "Chooses own reviewer") : null}
                 {chip(p.role === "master" || !!p.gets_sign_reminders, "Gets signing reminders")}
+                {p.role === "staff" ? chip(p.can_create_clients !== false, "Can create clients") : null}
                 {p.role === "staff" ? chip(!!p.can_see_mgmt_notes, "Sees management notes") : chip(true, "Sees management notes")}
                 {chip(p.role === "master" || !!p.can_see_workload, "Sees team workload", isMaster && p.role !== "master" && p.active ? async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); } : undefined)}
               </div>
@@ -1117,7 +1121,7 @@ export default function Workspace({ me }: { me: Profile }) {
         return <JobPage key={jp.id} job={jp} client={clientById.get(jp.client_id)} meId={me.id} team={team} canAnswerAll={me.role !== "staff"} canDelete={canDelete}
           readOnly={!isOpen(jp.status) && !isMaster} supabase={supabase} personName={personName} say={say} statusEl={<StatusSelect j={jp} />} hours={jobHours[jp.id] ?? 0}
           running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
-          onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => setModal({ kind: "client" })}
+          onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
           onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered}
           onComplete={(j) => setModal({ kind: "submit", job: j })} onSentForSign={markSentForSign} onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} />;
@@ -1145,9 +1149,9 @@ export default function Workspace({ me }: { me: Profile }) {
           return true;
         }} /> : null}
       </WorkGate>
-      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onRaised={queryRaised} onAnswered={queryAnswered} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} practices={myPractices} canCreateClient={canCreateClient} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onRaised={queryRaised} onAnswered={queryAnswered} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
       {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
-      {modal?.kind === "client" ? <ClientModal client={modal.client} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
+      {modal?.kind === "client" ? <ClientModal client={modal.client} practices={myPractices} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
       {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} staff={profiles.filter((p) => p.active && p.role === "staff")} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
@@ -1229,8 +1233,8 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onRaised, onAnswered, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, practices = [...PRACTICES], canCreateClient = true, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onRaised, onAnswered, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; practices?: string[]; canCreateClient?: boolean; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
@@ -1347,11 +1351,11 @@ function JobModal({ job, initialTab, onNewClient, presetClient, presetService, i
           : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
         <label className="f full"><span className="row" style={{ justifyContent: "space-between" }}>Client{v.client_id && onOpenClient ? <button type="button" className="link" style={{ fontSize: 13 }} onClick={() => onOpenClient(v.client_id)}>Open client profile →</button> : null}</span><ClientPicker id="m-client" required disabled={locked} clients={allClients} value={v.client_id} placeholder="Search client by name or ABN…"
           onChange={(id) => set("client_id")({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>)}
-          onCreate={job ? undefined : (name) => setQuick({ name, entity: "Company", abn: "", practice: DEFAULT_PRACTICE })} /></label>
+          onCreate={job || !canCreateClient ? undefined : (name) => setQuick({ name, entity: "Company", abn: "", practice: practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE })} /></label>
         {quick ? <div className="full quickclient">
           <strong>New client</strong>
           <div className="qrow">
-            <label className="f">Practice<select id="qc-practice" value={quick.practice} onChange={(e) => setQuick({ ...quick, practice: e.target.value })}>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
+            <label className="f">Practice<select id="qc-practice" value={quick.practice} disabled={practices.length === 1} onChange={(e) => setQuick({ ...quick, practice: e.target.value })}>{practices.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
             <label className="f">Name<input id="qc-name" autoFocus value={quick.name} onChange={(e) => { setQuick({ ...quick, name: e.target.value }); setQuickDupes(null); }} placeholder="e.g. Sahej Logistics Pty Ltd" /></label>
             <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => setQuick({ ...quick, entity: e.target.value })}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
             <label className="f">ABN<input id="qc-abn" value={quick.abn} onChange={(e) => { setQuick({ ...quick, abn: e.target.value }); setQuickDupes(null); }} placeholder="Optional" inputMode="numeric" /></label>
@@ -1469,11 +1473,11 @@ function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, s
   );
 }
 
-function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, onClose, confirm, onDeleted }: {
-  client?: Client; clients: Client[]; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
+function ClientModal({ client, practices = [...PRACTICES], clients, team, canDelete, jobs, supabase, save, onClose, confirm, onDeleted }: {
+  client?: Client; practices?: string[]; clients: Client[]; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
 }) {
   const [v, setV] = useState({
-    practice: practiceOf(client), name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
+    practice: client ? practiceOf(client) : practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE, name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
     email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
     payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
@@ -1512,7 +1516,7 @@ function ClientModal({ client, clients, team, canDelete, jobs, supabase, save, o
     <Overlay onClose={onClose}><form className="modal" onSubmit={submit}>
       <header><h2>{client ? "Edit client" : "Add client"}</h2><button type="button" onClick={onClose}>Close</button></header>
       <div className="body">
-        <label className="f full">Practice<select id="c-practice" value={v.practice} onChange={set("practice")}>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
+        <label className="f full">Practice{practices.length === 1 ? <span className="hint"> · you can add clients for {practices[0]} only</span> : null}<select id="c-practice" value={v.practice} disabled={practices.length === 1 && v.practice === practices[0]} onChange={set("practice")}>{[...new Set([...practices, ...(client ? [v.practice] : [])])].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
         <label className="f full">Client name<input id="c-name" required value={v.name} onChange={set("name")} placeholder="e.g. Harbourside Plumbing Pty Ltd" /></label>
         {dupes?.length ? <div className="full dupwarn" role="alert">
           <strong>This client may already exist</strong>
@@ -1553,9 +1557,9 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], practices: v.role === "staff" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ canDelete: v.role === "staff" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role === "staff" ? perm.canSeeMgmt : false, clientTypes: v.role === "staff" ? perm.clientTypes : [], practices: v.role === "staff" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role === "staff" ? perm.canCreateClients : true, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1592,6 +1596,7 @@ function MemberModal({ member, managers, staff, adminCall, onClose, onTemp, conf
         </div> : null}
         {v.role !== "master" ? <div className="f full permbox"><span>Permissions</span>
           <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? " (not just their own team)" : ""}</label>
+          {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-createclients" type="checkbox" checked={perm.canCreateClients} onChange={(e) => setPerm({ ...perm, canCreateClients: e.target.checked })} /> Can create new clients{perm.practices.length ? ` (only for ${perm.practices.join(", ")})` : ""}</label> : null}
           <label className="row" style={{ gap: 8 }}><input id="u-signrem" type="checkbox" checked={perm.signReminders} onChange={(e) => setPerm({ ...perm, signReminders: e.target.checked })} /> Get the bell reminders to chase client signatures and client query replies on jobs they send out (otherwise the reminders go to the master admins)</label>
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label> : null}
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-pickrev" type="checkbox" checked={perm.canPickReviewer} onChange={(e) => setPerm({ ...perm, canPickReviewer: e.target.checked })} /> Choose the reviewer on their own jobs (including themselves)</label> : null}
