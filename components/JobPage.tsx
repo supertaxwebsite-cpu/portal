@@ -4,7 +4,7 @@ import type { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person } from "@/lib/types";
 import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel } from "@/lib/domain";
 import { STEPS, checklistFor } from "@/lib/checklists";
-import JobBrief, { type PrepRow } from "./JobBrief";
+import JobBrief, { type PrepRow, type StageLists } from "./JobBrief";
 import JobFiles from "./JobFiles";
 import JobHistory from "./JobHistory";
 import { ReviewNoteForm } from "./ReviewNotes";
@@ -41,6 +41,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const on = running?.job_id === job.id;
   const signer = job.sign_owner ?? job.reviewer_id ?? job.assignee_id;
   const [takingSign, setTakingSign] = useState(false);
+  // The Review, signature and Lodge checklists, handed over by the task list as it draws.
+  let stageL: StageLists | null = null;
   const rows: { t: string; who: string | null; s: string }[] = [
     { t: "Preparation", who: job.assignee_id, s: stage > 0 ? "Done and sent to review"
       : job.status === "internal_query" ? "Internal query raised: waiting for the answer"
@@ -104,7 +106,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
     if (i === 2) {
       if (!me && !canAnswerAll) return null;
       if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
-      if (job.status === "sent_for_sign") return onSigned ? <button type="button" className="primary" disabled={busy} onClick={() => onSigned(job)}>Client signed</button> : null;
+      if (job.status === "sent_for_sign") { const ok = !stageL || (stageL.sign.done && stageL.lodge.done);
+        return onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Marks it signed and lodged" : "Mark every Client signature and Lodge checklist item first"} onClick={() => onSigned(job)}>Client signed</button> : null; }
     }
     return null;
   };
@@ -180,12 +183,13 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
             <div className="ph"><h2>Tasks</h2><span className="note">Press Start on the current task. Finish it and the next task opens on its own.</span></div>
             <JobBrief job={job} clientName={client?.name ?? ""} showInfo={false} meId={meId} canAnswerAll={canAnswerAll} team={team} defaultTo={job.reviewer_id} readOnly={readOnly}
               supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }} queryHours={queryHours} onProgress={onProgress}
-              tasks={{ head: prepHead, active: stage === 0 && open && job.status !== "internal_query" && job.status !== "client_query", prepTime, onClientReplied: onReplied && !readOnly ? () => onReplied(job) : undefined, after: <>
+              tasks={{ head: prepHead, active: stage === 0 && open && job.status !== "internal_query" && job.status !== "client_query", prepTime, onClientReplied: onReplied && !readOnly ? () => onReplied(job) : undefined, after: (L: StageLists) => { stageL = L; const noSign = job.needs_signature === false; const approveReady = L.review.done && (!noSign || L.lodge.done); return <>
                 <li className={`task${stage === 1 ? " now" : stage > 1 ? " done" : " later"}`}>{head(1)}
+                  {stage >= 1 ? <div className="taskbody">{L.review.el}</div> : null}
                   {reviewing ? <div className="taskbody"><p className="note" style={{ margin: "0 0 8px" }}>Found a mistake? Add a review note with a screenshot or file. It goes back to {personName(job.assignee_id) || "the preparer"} to fix, and you clear it. When everything is cleared, approve it.</p>
                     <ReviewNoteForm job={job} meId={meId} supabase={supabase} personName={personName} say={say} />
                     <div className="row">{onSendBack ? <button type="button" disabled={busy} onClick={() => onSendBack(job)}>↩ Send back to {personName(job.assignee_id).split(" ")[0] || "the preparer"}</button> : null}
-                      {onApprove ? <button type="button" className="primary" disabled={busy} onClick={() => onApprove(job)}>{job.needs_signature === false ? "Approve and complete" : "Approve → Client signature"}</button> : null}</div></div> : null}</li>
+                      {onApprove ? <button type="button" className="primary" disabled={busy || !approveReady} title={approveReady ? undefined : `Mark every Review checklist item first${noSign ? ", and the Complete checklist" : ""}`} onClick={() => onApprove(job)}>{job.needs_signature === false ? "Approve and complete" : "Approve → Client signature"}</button> : null}</div></div> : null}</li>
                 <li className={`task${stage === 2 ? " now" : stage > 2 ? " done" : " later"}`}>{head(2)}
                   {stage === 2 && open && !readOnly && onHandSign && (signer === meId || canAnswerAll) ? <div className="taskbody signwho">
                     <span className="note">{job.status === "sent_for_sign" ? "Who follows up with the client?" : "Who sends it for signing?"}</span>
@@ -196,9 +200,11 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                     </div>
                     <span className="note">{signer === meId ? (job.status === "sent_for_sign" ? "It's with you: you get the reminders and mark it Client signed." : "It's with you: press Start, then Sent for signing.")
                       : `It's with ${personName(signer)}${job.status === "sent_for_sign" ? ", who gets the reminders." : ". It's in their My tasks."}`}</span>
-                  </div> : null}</li>
-                <li className={`task${stage > 3 ? " done" : " later"}`}>{head(3)}</li>
-              </> }} />
+                  </div> : null}
+                  {!noSign && stage >= 2 ? <div className="taskbody">{L.sign.el}</div> : null}</li>
+                <li className={`task${stage > 3 ? " done" : stage >= 2 ? " now" : " later"}`}>{head(3)}
+                  {stage >= 2 || (noSign && stage === 1) ? <div className="taskbody">{L.lodge.el}</div> : null}</li>
+              </>; } }} />
           </div>
           <div className="panel" id="jp-files" style={{ padding: "12px 16px" }}><h2>Files</h2>
             <JobFiles jobId={job.id} meId={meId} canDelete={canDelete} readOnly={readOnly} supabase={supabase} personName={personName} say={say} /></div>

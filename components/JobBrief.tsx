@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Job, Person } from "@/lib/types";
 import { svcLabel, ST, fmtDate, daysFrom } from "@/lib/domain";
-import { checklistFor, STEPS } from "@/lib/checklists";
+import { KEY, STEPS, taskLists } from "@/lib/checklists";
 import ReviewNotes from "./ReviewNotes";
 import type { JobFile } from "./JobFiles";
 
@@ -12,15 +12,10 @@ type SB = ReturnType<typeof createClient>;
 interface Query { id: string; job_id: string; parent_id: string | null; author_id: string | null; to_id: string | null; body: string; file_id: string | null; answered_at: string | null; created_at: string }
 interface Check { item: string; done_by: string | null; done_at: string }
 interface Act { id: string; kind: string; body: string; from_value: string | null; to_value: string | null; actor_id: string | null; created_at: string }
-/** First task on every job: look over what the client sent and get the data into the software. */
-export const IR_ITEMS = [
-  "All documents from the client received and checked",
-  "Bank statements uploaded into the accounting software",
-  "Bank transactions processed and coded",
-  "Anything missing listed (raise a query for it)",
-];
-const IR_KEY = (i: string) => `IR: ${i}`;
+const IR_KEY = KEY.ir;
 const IR_DONE = "STEP: Initial review complete";
+/** The Review, Client signature and Lodge checklists, drawn by the job page inside those task rows. */
+export type StageLists = Record<"review" | "sign" | "lodge", { el: ReactNode; done: boolean; marked: number; total: number }>;
 /** A step in preparation, in the order it happened. */
 export interface PrepRow { kind: "ir" | "proc"; n: number; afterQuery: boolean; current: boolean; done: boolean; hours: number; marked: number; total: number; complete?: () => void }
 const when = (s: string) => (s && !isNaN(Date.parse(s)) ? new Date(s) : new Date()).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
@@ -33,7 +28,7 @@ const fmtHm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${
 
 export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, timer, queryHours, onProgress, tasks }: {
   /** Task list mode: the job page draws each preparation row's header and the rows after preparation. */
-  tasks?: { head: (r: PrepRow) => ReactNode; after: ReactNode; active: boolean; prepTime: (from: string | null, to: string | null) => number; onClientReplied?: () => void };
+  tasks?: { head: (r: PrepRow) => ReactNode; after: (lists: StageLists) => ReactNode; active: boolean; prepTime: (from: string | null, to: string | null) => number; onClientReplied?: () => void };
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
   supabase: SB; personName: (id: string | null) => string; say: (m: string, err?: boolean) => void; onQueries?: (open: number) => void; onNewClient?: () => void;
   /** A query was raised on this job: stop the timer and move the job to Internal query or Query with client. */
@@ -154,7 +149,9 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     <button type="button" onClick={() => (document.getElementById(id) as HTMLInputElement | null)?.click()}>{f ? `📎 ${f.name}` : "Attach query sheet"}</button>
     {f ? <button type="button" className="link" onClick={() => onPick(null)}>Remove</button> : null}</>;
 
-  const items = checklistFor(job.service);
+  const lists = taskLists(job.service, checks.map((c) => c.item));
+  const items = lists.proc;
+  const IR_ITEMS = lists.ir;
   const done = new Map(checks.map((c) => [c.item, c]));
   // Each checklist item is marked Checked or N/A (N/A is saved as "N/A: <item>").
   const NA = (i: string) => `N/A: ${i}`;
@@ -295,7 +292,11 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
         })}
         <ReviewNotes asTasks job={job} meId={meId} canAnswerAll={canAnswerAll} readOnly={readOnly} supabase={supabase} personName={personName} say={say} />
         {!readOnly && !missing ? <li className="task add">{askOpen ? askForm : <button type="button" onClick={() => setAskOpen(true)}>? Raise a query (internal or client)</button>}</li> : null}
-        {tasks.after}
+        {tasks.after(Object.fromEntries((["review", "sign", "lodge"] as const).map((k) => {
+          const ls = lists[k]; const m = ls.filter((i) => isMarked(KEY[k](i))).length;
+          return [k, { marked: m, total: ls.length, done: m >= ls.length,
+            el: <section className="briefsec stagecheck"><h3>Checklist <span className="note">{m} of {ls.length} done</span></h3><ul className="checklist">{ls.map((i) => itemEl(KEY[k](i), i))}</ul></section> }];
+        })) as StageLists)}
       </ol>
     </div>
   ); }
