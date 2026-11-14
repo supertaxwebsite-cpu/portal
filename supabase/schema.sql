@@ -2716,3 +2716,55 @@ begin
   return hrs;
 end $$;
 revoke all on function public.end_job_timer(uuid) from public, anon, authenticated;
+
+-- ===== Staff and internal query fixes =====
+
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() is distinct from 'staff'
+    or (j.assignee_id is null and j.status not in ('done', 'sent_for_sign', 'lodged')
+        and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or j.sign_owner = auth.uid()
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+    or exists (select 1 from public.job_queries q where q.job_id = j.id and q.to_id = auth.uid())
+  );
+$$;
+
+create or replace function public.job_query_posted() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare j public.jobs; asker uuid; label text;
+begin
+  select * into j from public.jobs where id = new.job_id;
+  select coalesce(c.name, '') || ' · ' || j.period into label from public.clients c where c.id = j.client_id;
+  if new.parent_id is null then
+    if new.to_id is not null and new.to_id <> new.author_id then
+      insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+      values (new.to_id, new.author_id, 'internal_query', new.job_id, j.service, coalesce(label, '') || ': ' || left(new.body, 160));
+    end if;
+    if j.status in ('not_started', 'in_progress', 'waiting', 'client_query') then
+      perform set_config('supertax.job_handover', 'on', true);
+      update public.jobs set status = 'internal_query' where id = new.job_id;
+      perform set_config('supertax.job_handover', 'off', true);
+    end if;
+  else
+    update public.job_queries set answered_at = now() where id = new.parent_id returning author_id into asker;
+    if asker is not null and asker <> new.author_id then
+      insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+      values (asker, new.author_id, 'query_answered', new.job_id, j.service, coalesce(label, '') || ': ' || left(new.body, 160));
+    end if;
+    if j.status = 'internal_query' and not exists (
+      select 1 from public.job_queries q where q.job_id = new.job_id and q.parent_id is null and q.answered_at is null) then
+      perform set_config('supertax.job_handover', 'on', true);
+      update public.jobs set status = 'in_progress' where id = new.job_id;
+      perform set_config('supertax.job_handover', 'off', true);
+    end if;
+  end if;
+  insert into public.job_activity (job_id, actor_id, kind, body)
+  values (new.job_id, new.author_id, 'comment', case when new.parent_id is null then 'Internal query: ' else 'Reply: ' end || new.body);
+  return new;
+end $$;
+revoke all on function public.job_query_posted() from public, anon, authenticated;
