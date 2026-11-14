@@ -100,8 +100,8 @@ const Status = ({ d }: { d: Day }) => (
 
 const monday = () => { const d = new Date(); const back = (d.getDay() + 6) % 7; d.setDate(d.getDate() - back); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
 
-export default function Timesheet({ me, supabase, people, visible, clients, jobs, canSeeTeam, say, timers = [] }: {
-  me: Profile; supabase: SB; people: Person[]; visible: Profile[]; clients: Client[]; jobs: Job[]; canSeeTeam: boolean; timers?: JobTimer[];
+export default function Timesheet({ me, supabase, people, visible, clients, jobs, canSeeTeam, say, timers = [], startTab }: {
+  startTab?: "req" | "mine"; me: Profile; supabase: SB; people: Person[]; visible: Profile[]; clients: Client[]; jobs: Job[]; canSeeTeam: boolean; timers?: JobTimer[];
   say: (m: string, e?: boolean) => void;
 }) {
   const [day, setDay] = useState(todayISO());
@@ -118,7 +118,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [leaves, setLeaves] = useState<LeaveReq[]>([]);
   const [leaveMissing, setLeaveMissing] = useState(false);
 
-  const [tab, setTab] = useState<"grid" | "cal" | "req" | "log" | "mine">(canSeeTeam ? "grid" : "mine");
+  const [tab, setTab] = useState<"grid" | "cal" | "req" | "log" | "mine">(startTab === "req" && canSeeTeam ? "req" : startTab === "mine" ? "mine" : canSeeTeam ? "grid" : "mine");
   const [gm, setGm] = useState(todayISO().slice(0, 7));
   const [adding, setAdding] = useState(false);
   const [mm, setMm] = useState(todayISO().slice(0, 7)); // My timesheet month
@@ -259,7 +259,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   }
 
   // ----- team attendance (master admins and team leaders) -----
-  const canApproveLeave = (uid: string) => uid !== me.id && (me.role === "master" || (me.role === "manager" && visible.some((p) => p.id === uid && p.reports_to === me.id)));
+  const canApproveLeave = (uid: string) => uid !== me.id && (me.role === "master" || (me.role === "manager" && visible.some((p) => p.id === uid && (p.reports_to === me.id || p.manager_id === me.id))));
   async function decideLeave(l: LeaveReq, status: "approved" | "rejected") {
     const { error } = await supabase.from("leave_requests").update({ status, decided_by: me.id, decided_at: new Date().toISOString() }).eq("id", l.id);
     if (error) { say(`Not saved: ${error.message}`, true); return; }

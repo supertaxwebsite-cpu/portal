@@ -103,6 +103,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [links, setLinks] = useState<ClientLink[]>([]);
   const [linksMissing, setLinksMissing] = useState(false);
   const [prospectsDue, setProspectsDue] = useState(0); // my open prospects with a follow-up due
+  const [tsTab, setTsTab] = useState<"req" | "mine" | undefined>(undefined); // Timesheet tab to open from a bell notification
   const [navTick, setNavTick] = useState(0); // bumps on each top-menu click so Payroll/Timesheet/Meetings start fresh
   // Whole-group work on a client's page: ticked jobs and the status to move them to.
   const [gsel, setGsel] = useState<Set<string>>(new Set());
@@ -309,6 +310,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const go = (v: View) => { if (v !== "clients") setClientId(null); setJobPageId(null); window.location.hash = v; setView(v); window.scrollTo(0, 0); };
   // Top menu: start the page fresh, with every filter and sort cleared, so the totals show.
   const navGo = (v: View) => {
+    setTsTab(undefined);
     setJf(NO_FILTER); setJsort({ k: "due", dir: 1 });
     setCq(""); setCpractice(""); setCservice(""); setCentity([]); setCquick(""); setTeamFilter(""); setOvTab("mine"); setJsel(new Set());
     setGsel(new Set()); setGstatus(""); setClientId(null); setNavTick((n) => n + 1);
@@ -1104,6 +1106,8 @@ export default function Workspace({ me }: { me: Profile }) {
     if (n.job_id) {
       const j = jobs.find((x) => x.id === n.job_id);
       if (j) setModal({ kind: "job", job: j, ...(n.kind === "internal_query" || n.kind === "query_answered" ? { tab: "queries" as const } : {}) }); else say("That job has been deleted or is no longer visible to you.", true);
+    } else if (n.kind === "leave_request" || n.kind === "leave_decided") {
+      setTsTab(n.kind === "leave_request" ? "req" : "mine"); setNavTick((t) => t + 1); go("timesheet");
     } else if (n.meeting_id) {
       let m = meetings.find((x) => x.id === n.meeting_id);
       if (!m) { const { data } = await supabase.from("meetings").select("*").eq("id", n.meeting_id).maybeSingle(); m = (data as Meeting | null) ?? undefined; }
@@ -1130,7 +1134,7 @@ export default function Workspace({ me }: { me: Profile }) {
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
       {view === "prospects" && canSeeTeam ? <ProspectsView key={navTick} supabase={supabase} meId={me.id} team={team} clients={clients} canDelete={canDelete} personName={personName} say={say} onOpenClient={openClient} onChanged={load} /> : null}
-      {view === "timesheet" ? <Timesheet key={navTick} timers={running && !teamRunning.some((t) => t.id === running.id) ? [...teamRunning, running] : teamRunning} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} /> : null}
+      {view === "timesheet" ? <Timesheet key={navTick} timers={running && !teamRunning.some((t) => t.id === running.id) ? [...teamRunning, running] : teamRunning} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} startTab={tsTab} /> : null}
       {view === "team" && canSeeTeam ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => openJob(j)} /></> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}

@@ -2792,3 +2792,66 @@ create policy "members add clients" on public.clients
   );
 alter table public.profiles add column if not exists manager_id uuid references public.profiles (id) on delete set null;
 notify pgrst, 'reload schema';
+
+-- Leave notifications (database-update-leave-notifications.sql)
+
+-- Profiles may not have the manager column yet.
+alter table public.profiles add column if not exists manager_id uuid references public.profiles (id) on delete set null;
+
+-- Link a notification to its leave request, so cancelling the request removes the bell item.
+alter table public.notifications add column if not exists leave_id uuid references public.leave_requests (id) on delete cascade;
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned',
+                  'sign_reminder', 'client_query_reminder', 'sign_handover', 'review_note', 'review_fixed',
+                  'leave_request', 'leave_decided'));
+
+-- A person's manager can approve their leave too (as well as their team leader and master admins).
+create or replace function public.can_approve_leave(target uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and target <> auth.uid() and (
+    public.my_role() = 'master'
+    or (public.my_role() = 'manager' and exists (select 1 from public.profiles where id = target and (reports_to = auth.uid() or manager_id = auth.uid()))));
+$$;
+
+create or replace function public.leave_label(l public.leave_requests) returns text
+language sql immutable as $$
+  select initcap(l.kind) || ' leave · ' ||
+    case when l.start_date = l.end_date then to_char(l.start_date, 'FMDD Mon') else to_char(l.start_date, 'FMDD Mon') || ' to ' || to_char(l.end_date, 'FMDD Mon') end ||
+    case when l.part = 'am' then ' (morning)' when l.part = 'pm' then ' (afternoon)' else '' end;
+$$;
+
+create or replace function public.leave_request_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' and new.status = 'pending' then
+    insert into public.notifications (user_id, actor_id, kind, leave_id, body)
+    select x.id, new.user_id, 'leave_request', new.id, public.leave_label(new) || case when new.reason <> '' then ' · ' || new.reason else '' end
+    from public.profiles me join public.profiles x on x.active and x.id <> new.user_id
+      and (x.id = me.reports_to or x.id = me.manager_id or (me.reports_to is null and me.manager_id is null and x.role = 'master'))
+    where me.id = new.user_id;
+  elsif tg_op = 'UPDATE' and old.status = 'pending' and new.status <> 'pending' then
+    insert into public.notifications (user_id, actor_id, kind, leave_id, body)
+    values (new.user_id, coalesce(new.decided_by, auth.uid()), 'leave_decided', new.id,
+            case when new.status = 'approved' then 'Approved: ' else 'Not approved: ' end || public.leave_label(new));
+    -- The approvers' "please approve" items are done now.
+    update public.notifications set read_at = coalesce(read_at, now()) where leave_id = new.id and kind = 'leave_request';
+  end if;
+  return new;
+end $$;
+drop trigger if exists leave_request_notify on public.leave_requests;
+create trigger leave_request_notify after insert or update of status on public.leave_requests
+  for each row execute function public.leave_request_notify();
+
+-- Requests already waiting (like Rikesh's) get their notification now.
+insert into public.notifications (user_id, actor_id, kind, leave_id, body)
+select x.id, l.user_id, 'leave_request', l.id, public.leave_label(l) || case when l.reason <> '' then ' · ' || l.reason else '' end
+from public.leave_requests l
+join public.profiles me on me.id = l.user_id
+join public.profiles x on x.active and x.id <> l.user_id
+  and (x.id = me.reports_to or x.id = me.manager_id or (me.reports_to is null and me.manager_id is null and x.role = 'master'))
+where l.status = 'pending'
+  and not exists (select 1 from public.notifications n where n.leave_id = l.id and n.user_id = x.id);
+
+notify pgrst, 'reload schema';
