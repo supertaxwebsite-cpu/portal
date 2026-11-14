@@ -1584,8 +1584,7 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
         <label className="f">Job title<input id="u-title" value={v.title} onChange={set("title")} placeholder="e.g. Senior accountant" /></label>
         <label className="f">Role<select id="u-role" value={v.role} onChange={set("role")}><option value="staff">Staff</option><option value="manager">Team leader (manager)</option><option value="master">Master admin (full control)</option></select></label>
         {v.role === "staff" ? (
-          <label className="f">Team leader<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No team leader</option>{managers.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}</select>
-            {!managers.filter((m) => m.id !== member?.id).length ? <span className="note">Nobody is a team leader yet. Open the person who leads the team and set their Role to Team leader (manager), then pick them here.</span> : null}</label>
+          <label className="f">Team leader<select id="u-reports" value={v.reportsTo} onChange={set("reportsTo")}><option value="">No team leader</option>{bosses.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}{m.role === "master" ? " (master admin)" : ""}</option>)}</select></label>
         ) : null}
         {v.role !== "master" ? <label className="f">Manager<select id="u-manager" value={v.managerId} onChange={set("managerId")}><option value="">No manager</option>{bosses.filter((m) => m.id !== member?.id).map((m) => <option key={m.id} value={m.id}>{m.full_name}{m.role === "master" ? " (master admin)" : " (team leader)"}</option>)}</select></label> : null}
         <p className="full hint" style={{ margin: 0 }}>{v.role === "staff" ? "Staff see and work on the jobs assigned to them, add and update clients and jobs, and fill in their timesheet."

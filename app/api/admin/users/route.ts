@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   let reportsTo: string | null = null;
   if (role === "staff" && typeof body.reportsTo === "string" && body.reportsTo) {
     const { data: mgr } = await admin.from("profiles").select("role").eq("id", body.reportsTo).maybeSingle();
-    if (!mgr || mgr.role !== "manager") return NextResponse.json({ error: "Choose a manager from the list." }, { status: 400 });
+    if (!mgr || (mgr.role !== "manager" && mgr.role !== "master")) return NextResponse.json({ error: "Choose a manager from the list." }, { status: 400 });
     reportsTo = body.reportsTo;
   }
   let managerId: string | null = null;

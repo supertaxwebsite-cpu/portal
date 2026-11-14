@@ -42,7 +42,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (typeof update.reports_to === "string") {
     if (update.reports_to === id) return NextResponse.json({ error: "Someone can't report to themselves." }, { status: 400 });
     const { data: mgr } = await admin.from("profiles").select("role").eq("id", update.reports_to).maybeSingle();
-    if (!mgr || mgr.role !== "manager") return NextResponse.json({ error: "Choose a manager from the list." }, { status: 400 });
+    if (!mgr || (mgr.role !== "manager" && mgr.role !== "master")) return NextResponse.json({ error: "Choose a manager from the list." }, { status: 400 });
   }
 
   if (typeof update.manager_id === "string") {
