@@ -18,8 +18,8 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied }: {
-  flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void;
+  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied }: {
+  flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
   onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void;
@@ -40,6 +40,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const stage = !open ? 4 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
   const signer = job.sign_owner ?? job.reviewer_id ?? job.assignee_id;
+  const [takingSign, setTakingSign] = useState(false);
   const rows: { t: string; who: string | null; s: string }[] = [
     { t: "Preparation", who: job.assignee_id, s: stage > 0 ? "Done and sent to review"
       : job.status === "internal_query" ? "Internal query raised: waiting for the answer"
@@ -185,7 +186,17 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                     <ReviewNoteForm job={job} meId={meId} supabase={supabase} personName={personName} say={say} />
                     <div className="row">{onSendBack ? <button type="button" disabled={busy} onClick={() => onSendBack(job)}>↩ Send back to {personName(job.assignee_id).split(" ")[0] || "the preparer"}</button> : null}
                       {onApprove ? <button type="button" className="primary" disabled={busy} onClick={() => onApprove(job)}>{job.needs_signature === false ? "Approve and complete" : "Approve → Client signature"}</button> : null}</div></div> : null}</li>
-                <li className={`task${stage === 2 ? " now" : stage > 2 ? " done" : " later"}`}>{head(2)}</li>
+                <li className={`task${stage === 2 ? " now" : stage > 2 ? " done" : " later"}`}>{head(2)}
+                  {stage === 2 && open && !readOnly && onHandSign && (signer === meId || canAnswerAll) ? <div className="taskbody signwho">
+                    <span className="note">{job.status === "sent_for_sign" ? "Who follows up with the client?" : "Who sends it for signing?"}</span>
+                    <div className="seg" role="radiogroup" aria-label="Who does the signing">
+                      <button type="button" role="radio" aria-checked={signer === meId} className={signer === meId ? "on" : undefined} disabled={busy || takingSign}
+                        onClick={async () => { if (signer === meId || !onTakeSign) return; setTakingSign(true); await onTakeSign(job); setTakingSign(false); }}>I'll do it myself</button>
+                      <button type="button" role="radio" aria-checked={false} disabled={busy} onClick={() => onHandSign(job)}>🤝 Hand to a team member…</button>
+                    </div>
+                    <span className="note">{signer === meId ? (job.status === "sent_for_sign" ? "It's with you: you get the reminders and mark it Client signed." : "It's with you: press Start, then Sent for signing.")
+                      : `It's with ${personName(signer)}${job.status === "sent_for_sign" ? ", who gets the reminders." : ". It's in their My tasks."}`}</span>
+                  </div> : null}</li>
                 <li className={`task${stage > 3 ? " done" : " later"}`}>{head(3)}</li>
               </> }} />
           </div>

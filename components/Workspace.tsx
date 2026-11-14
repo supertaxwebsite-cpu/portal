@@ -1115,7 +1115,7 @@ export default function Workspace({ me }: { me: Profile }) {
           running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => setModal({ kind: "client" })}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
-          onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onRaised={queryRaised} onAnswered={queryAnswered}
+          onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered}
           onComplete={(j) => setModal({ kind: "submit", job: j })} onSentForSign={markSentForSign} onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}

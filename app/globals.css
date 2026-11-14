@@ -846,3 +846,8 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .checklist .cmark button.on.na2{background:#eef1f4;border-color:#6b7785;color:#3d4752;font-weight:700}
 .checklist li.done .ci,.checklist label.done{text-decoration:none;color:inherit}
 .rnform{margin:0 0 10px}.rnadd{border-color:var(--warn,#c77700);color:var(--warn,#c77700)}
+.signwho{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.signwho .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.signwho .seg button{border:0;border-radius:0;background:#fff;padding:7px 12px;font-size:13px}
+.signwho .seg button+button{border-left:1px solid var(--line)}
+.signwho .seg button.on{background:#e6f1fa;color:#1f6fa8;font-weight:700}
