@@ -867,3 +867,22 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .rtnotes .link{flex:none;white-space:nowrap}
 .permbox label.row{flex-wrap:nowrap;align-items:flex-start}
 .permbox label.row input[type=checkbox]{flex:none;margin-top:3px}
+.mgmt .ph{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.mgmt .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.mgmt .seg button{border:0;border-radius:0;background:#fff;padding:6px 12px;font-size:13px}
+.mgmt .seg button+button{border-left:1px solid var(--line)}
+.mgmt .seg button.on{background:#e6f1fa;color:#1f6fa8;font-weight:700}
+.mgmtlist{list-style:none;margin:0;padding:0}
+.mgmtlist>li{border-top:1px solid var(--line)}
+.mgmtlist .mghead{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:0;padding:10px 16px;cursor:pointer}
+.mgmtlist .mghead:hover{background:#f6f9fc}
+.mgmtlist .mghead .grow{flex:1;min-width:0;display:flex;flex-direction:column}
+.mgmtlist .tdot{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#eef2ff;color:#3949ab;font-weight:700;font-size:12px}
+.mgmtlist li.done .tdot{background:#e7f6ec;color:#1e7b3c}
+.mgmtlist .mgbody{padding:0 16px 14px 52px}
+.mgmtlist .mgdetails{white-space:pre-wrap;margin:0 0 10px}
+.mgcomments{list-style:none;margin:0 0 8px;padding:0}
+.mgcomments li{border-left:3px solid #c5cae9;padding:6px 10px;margin-bottom:6px;background:#fafbff}
+.mgcomments .qbody{white-space:pre-wrap}
+.mgmtlist textarea{width:100%;min-height:60px}
+@media (max-width:700px){.mgmtlist .mgbody{padding-left:16px}}

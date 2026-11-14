@@ -2889,3 +2889,55 @@ create trigger timesheet_day_check before insert on public.timesheet_entries
   for each row execute function public.timesheet_day_check();
 
 notify pgrst, 'reload schema';
+
+-- Management jobs (database-update-management-jobs.sql)
+create table if not exists public.mgmt_tasks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null check (length(trim(title)) between 1 and 200),
+  client_id uuid references public.clients (id) on delete set null,
+  due_date date,
+  details text not null default '' check (length(details) <= 8000),
+  status text not null default 'open' check (status in ('open', 'done')),
+  created_by uuid references public.profiles (id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  done_by uuid references public.profiles (id) on delete set null,
+  done_at timestamptz
+);
+create index if not exists mgmt_tasks_status_idx on public.mgmt_tasks (status, due_date);
+
+create table if not exists public.mgmt_comments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references public.mgmt_tasks (id) on delete cascade,
+  author_id uuid references public.profiles (id) on delete set null default auth.uid(),
+  body text not null check (length(trim(body)) > 0 and length(body) <= 8000),
+  created_at timestamptz not null default now()
+);
+create index if not exists mgmt_comments_task_idx on public.mgmt_comments (task_id, created_at);
+
+alter table public.mgmt_tasks enable row level security;
+alter table public.mgmt_comments enable row level security;
+revoke all on public.mgmt_tasks from anon;
+revoke all on public.mgmt_comments from anon;
+
+drop policy if exists "masters only" on public.mgmt_tasks;
+create policy "masters only" on public.mgmt_tasks for all to authenticated
+  using (public.is_active_member() and public.my_role() = 'master')
+  with check (public.is_active_member() and public.my_role() = 'master');
+
+drop policy if exists "masters read comments" on public.mgmt_comments;
+create policy "masters read comments" on public.mgmt_comments for select to authenticated
+  using (public.is_active_member() and public.my_role() = 'master');
+drop policy if exists "masters add comments" on public.mgmt_comments;
+create policy "masters add comments" on public.mgmt_comments for insert to authenticated
+  with check (public.is_active_member() and public.my_role() = 'master' and author_id = auth.uid());
+drop policy if exists "masters remove own comments" on public.mgmt_comments;
+create policy "masters remove own comments" on public.mgmt_comments for delete to authenticated
+  using (public.is_active_member() and public.my_role() = 'master' and author_id = auth.uid());
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.mgmt_tasks; exception when duplicate_object then null; end;
+    begin alter publication supabase_realtime add table public.mgmt_comments; exception when duplicate_object then null; end;
+  end if;
+end $$;
+notify pgrst, 'reload schema';

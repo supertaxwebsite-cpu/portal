@@ -27,6 +27,7 @@ import ActivityLog from "./ActivityLog";
 import { CHECKLISTS, STEPS } from "@/lib/checklists";
 import TeamBoard from "./TeamBoard";
 import JobPage from "./JobPage";
+import Management from "./Management";
 import JobHistory, { type JobSummary } from "./JobHistory";
 import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
@@ -35,10 +36,10 @@ import StaffHome from "./StaffHome";
 import { MyQueries, NeedsAttention, ReviewByPerson, ReviewTypes, useMyQueries } from "./OverviewPanels";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
-type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings";
+type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings" | "management";
 /** Statuses where nothing more needs doing: kept out of the unassigned list. */
 const FINISHED = new Set(["done", "sent_for_sign", "lodged"]);
-const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "prospects", "timesheet", "team", "meetings"];
+const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "prospects", "timesheet", "team", "meetings", "management"];
 /** A dropdown of tick boxes: pick one or several values (stored comma-separated; empty means all). */
 function MultiPick({ id, all, value, options, onChange }: { id: string; all: string; value: string; options: { v: string; l: string; short?: string }[]; onChange: (v: string) => void }) {
   const picked = value ? value.split(",") : [];
@@ -301,7 +302,7 @@ export default function Workspace({ me }: { me: Profile }) {
   useEffect(() => {
     const route = () => {
       const h = window.location.hash.replace("#", "") as View;
-      setView(VIEWS.includes(h) && ((h !== "team" && h !== "meetings" && h !== "prospects") || canSeeTeam) ? h : "overview");
+      setView(VIEWS.includes(h) && (h !== "management" || me.role === "master") && ((h !== "team" && h !== "meetings" && h !== "prospects") || canSeeTeam) ? h : "overview");
     };
     route();
     window.addEventListener("hashchange", route);
@@ -604,6 +605,7 @@ export default function Workspace({ me }: { me: Profile }) {
           {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
             onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })} onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")}
             onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} onAnswer={() => {}} onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} /></div> : null}
+          {me.role === "master" ? <Management compact supabase={supabase} meId={me.id} clients={clients} personName={personName} say={say} /> : null}
         </StaffHome></>
       );
     }
@@ -1136,6 +1138,7 @@ export default function Workspace({ me }: { me: Profile }) {
       {view === "prospects" && canSeeTeam ? <ProspectsView key={navTick} supabase={supabase} meId={me.id} team={team} clients={clients} canDelete={canDelete} personName={personName} say={say} onOpenClient={openClient} onChanged={load} /> : null}
       {view === "timesheet" ? <Timesheet key={navTick} timers={running && !teamRunning.some((t) => t.id === running.id) ? [...teamRunning, running] : teamRunning} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canSeeTeam} say={say} startTab={tsTab} /> : null}
       {view === "team" && canSeeTeam ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => openJob(j)} /></> : null}
+      {view === "management" && me.role === "master" ? <Management key={navTick} supabase={supabase} meId={me.id} clients={clients} personName={personName} say={say} /> : null}
       {view === "meetings" && canSeeTeam ? <MeetingsView key={navTick} meetings={meetings} meId={me.id} isMaster={isMaster} personName={personName} clientName={clientName}
         onBook={(date) => setModal({ kind: "meeting", date })} onOpen={(m) => setModal({ kind: "meeting", meeting: m })}
         quick={{ clients, team, supabase, say, onSaved: load, onEdit: (d) => setModal({ kind: "meeting", draft: d }) }}
@@ -1194,7 +1197,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
 /* ---------- layout ---------- */
 function Shell({ me, view, go, live, showTeam, bell, wide, badges, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; bell?: React.ReactNode; wide?: boolean; badges?: Partial<Record<View, number>>; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : [])];
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeam ? [["team", "Team"] as [View, string], ["meetings", "Meetings"] as [View, string]] : []), ...(me.role === "master" ? [["management", "Management"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
