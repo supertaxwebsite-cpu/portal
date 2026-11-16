@@ -9,6 +9,7 @@ import JobFiles from "./JobFiles";
 import JobHistory from "./JobHistory";
 import { ReviewNoteForm } from "./ReviewNotes";
 import { fmtHours } from "./MyJobs";
+import NotesPopup, { type NotesKind } from "./NotesPopup";
 
 type SB = ReturnType<typeof createClient>;
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join("").toUpperCase() || "—";
@@ -56,6 +57,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   ];
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   // Small counts for the chips and the summary panel.
+  const [notesPop, setNotesPop] = useState<NotesKind | null>(null);
   const [c, setC] = useState<{ checks: number; cnotes: number | null; mnotes: number | null; cq: number }>({ checks: 0, cnotes: null, mnotes: null, cq: 0 });
   useEffect(() => {
     let live = true;
@@ -157,6 +159,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
 
   return (
     <>
+      {notesPop ? <NotesPopup kind={notesPop} jobId={job.id} clientId={job.client_id} clientName={client?.name ?? ""} supabase={supabase} personName={personName}
+        onClose={() => setNotesPop(null)} onOpenClient={client ? () => onOpenClient(client.id) : undefined} /> : null}
       <div className="crumb"><button type="button" className="link" onClick={onBack}>← Jobs</button> / Job page</div>
       <div className="jobhero">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -172,7 +176,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
         <div className="counts">
           <button type="button" className="count" onClick={() => go("jp-work")}>Internal queries <i className={flag?.q ? "red" : ""}>{flag?.q ?? 0}</i></button>
           <span className="count">Client queries <i className={c.cq ? "warn" : ""}>{c.cq}</i></span>
-          <button type="button" className="count" onClick={() => go("jp-work")}>Review notes <i className={flag?.rn ? "red" : ""}>{flag?.rn ?? 0}</i></button>
+          <button type="button" className="count" onClick={() => setNotesPop("review")}>Review notes <i className={flag?.rn ? "red" : ""}>{flag?.rn ?? 0}</i></button>
           <button type="button" className="count" onClick={() => go("jp-files")}>Files <i className="blue">{flag?.f ?? 0}</i></button>
           {prog.total ? <button type="button" className="count" onClick={() => go("jp-work")}>{STEPS[job.service] ? "Steps" : "Checklist"} <i className={prog.total && prog.marked >= prog.total ? "green" : undefined}>{Math.min(prog.marked, prog.total)}/{prog.total}</i></button> : null}
           <span className="count">Stage <i className="blue">{Math.min(stage + 1, 4)} of 4</i></span>
@@ -222,9 +226,9 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <div className="panel"><div className="ph"><h2>Job notes</h2></div><div style={{ padding: "0 14px 14px", whiteSpace: "pre-wrap" }}>{job.notes?.trim() || <span className="note">No notes on this job.</span>}</div></div>
           <div className="panel"><div className="ph"><h2>Summary</h2></div>
             <ul className="actions summary">
-              <li><button type="button" className="link" onClick={() => go("jp-work")}>⚠️ Review notes</button><b className={flag?.rn ? "red" : ""}>{flag?.rn ?? 0}</b></li>
-              {c.cnotes !== null && client ? <li><button type="button" className="link" onClick={() => onOpenClient(client.id)}>📝 Client notes</button><b>{c.cnotes}</b></li> : null}
-              {c.mnotes !== null && client ? <li><button type="button" className="link" onClick={() => onOpenClient(client.id)}>🔒 Management notes</button><b>{c.mnotes}</b></li> : null}
+              <li><button type="button" className="link" onClick={() => setNotesPop("review")}>⚠️ Review notes</button><b className={flag?.rn ? "red" : ""}>{flag?.rn ?? 0}</b></li>
+              {c.cnotes !== null && client ? <li><button type="button" className="link" onClick={() => setNotesPop("client")}>📝 Client notes</button><b>{c.cnotes}</b></li> : null}
+              {c.mnotes !== null && client ? <li><button type="button" className="link" onClick={() => setNotesPop("mgmt")}>🔒 Management notes</button><b>{c.mnotes}</b></li> : null}
               <li><button type="button" className="link" onClick={() => go("jp-history")}>🕘 Job history and time</button><b>{fmtHours(hours)}</b></li>
               {client ? <li><button type="button" className="link" onClick={() => onOpenClient(client.id)}>👤 Client summary</button></li> : null}
             </ul></div>

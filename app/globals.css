@@ -904,3 +904,11 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .mailfiles .chip{font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2)}
 .pill.clip{font-weight:600}
 .pill.clip::before{display:none}
+.notespop{max-width:640px;width:100%}
+.notespop .body{display:block!important;max-height:65vh;overflow:auto}
+.noteslist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.noteslist li{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:10px 12px;background:var(--surface)}
+.noteslist li.open{border-left-color:#c0392b}
+.noteslist .nhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
+.noteslist .nbody{white-space:pre-wrap;font-size:14px}
+.noteslist .nfix{margin-top:6px;font-size:13px;color:var(--muted);white-space:pre-wrap}
