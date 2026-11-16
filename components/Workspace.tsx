@@ -1246,8 +1246,12 @@ function SignInCodePanel() {
   const [st, setSt] = useState<{ mail: boolean; from: string; table: boolean; envOn: boolean; on: boolean } | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { fetch("/api/email/test").then((r) => (r.ok ? r.json() : null)).then(setSt).catch(() => {}); }, []);
-  if (!st) return null;
+  const [loadErr, setLoadErr] = useState("");
+  useEffect(() => {
+    fetch("/api/email/test").then(async (r) => { const d = await r.json().catch(() => null); if (r.ok && d) setSt(d); else setLoadErr(d?.error || `The check didn't load (error ${r.status}). Reload the page after the latest deploy.`); })
+      .catch(() => setLoadErr("The check didn't load. Reload the page."));
+  }, []);
+  if (!st) return <div className="panel" style={{ marginTop: 16 }}><div className="ph"><h2>Email sign-in code</h2></div><p className="note" style={{ margin: "0 16px 14px" }}>{loadErr || "Checking…"}</p></div>;
   const Row = ({ ok, children }: { ok: boolean; children: React.ReactNode }) => <li><span className={`pill ${ok ? "ok" : "warn"}`}>{ok ? "✓ Done" : "To do"}</span> {children}</li>;
   return (
     <div className="panel" style={{ marginTop: 16 }}>
@@ -1258,8 +1262,8 @@ function SignInCodePanel() {
         <Row ok={st.envOn}>LOGIN_CODE = on in Vercel</Row>
       </ul>
       <div className="row" style={{ padding: "0 16px 14px" }}>
-        <button type="button" disabled={busy || !st.mail} onClick={async () => { setBusy(true); setMsg(""); const r = await fetch("/api/email/test", { method: "POST" }); const d = await r.json().catch(() => ({})); setBusy(false); setMsg(r.ok ? `Test email sent to ${d.to}. Check the inbox (and junk).` : d.error || "Couldn't send"); }}>Send me a test email</button>
-        <span className="note">{msg || "Send a test first. Switch LOGIN_CODE on only once the test email arrives, so nobody gets locked out."}</span>
+        <button type="button" disabled={busy || !st.mail} onClick={async () => { setBusy(true); setMsg("Sending…"); try { const r = await fetch("/api/email/test", { method: "POST" }); const d = await r.json().catch(() => ({})); setMsg(r.ok ? `✓ Test email sent to ${d.to}. Check that inbox (and junk).` : `✗ ${d.error || `Couldn't send (error ${r.status})`}`); } catch { setMsg("✗ No answer from the server. Try again."); } setBusy(false); }}>{busy ? "Sending…" : "Send me a test email"}</button>
+        <span className="note" style={{ fontWeight: msg ? 600 : undefined }}>{msg || "Send a test first. Switch LOGIN_CODE on only once the test email arrives, so nobody gets locked out."}</span>
       </div>
     </div>
   );
