@@ -14,10 +14,12 @@ const readStop = () => { try { return Number(localStorage.getItem(STOP_KEY)) || 
 const writeStop = (t: number) => { try { localStorage.setItem(STOP_KEY, String(t)); } catch { /* storage blocked */ } };
 
 /** For staff only:
- *  - until they Log in (Timesheet), the portal shows only a Log in screen (the Timesheet page stays open);
+ *  - until they Log in (Timesheet) — staff and team leaders —, the portal shows only a Log in screen (the Timesheet page stays open);
  *  - once logged in, if no job is running for 10 minutes, a message asks them to start their assigned work. */
-export default function WorkGate({ supabase, meId, isStaff, running, onTimesheet, onMyJobs, say, children }: {
-  supabase: SB; meId: string; isStaff: boolean; running: JobTimer | null; onTimesheet: boolean;
+export default function WorkGate({ supabase, meId, isStaff, gate = isStaff, running, onTimesheet, onMyJobs, say, children }: {
+  supabase: SB; meId: string; isStaff: boolean;
+  /** Show only the Log in screen until this person logs in for work (staff and team leaders). */
+  gate?: boolean; running: JobTimer | null; onTimesheet: boolean;
   onMyJobs: () => void; say: (m: string, err?: boolean) => void; children: React.ReactNode;
 }) {
   const [shift, setShift] = useState<Shift | null | undefined>(undefined); // undefined = not known yet
@@ -33,7 +35,7 @@ export default function WorkGate({ supabase, meId, isStaff, running, onTimesheet
   }, [supabase, meId]);
 
   useEffect(() => {
-    if (!isStaff) return;
+    if (!isStaff && !gate) return;
     load();
     const ch = supabase.channel(`my-shift-${meId}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance", filter: `user_id=eq.${meId}` }, () => load())
@@ -41,7 +43,7 @@ export default function WorkGate({ supabase, meId, isStaff, running, onTimesheet
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
     return () => { window.removeEventListener("focus", onFocus); supabase.removeChannel(ch); };
-  }, [supabase, meId, isStaff, load]);
+  }, [supabase, meId, isStaff, gate, load]);
 
   // Remember when the last job was stopped (kept across page reloads).
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function WorkGate({ supabase, meId, isStaff, running, onTimesheet
     await load();
   }
 
-  if (isStaff && shift === null && !onTimesheet) {
+  if (gate && shift === null && !onTimesheet) {
     return (
       <div className="panel workgate">
         <div className="wg-icon" aria-hidden>🕘</div>

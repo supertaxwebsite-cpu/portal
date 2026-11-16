@@ -1194,7 +1194,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
   return (
     <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
-      <WorkGate supabase={supabase} meId={me.id} isStaff={me.role === "staff"} running={running} onTimesheet={view === "timesheet"} onMyJobs={() => navGo("overview")} say={say}>
+      <WorkGate supabase={supabase} meId={me.id} isStaff={me.role === "staff"} gate={me.role !== "master"} running={running} onTimesheet={view === "timesheet"} onMyJobs={() => navGo("overview")} say={say}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? (() => {
         const jp = jobPageId ? jobs.find((x) => x.id === jobPageId) : undefined;
