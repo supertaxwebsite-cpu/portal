@@ -923,6 +923,7 @@ export default function Workspace({ me }: { me: Profile }) {
     const shownC = base.filter(qf);
     const nextDue = (c: Client) => (openBy.get(c.id) ?? []).filter((j) => j.due_date).sort((a, b) => a.due_date!.localeCompare(b.due_date!))[0];
     function exportClients() {
+      if (!isMaster) return; // only a master admin can export the client list
       const q = (v: unknown) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
       const rows = [["Client", "Practice", "Entity", "ABN", "Contact", "Email", "Phone", "Services", "Manager", "Open jobs"], ...shownC.map((c) => [c.name, practiceOf(c), c.entity, c.abn, c.contact, c.email, c.phone, c.services.map(svcLabel).join("; "), personName(c.manager_id), (openBy.get(c.id) ?? []).length])];
       const blob = new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv" });
@@ -930,7 +931,7 @@ export default function Workspace({ me }: { me: Profile }) {
     }
     return (
       <>
-        <div className="pagehead"><div><h1>Clients <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{clients.length.toLocaleString()}</span></h1><p>Who you act for, what you do for them, and what&apos;s open right now.</p></div><div className="row"><button onClick={exportClients} disabled={!shownC.length}>⬇ Export</button>{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}{canCreateClient ? <button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button> : null}</div></div>
+        <div className="pagehead"><div><h1>Clients <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{clients.length.toLocaleString()}</span></h1><p>Who you act for, what you do for them, and what&apos;s open right now.</p></div><div className="row">{isMaster ? <button onClick={exportClients} disabled={!shownC.length}>⬇ Export</button> : null}{canManage ? <button onClick={() => setModal({ kind: "import" })}>Import from CSV or Excel</button> : null}{canCreateClient ? <button className="primary" onClick={() => setModal({ kind: "client" })}>Add client</button> : null}</div></div>
         <div className="quickpills">{QUICK.map(([k, l, f]) => { const n = base.filter(f).length; return <button key={k || "all"} type="button" className={cquick === k ? "on" : undefined} onClick={() => setCquick(k)}>{l} <i className={k === "overdue" && n ? "hot" : undefined}>{n.toLocaleString()}</i></button>; })}</div>
         <div className="toolbar">
           <input type="search" id="cq" placeholder="Search name, ABN, contact, email, phone or address" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
