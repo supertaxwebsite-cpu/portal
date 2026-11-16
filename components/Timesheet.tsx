@@ -539,7 +539,7 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
           {openShift && outAt ? <span className="pill warn">🕓 Suggested log out <strong>&nbsp;{time(outAt)}</strong></span> : null}
         </div>
         <div className="tb-m">
-          <div className="row" style={{ justifyContent: "space-between" }}><strong>Logged in {hmS(tMin)} of {hmS(o.shiftMin)}</strong> <span className="note">({o.hoursText.replace(/ with a 45 min break.*$/, "")}, including the 45 min break)</span><span className="note">On jobs {hmS(tJobMin)}{tMin ? ` (${Math.round((tJobMin / tMin) * 100)}%)` : ""}</span></div>
+          <div className="row" style={{ justifyContent: "space-between" }}><strong>Logged in {hmS(tMin)} of {hmS(o.shiftMin)}</strong><span className="note">On jobs {hmS(tJobMin)}{tMin ? ` (${Math.round((tJobMin / tMin) * 100)}%)` : ""}</span></div>
           <div className="tbbar"><b style={{ width: `${Math.min(100, (Math.min(tJobMin, tMin) / DAY_IN) * 100)}%` }} /><i style={{ width: `${Math.min(100, (Math.max(0, tMin - tJobMin) / DAY_IN) * 100)}%` }} /></div>
           <span className="note">{myTimer ? <>▶ Running now: <strong>{runJob ? clients.find((c) => c.id === runJob.client_id)?.name ?? "a job" : "a job"}</strong>{runJob ? ` · ${svcLabel(runJob.service)} ${runJob.period}` : ""} · {hmS(runMin)}</> : openShift ? "No job timer running. Start a job from My tasks so your time goes on the right job." : ""}</span>
           {openShift && !shiftFilled ? <span className="pill warn" style={{ whiteSpace: "normal" }}>Add at least one timesheet line for {fmtDate(openShift.work_date)} (below) before you log out.</span> : null}
