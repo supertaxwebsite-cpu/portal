@@ -18,11 +18,11 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
-  onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void;
+  onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void; onClientChanges?: (j: Job) => void;
   job: Job; client?: Client; meId: string; team: Person[]; canAnswerAll: boolean; canDelete: boolean; readOnly: boolean; supabase: SB;
   personName: (id: string | null) => string; say: (m: string, e?: boolean) => void; statusEl: ReactNode; hours: number;
   running: JobTimer | null; busy: boolean; onStart: (j: Job) => void; onStop: () => void; wasStarted: (j: Job) => boolean;
@@ -105,9 +105,10 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
     if (i === 1) return me ? timerBtn("Start review") : null;
     if (i === 2) {
       if (!me && !canAnswerAll) return null;
-      if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
+      const changes = onClientChanges ? <button type="button" disabled={busy} title="The client wants changes: reopen the job and send it back to processing" onClick={() => onClientChanges(job)}>↺ Client needs changes</button> : null;
+      if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{changes}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
       if (job.status === "sent_for_sign") { const ok = !stageL || (stageL.sign.done && stageL.lodge.done);
-        return onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Marks it signed and lodged" : "Mark every Client signature and Lodge checklist item first"} onClick={() => onSigned(job)}>Client signed</button> : null; }
+        return <>{changes}{onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Marks it signed and lodged" : "Mark every Client signature and Lodge checklist item first"} onClick={() => onSigned(job)}>Client signed</button> : null}</>; }
     }
     return null;
   };
@@ -117,7 +118,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
     .reduce((t, e) => t + e.hours, 0), [ents]); // eslint-disable-line react-hooks/exhaustive-deps
   const prepHead = (r: PrepRow) => {
     const me = job.assignee_id === meId;
-    const title = r.kind === "ir" ? "Initial review" : r.afterQuery ? "Processing (after query)" : "Processing";
+    const title = r.kind === "ir" ? "Initial review" : r.afterChanges ? "Processing (client changes)" : r.afterQuery ? "Processing (after query)" : "Processing";
     const sub = r.current
       ? (!wasStarted(job) && r.kind === "ir" ? "Not started yet: press Start" : `${on ? "" : "Press Start to work on it · "}checklist ${r.marked} of ${r.total}${r.marked >= r.total ? ": ready to complete" : ""}`)
       : r.kind === "ir" ? "Documents checked and data in the software" : "Done";

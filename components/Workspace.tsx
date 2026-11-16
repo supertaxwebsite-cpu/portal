@@ -483,6 +483,16 @@ export default function Workspace({ me }: { me: Profile }) {
     if (running?.job_id === j.id && !(await stopJob())) return;
     await save(() => supabase.from("jobs").update({ status: "sent_for_sign" }).eq("id", j.id), "Moved to Sent for sign. You'll get a reminder if the client hasn't signed in 2 days");
   }
+  /** At signing the client wants changes: reopen the job, back to processing for the preparer. */
+  async function clientChanges(j: Job) {
+    const what = window.prompt(`What does the client want changed on ${clientName(j.client_id)}? The job goes back to processing for ${personName(j.assignee_id) || "the preparer"}.`);
+    if (what === null) return;
+    if (!what.trim()) { say("Write what the client wants changed first.", true); return; }
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    const note = await supabase.from("job_activity").insert({ job_id: j.id, actor_id: me.id, kind: "comment", body: `Client changes: ${what.trim()}` });
+    if (note.error) { say(`Not saved: ${note.error.message}`, true); return; }
+    await save(() => supabase.from("jobs").update({ status: "in_progress" }).eq("id", j.id), `Reopened. It's back with ${personName(j.assignee_id) || "the preparer"} for the client's changes`);
+  }
   /** Query with client: chased them again, so hide it for another 2 days. */
   async function followedUp(j: Job) {
     await save(() => supabase.from("jobs").update({ sign_sent_at: new Date().toISOString(), sign_reminded_at: null }).eq("id", j.id), "Got it. It comes back in 2 days if the client still hasn't answered");
@@ -1158,7 +1168,7 @@ export default function Workspace({ me }: { me: Profile }) {
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
           onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered}
-          onComplete={(j) => setModal({ kind: "submit", job: j })} onSentForSign={markSentForSign} onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} />;
+          onComplete={(j) => setModal({ kind: "submit", job: j })} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onReplied={(j) => myStatus(j, "in_progress")} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}

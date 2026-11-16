@@ -17,7 +17,7 @@ const IR_DONE = "STEP: Initial review complete";
 /** The Review, Client signature and Lodge checklists, drawn by the job page inside those task rows. */
 export type StageLists = Record<"review" | "sign" | "lodge", { el: ReactNode; done: boolean; marked: number; total: number }>;
 /** A step in preparation, in the order it happened. */
-export interface PrepRow { kind: "ir" | "proc"; n: number; afterQuery: boolean; current: boolean; done: boolean; hours: number; marked: number; total: number; complete?: () => void }
+export interface PrepRow { kind: "ir" | "proc"; n: number; afterQuery: boolean; afterChanges?: boolean; current: boolean; done: boolean; hours: number; marked: number; total: number; complete?: () => void }
 const when = (s: string) => (s && !isNaN(Date.parse(s)) ? new Date(s) : new Date()).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 const MAX = 25 * 1024 * 1024;
 const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_").replace(/_+/g, "_").slice(-120) || "file";
@@ -227,15 +227,20 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     const irMarked = IR_ITEMS.filter((i) => isMarked(IR_KEY(i))).length;
     const cqs = acts.filter((x) => x.kind === "comment" && x.body.startsWith("Client query: ")).map((x) => ({
       a: x, replied: acts.find((y) => y.kind === "status" && y.from_value === "client_query" && y.created_at > x.created_at)?.created_at ?? null }));
+    // The client asked for changes at signing: the job went back to processing.
+    const chs = acts.filter((x) => x.kind === "comment" && x.body.startsWith("Client changes: "));
+    const after1 = (t: string) => new Date(Date.parse(t) + 1).toISOString();
     const ansAt = (q: Query) => replies.find((r) => r.parent_id === q.id)?.created_at ?? q.answered_at;
     const raised = [...questions.map((q) => q.created_at), ...cqs.map((c) => c.a.created_at)].sort();
-    type Ev = { t: string; kind: "iq"; q: Query } | { t: string; kind: "cq"; c: (typeof cqs)[number] } | { t: string; kind: "proc"; afterQuery: boolean };
+    type Ev = { t: string; kind: "iq"; q: Query } | { t: string; kind: "cq"; c: (typeof cqs)[number] } | { t: string; kind: "ch"; a: (typeof chs)[number] } | { t: string; kind: "proc"; afterQuery: boolean; afterChanges?: boolean };
     const evs: Ev[] = [
       ...questions.map((q) => ({ t: q.created_at, kind: "iq" as const, q })),
       ...cqs.map((c) => ({ t: c.a.created_at, kind: "cq" as const, c })),
       ...(irDoneAt && (!raised[0] || irDoneAt <= raised[0]) ? [{ t: irDoneAt, kind: "proc" as const, afterQuery: false }] : []),
       ...questions.map(ansAt).filter((t): t is string => !!t).map((t) => ({ t, kind: "proc" as const, afterQuery: true })),
       ...cqs.map((c) => c.replied).filter((t): t is string => !!t).map((t) => ({ t, kind: "proc" as const, afterQuery: true })),
+      ...chs.map((a) => ({ t: a.created_at, kind: "ch" as const, a })),
+      ...chs.map((a) => ({ t: after1(a.created_at), kind: "proc" as const, afterQuery: false, afterChanges: true })),
     ].sort((x, y) => x.t.localeCompare(y.t));
     const procIdx = evs.map((e, k) => (e.kind === "proc" ? k : -1)).filter((k) => k >= 0);
     const lastProc = procIdx[procIdx.length - 1];
@@ -285,8 +290,16 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
         {evs.map((e, k) => {
           if (e.kind === "iq") return iqEl(e.q);
           if (e.kind === "cq") return cqEl(e.c);
+          if (e.kind === "ch") return (
+            <li key={e.a.id} className="task iq cq answered">
+              <div className="taskhead"><span className="tdot">↺</span>
+                <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Client asked for changes · reopened by {personName(e.a.actor_id) || "someone"}</div>
+                  <div className="tks">{when(e.a.created_at)}</div></div>
+                <span className="pill warn">Reopened</span></div>
+              <div className="qpair"><div className="qcol ask"><div className="qhead"><span className="pill warn">Changes</span></div><div className="qbody">{e.a.body.replace(/^Client changes: /, "")}</div></div></div>
+            </li>);
           const isLast = k === lastProc && k === evs.length - 1;
-          const row: PrepRow = { kind: "proc", n: ++pn, afterQuery: e.afterQuery, current: tasks.active && isLast, done: !isLast || !tasks.active,
+          const row: PrepRow = { kind: "proc", n: ++pn, afterQuery: e.afterQuery, afterChanges: e.afterChanges, current: tasks.active && isLast, done: !isLast || !tasks.active,
             hours: tasks.prepTime(e.t, evs[k + 1]?.t ?? null), marked: markedN, total: items.length };
           return <li key={`p${e.t}`} className={`task prep${row.current ? " now" : ""}`}>{tasks.head(row)}{k === lastProc ? <div className="taskbody">{checklistEl}</div> : null}</li>;
         })}
