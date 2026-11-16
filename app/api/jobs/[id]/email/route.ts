@@ -3,7 +3,7 @@ import { currentProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mailCc, mailConfigured, mailFrom, sendMail, type MailFile } from "@/lib/graphMail";
-import { jobRef, REF_RE, signatureHtml } from "@/lib/signature";
+import { jobRef, REF_RE, signatureFile, signatureHtml } from "@/lib/signature";
 
 export const maxDuration = 60;
 type Ctx = { params: Promise<{ id: string }> };
@@ -56,9 +56,9 @@ export async function POST(req: Request, { params }: Ctx) {
   const fullSubject = REF_RE.test(subject) ? subject : `${subject} [${ref}]`;
   const domain = (mailFrom().split("@")[1] || "supertax.com.au").trim();
   const messageId = `<${crypto.randomUUID()}.${ref.toLowerCase()}@${domain}>`;
-  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5">${esc(text).replace(/\r?\n/g, "<br>")}</div>${b.signature === false ? "" : signatureHtml(new URL(req.url).origin)}`;
+  const html = `<div style="font-family:Calibri,Carlito,Arial,sans-serif;font-size:12pt;line-height:1.4;color:#000000">${esc(text).replace(/\r?\n/g, "<br>")}</div>${b.signature === false ? "" : signatureHtml()}`;
   try {
-    await sendMail({ to, cc, replyTo: mailFrom(), subject: fullSubject, html, files, messageId });
+    await sendMail({ to, cc, replyTo: mailFrom(), subject: fullSubject, html, files: b.signature === false ? files : [...files, signatureFile()], messageId });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }

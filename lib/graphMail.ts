@@ -25,7 +25,7 @@ async function token(): Promise<string> {
   return d.access_token as string;
 }
 
-export interface MailFile { name: string; type: string; bytes: Uint8Array }
+export interface MailFile { name: string; type: string; bytes: Uint8Array; /** set for an image shown inside the email body (src="cid:…") */ cid?: string }
 const SMALL = 3 * 1024 * 1024;
 
 async function graph(t: string, path: string, init: RequestInit = {}) {
@@ -57,6 +57,7 @@ export async function sendMail(m: { to: string[]; cc: string[]; replyTo?: string
         await graph(t, `${box}/messages/${draft.id}/attachments`, { method: "POST", body: JSON.stringify({
           "@odata.type": "#microsoft.graph.fileAttachment", name: f.name, contentType: f.type || "application/octet-stream",
           contentBytes: Buffer.from(f.bytes).toString("base64"),
+          ...(f.cid ? { isInline: true, contentId: f.cid } : {}),
         }) });
       } else {
         const s = await graph(t, `${box}/messages/${draft.id}/attachments/createUploadSession`, { method: "POST", body: JSON.stringify({
@@ -90,7 +91,7 @@ async function sendSmtp(m: { to: string[]; cc: string[]; replyTo?: string; subje
     await t.sendMail({
       from: { name: process.env.MAIL_NAME?.trim() || "Supertax", address: mailFrom() },
       to: m.to, cc: m.cc.length ? m.cc : undefined, replyTo: m.replyTo, subject: m.subject, html: m.html, messageId: m.messageId,
-      attachments: m.files.map((f) => ({ filename: f.name, content: Buffer.from(f.bytes), contentType: f.type || undefined })),
+      attachments: m.files.map((f) => ({ filename: f.name, content: Buffer.from(f.bytes), contentType: f.type || undefined, ...(f.cid ? { cid: f.cid, contentDisposition: "inline" as const } : {}) })),
     });
   } catch (e) {
     const msg = (e as Error).message;
