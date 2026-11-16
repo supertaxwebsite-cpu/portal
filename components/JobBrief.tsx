@@ -15,10 +15,11 @@ interface Check { item: string; done_by: string | null; done_at: string }
 interface Act { id: string; kind: string; body: string; from_value: string | null; to_value: string | null; actor_id: string | null; created_at: string }
 const IR_KEY = KEY.ir;
 const IR_DONE = "STEP: Initial review complete";
+const IRV = "Internal review: ";
 /** The Review, Client signature and Lodge checklists, drawn by the job page inside those task rows. */
 export type StageLists = Record<"review" | "sign" | "lodge", { el: ReactNode; done: boolean; marked: number; total: number }>;
 /** A step in preparation, in the order it happened. */
-export interface PrepRow { kind: "ir" | "proc"; n: number; afterQuery: boolean; afterChanges?: boolean; current: boolean; done: boolean; hours: number; marked: number; total: number; complete?: () => void }
+export interface PrepRow { kind: "ir" | "proc"; n: number; afterQuery: boolean; afterChanges?: boolean; afterReview?: boolean; current: boolean; done: boolean; hours: number; marked: number; total: number; complete?: () => void }
 const when = (s: string) => (s && !isNaN(Date.parse(s)) ? new Date(s) : new Date()).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 const MAX = 25 * 1024 * 1024;
 const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_").replace(/_+/g, "_").slice(-120) || "file";
@@ -73,6 +74,9 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     if (li.dataset.min) delete li.dataset.min; else li.dataset.min = "1";
   };
   const [askOpen, setAskOpen] = useState(false);
+  // Optional internal review: the preparer asks a colleague to check the work before it goes to the reviewer.
+  // Saved as an internal query whose text starts with IRV, so the colleague answers it the same way.
+  const [irv, setIrv] = useState<{ open: boolean; to: string; body: string }>({ open: false, to: "", body: "" });
 
   const load = useCallback(async () => {
     const [q, c, f, a] = await Promise.all([
@@ -254,15 +258,15 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
             </>}
           </div>);
   const ansCol = (q: Query, rs: Query[], mine: boolean) => (<div className="qcol ans">{rs.length ? rs.map((r) => (
-                  <div key={r.id}><div className="qhead"><span className="pill ok">Response</span> {personName(r.author_id) || "Someone"} · {when(r.created_at)}</div>
+                  <div key={r.id}><div className="qhead"><span className="pill ok">{q.body.startsWith(IRV) ? "Review comments" : "Response"}</span> {personName(r.author_id) || "Someone"} · {when(r.created_at)}</div>
                     <div className="qbody">{r.body}</div>{fileChip(r.file_id)}</div>))
                   : mine && !readOnly ? <div className="qreply">
                     {timer && q.to_id === meId ? <div className="row qtimer">{timer.runningHere
                       ? <><span className="runtxt">● Timing your answer</span><span style={{ flex: 1 }} /><button type="button" disabled={timer.busy} onClick={timer.stop}>Stop</button></>
                       : <><span className="note">Start the timer so the time you spend on this goes on your timesheet.</span><span style={{ flex: 1 }} /><button type="button" className="primary" disabled={timer.busy} onClick={() => timer.start(job)}>Start</button></>}</div> : null}
-                    <textarea aria-label="Your response" placeholder="Type the response…" value={reply[q.id] ?? ""} onChange={(e) => setReply({ ...reply, [q.id]: e.target.value })} />
+                    <textarea aria-label="Your response" placeholder={q.body.startsWith(IRV) ? "Your review comments: what to fix, or All good" : "Type the response…"} value={reply[q.id] ?? ""} onChange={(e) => setReply({ ...reply, [q.id]: e.target.value })} />
                     <div className="row">{pickFile((f) => setReplyFile({ ...replyFile, [q.id]: f }), replyFile[q.id] ?? null, `qr-file-${q.id}`)}<span style={{ flex: 1 }} />
-                      <button type="button" className="primary" disabled={busy || !(reply[q.id] ?? "").trim()} onClick={async () => { if (await post({ body: reply[q.id] ?? "", parent_id: q.id }, replyFile[q.id] ?? null)) { setReply({ ...reply, [q.id]: "" }); setReplyFile({ ...replyFile, [q.id]: null }); say("Response sent"); } }}>Send response</button></div>
+                      <button type="button" className="primary" disabled={busy || !(reply[q.id] ?? "").trim()} onClick={async () => { if (await post({ body: reply[q.id] ?? "", parent_id: q.id }, replyFile[q.id] ?? null)) { setReply({ ...reply, [q.id]: "" }); setReplyFile({ ...replyFile, [q.id]: null }); say("Response sent"); } }}>{q.body.startsWith(IRV) ? "Send review comments" : "Send response"}</button></div>
                   </div> : <div className="note qwait">Waiting for {personName(q.to_id) || "a manager"} to respond.</div>}</div>);
 
   if (tasks) {
@@ -276,12 +280,12 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     const after1 = (t: string) => new Date(Date.parse(t) + 1).toISOString();
     const ansAt = (q: Query) => replies.find((r) => r.parent_id === q.id)?.created_at ?? q.answered_at;
     const raised = [...questions.map((q) => q.created_at), ...cqs.map((c) => c.a.created_at)].sort();
-    type Ev = { t: string; kind: "iq"; q: Query } | { t: string; kind: "cq"; c: (typeof cqs)[number] } | { t: string; kind: "ch"; a: (typeof chs)[number] } | { t: string; kind: "proc"; afterQuery: boolean; afterChanges?: boolean };
+    type Ev = { t: string; kind: "iq"; q: Query } | { t: string; kind: "cq"; c: (typeof cqs)[number] } | { t: string; kind: "ch"; a: (typeof chs)[number] } | { t: string; kind: "proc"; afterQuery: boolean; afterChanges?: boolean; afterReview?: boolean };
     const evs: Ev[] = [
       ...questions.map((q) => ({ t: q.created_at, kind: "iq" as const, q })),
       ...cqs.map((c) => ({ t: c.a.created_at, kind: "cq" as const, c })),
       ...(irDoneAt && (!raised[0] || irDoneAt <= raised[0]) ? [{ t: irDoneAt, kind: "proc" as const, afterQuery: false }] : []),
-      ...questions.map(ansAt).filter((t): t is string => !!t).map((t) => ({ t, kind: "proc" as const, afterQuery: true })),
+      ...questions.map((q) => ({ t: ansAt(q), rv: q.body.startsWith(IRV) })).filter((x): x is { t: string; rv: boolean } => !!x.t).map(({ t, rv }) => ({ t, kind: "proc" as const, afterQuery: true, afterReview: rv })),
       ...cqs.map((c) => c.replied).filter((t): t is string => !!t).map((t) => ({ t, kind: "proc" as const, afterQuery: true })),
       ...chs.map((a) => ({ t: a.created_at, kind: "ch" as const, a })),
       ...chs.map((a) => ({ t: after1(a.created_at), kind: "proc" as const, afterQuery: false, afterChanges: true })),
@@ -299,15 +303,16 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
           // Only the person the query was raised to can respond. A query to "a manager" (nobody named) can be answered by any manager.
           const mine = q.to_id ? q.to_id === meId : canAnswerAll || q.author_id !== meId;
           const answered = rs.length > 0 || !!q.answered_at;
+          const isRv = q.body.startsWith(IRV);
           return (
-            <li key={q.id} className={`task iq${answered ? " answered" : ""}`}>
+            <li key={q.id} className={`task iq${isRv ? " irv" : ""}${answered ? " answered" : ""}`}>
               <div className="taskhead"><span className="tdot">{answered ? "✓" : "?"}</span>
-                <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Internal query · {personName(q.author_id) || "Someone"} → {personName(q.to_id) || "a manager"}</div>
-                  <div className="tks">Raised {when(q.created_at)}{rs[0] ? ` · answered ${when(rs[0].created_at)}` : ""}</div></div>
+                <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">{isRv ? "Internal review" : "Internal query"} · {personName(q.author_id) || "Someone"} → {personName(q.to_id) || "a manager"}</div>
+                  <div className="tks">{isRv ? "Sent" : "Raised"} {when(q.created_at)}{rs[0] ? ` · ${isRv ? "reviewed" : "answered"} ${when(rs[0].created_at)}` : ""}</div></div>
                 {queryHours?.(q) ? <span className="tasktime mono" title="Time logged answering this query">{fmtHm(queryHours(q))}</span> : null}
-                <span className={`pill ${answered ? "ok" : "danger"}`}>{answered ? "Answered" : "Open"}</span></div>
+                <span className={`pill ${answered ? "ok" : isRv ? "info" : "danger"}`}>{answered ? (isRv ? "Reviewed" : "Answered") : isRv ? "Waiting for review" : "Open"}</span></div>
               <div className="qpair">
-                <div className="qcol ask"><div className="qhead"><span className="pill danger">Query</span> {personName(q.author_id) || "Someone"}</div><div className="qbody">{q.body}</div>{fileChip(q.file_id)}</div>
+                <div className="qcol ask"><div className="qhead"><span className={`pill ${isRv ? "info" : "danger"}`}>{isRv ? "Please review" : "Query"}</span> {personName(q.author_id) || "Someone"}</div><div className="qbody">{isRv ? q.body.slice(IRV.length) || "Please check my work on this job." : q.body}</div>{fileChip(q.file_id)}</div>
                 {ansCol(q, rs, mine)}
               </div>
             </li>);
@@ -346,10 +351,24 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
               <div className="qpair"><div className="qcol ask"><div className="qhead"><span className="pill warn">Changes</span></div><div className="qbody">{e.a.body.replace(/^Client changes: /, "")}</div></div></div>
             </li>);
           const isLast = k === lastProc && k === evs.length - 1;
-          const row: PrepRow = { kind: "proc", n: ++pn, afterQuery: e.afterQuery, afterChanges: e.afterChanges, current: tasks.active && isLast, done: !isLast || !tasks.active,
+          const row: PrepRow = { kind: "proc", n: ++pn, afterQuery: e.afterQuery, afterChanges: e.afterChanges, afterReview: e.afterReview, current: tasks.active && isLast, done: !isLast || !tasks.active,
             hours: tasks.prepTime(e.t, evs[k + 1]?.t ?? null), marked: markedN, total: items.length };
           return <li key={`p${e.t}`} className={`task prep${row.current ? " now" : ""}`}>{tasks.head(row)}{k === lastProc ? <div className="taskbody">{checklistEl}</div> : null}</li>;
         })}
+        {!readOnly && !missing && job.status === "in_progress" && !!irDoneAt && (job.assignee_id === meId || canAnswerAll) ? <li className="task irvadd">
+          <div className="taskhead"><span className="tdot">👥</span>
+            <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Internal review (optional)</div>
+              <div className="tks">Ask a team member to check your work before it goes to {personName(job.reviewer_id) || "the reviewer"} for review</div></div>
+            {!irv.open ? <button type="button" onClick={() => setIrv({ ...irv, open: true })}>Send for internal review</button> : null}</div>
+          {irv.open ? <div className="taskbody"><div className="qnew">
+            <label className="f" style={{ maxWidth: 280 }}>Who checks it<select id="irv-to" value={irv.to} onChange={(e) => setIrv({ ...irv, to: e.target.value })}>
+              <option value="">Choose a team member…</option>{team.filter((p) => p.id !== meId && p.id !== job.reviewer_id).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
+            <textarea id="irv-body" placeholder="What should they check? e.g. Please check the GST coding on the fuel and vehicle expenses." value={irv.body} onChange={(e) => setIrv({ ...irv, body: e.target.value })} />
+            <div className="row"><button type="button" className="link" onClick={() => setIrv({ open: false, to: "", body: "" })}>Cancel</button><span style={{ flex: 1 }} />
+              <button type="button" className="primary" disabled={busy || !irv.to} onClick={async () => { const to = irv.to; if (await post({ body: `${IRV}${irv.body.trim() || "Please check my work on this job."}`, to_id: to }, null)) { setIrv({ open: false, to: "", body: "" }); say(`Sent to ${personName(to)} for internal review. Your timer stopped; a new Processing task opens when they reply`); } }}>Send for internal review</button></div>
+            <span className="note">Only {irv.to ? personName(irv.to) : "the person you pick"} can reply. When they send their comments, a new Processing task opens for you to make any fixes, then Complete preparation sends it to {personName(job.reviewer_id) || "the reviewer"}.</span>
+          </div></div> : null}
+        </li> : null}
         <ReviewNotes asTasks job={job} meId={meId} canAnswerAll={canAnswerAll} readOnly={readOnly} supabase={supabase} personName={personName} say={say} />
         {!readOnly && !missing ? <li className="task add">{askOpen ? askForm : <button type="button" onClick={() => setAskOpen(true)}>? Raise a query (internal or client)</button>}</li> : null}
         {tasks.after(Object.fromEntries((["review", "sign", "lodge"] as const).map((k) => {

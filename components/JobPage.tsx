@@ -139,7 +139,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
     .reduce((t, e) => t + e.hours, 0), [ents]); // eslint-disable-line react-hooks/exhaustive-deps
   const prepHead = (r: PrepRow) => {
     const me = job.assignee_id === meId;
-    const title = r.kind === "ir" ? "Initial review" : r.afterChanges ? "Processing (client changes)" : r.afterQuery ? "Processing (after query)" : "Processing";
+    const title = r.kind === "ir" ? "Initial review" : r.afterChanges ? "Processing (client changes)" : r.afterReview ? "Processing (after internal review)" : r.afterQuery ? "Processing (after query)" : "Processing";
     const sub = r.current
       ? (!wasStarted(job) && r.kind === "ir" ? "Not started yet: press Start" : `${on ? "" : "Press Start to work on it · "}checklist ${r.marked} of ${r.total}${r.marked >= r.total ? ": ready to complete" : ""}`)
       : r.kind === "ir" ? "Documents checked and data in the software" : "Done";
