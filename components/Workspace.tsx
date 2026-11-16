@@ -753,6 +753,7 @@ export default function Workspace({ me }: { me: Profile }) {
         if (FINISHED.has(j.status)) return false; // nothing left to do on these
       }
       else if (f.assignee && j.assignee_id !== f.assignee) return false;
+      else if (!f.assignee && me.role === "staff" && j.assignee_id !== me.id) return false; // staff pick Mine or Unassigned; Mine is the default
       if (f.due) {
         if (f.due === "nodate") { if (j.due_date) return false; }
         else {
@@ -778,7 +779,7 @@ export default function Workspace({ me }: { me: Profile }) {
       }
       return true;
     }).sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999") || (clientById.get(a.client_id)?.name ?? "").localeCompare(clientById.get(b.client_id)?.name ?? ""));
-  }, [jf, jobs, openJobs, clientById, profileById, links, flags]);
+  }, [jf, jobs, openJobs, clientById, profileById, links, flags, me.id, me.role]);
 
   function JobsView() {
     const set = (k: keyof JobFilter) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setJf({ ...jf, [k]: e.target.value });
@@ -838,8 +839,8 @@ export default function Workspace({ me }: { me: Profile }) {
           <select id="jf-due" aria-label="Due" value={jf.due} onChange={set("due")}>
             {[["", "Any due date"], ["overdue", "Overdue"], ["week", "Due in 7 days"], ["week_or_overdue", "Overdue or due in 7 days"], ["month", "Due in 30 days"], ["nodate", "No due date"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
-          <select id="jf-assignee" aria-label="Assigned to" value={jf.assignee} onChange={set("assignee")}>{me.role === "staff"
-            ? <><option value="">Mine and unassigned</option><option value={me.id}>Mine only</option><option value="__none">Unassigned</option></>
+          <select id="jf-assignee" aria-label="Assigned to" value={me.role === "staff" && jf.assignee !== "__none" ? me.id : jf.assignee} onChange={set("assignee")}>{me.role === "staff"
+            ? <><option value={me.id}>Mine</option><option value="__none">Unassigned</option></>
             : <><option value="">Anyone</option><option value="__none">Unassigned</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>}</select>
           <ClientPicker id="jf-client" clients={clients} value={jf.client} emptyLabel="All clients" onChange={(id) => setJf({ ...jf, client: id })} style={{ minWidth: 200 }} />
           {jf.client && links.some((l) => l.client_id === jf.client || l.related_id === jf.client) ? <label className="chip" style={{ whiteSpace: "nowrap" }}><input type="checkbox" id="jf-group" checked={!!jf.group} onChange={(e) => setJf({ ...jf, group: e.target.checked ? "1" : "" })} /> With related clients</label> : null}
