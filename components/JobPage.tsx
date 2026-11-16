@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person } from "@/lib/types";
 import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned } from "@/lib/domain";
@@ -41,6 +41,11 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const signed = isSigned(job);
   const stage = !open ? 4 : signed ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
+  // Tick every 15 seconds while the timer runs here, so the clock and the totals stay live.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { if (!on) return; setNow(Date.now()); const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, [on]);
+  const runMins = on && running ? Math.max(0, Math.floor((now - Date.parse(running.started_at)) / 60000)) : 0;
+  const clock = `${Math.floor(runMins / 60)}:${String(runMins % 60).padStart(2, "0")}`;
   const signer = job.sign_owner ?? job.reviewer_id ?? job.assignee_id;
   const [takingSign, setTakingSign] = useState(false);
   // The Review, signature and Lodge checklists, handed over by the task list as it draws.
@@ -79,6 +84,14 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
       .then(({ data }) => { if (live) setEnts(((data as typeof ents | null) ?? []).map((e) => ({ ...e, hours: Number(e.hours) || 0 }))); });
     return () => { live = false; };
   }, [supabase, job.id, hours]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Time on the job by person (logged plus the timer running now), and the job total.
+  const byPerson = (() => {
+    const m = new Map<string, number>();
+    for (const e of ents) m.set(e.user_id, (m.get(e.user_id) ?? 0) + e.hours);
+    if (on && running && runMins) m.set(running.user_id, (m.get(running.user_id) ?? 0) + runMins / 60);
+    return [...m.entries()].filter(([, h]) => h > 0).sort((a, b) => b[1] - a[1]);
+  })();
+  const jobTotal = byPerson.reduce((t, [, h]) => t + h, 0);
   const isAnswer = (e: { description: string }) => e.description.startsWith("Answering internal query");
   const stageOf = (e: { user_id: string; description: string }) => {
     if (/^(Preparing for signing|Signing follow-up)/.test(e.description)) return 2;
@@ -92,7 +105,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const reviewing = job.status === "review" && (job.reviewer_id === meId || canAnswerAll) && !readOnly;
   // What you can do on the current task. Status moves on its own: nobody changes it by hand.
   const mineRow = (i: number) => (i === 0 ? job.assignee_id === meId : i === 1 ? job.reviewer_id === meId : i === 2 ? signer === meId : false);
-  const timerBtn = (label: string) => on ? <><span className="timer mono">● running</span><button type="button" disabled={busy} onClick={onStop}>Stop</button></>
+  const timerBtn = (label: string) => on ? <><span className="timer mono" title="Time on this run, hours:minutes">● {clock}</span><button type="button" disabled={busy} onClick={onStop}>Stop</button></>
     : <button type="button" className="primary" disabled={busy} onClick={() => onStart(job)}>{label}</button>;
   const actions = (i: number) => {
     const me = mineRow(i);
@@ -180,7 +193,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <button type="button" className="count" onClick={() => go("jp-files")}>Files <i className="blue">{flag?.f ?? 0}</i></button>
           {prog.total ? <button type="button" className="count" onClick={() => go("jp-work")}>{STEPS[job.service] ? "Steps" : "Checklist"} <i className={prog.total && prog.marked >= prog.total ? "green" : undefined}>{Math.min(prog.marked, prog.total)}/{prog.total}</i></button> : null}
           <span className="count">Stage <i className="blue">{Math.min(stage + 1, 4)} of 4</i></span>
-          <button type="button" className="count" onClick={() => go("jp-history")}>Time logged <i className="dark">{fmtHours(hours)}</i></button>
+          <button type="button" className="count" onClick={() => go("jp-history")}>Time logged <i className="dark">{fmtHours(Math.max(hours, jobTotal))}</i></button>
           {related && client ? <button type="button" className="count" onClick={() => onOpenClient(client.id)}>🔗 Related clients ({related})</button> : null}
           <span style={{ flex: 1 }} />
           {!readOnly ? <button type="button" onClick={() => onEdit("email")}>✉ Email client</button> : null}
@@ -234,6 +247,10 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
             </ul></div>
           <div className="panel"><div className="ph"><h2>People</h2></div>
             <dl className="people"><dt>Assigned</dt><dd>{personName(job.assignee_id) || "Nobody"}</dd><dt>Reviewer</dt><dd>{personName(job.reviewer_id) || "None"}</dd><dt>Signing</dt><dd>{job.needs_signature === false ? "Not needed" : personName(signer) || "—"}</dd></dl></div>
+          <div className="panel"><div className="ph"><h2>Time on this job</h2></div>
+            <dl className="people">{byPerson.length ? <>{byPerson.map(([id, h]) => <Fragment key={id}><dt>{personName(id) || "Former staff"}{on && running?.user_id === id ? <span className="timer"> ●</span> : null}</dt><dd className="mono">{hm(h)}</dd></Fragment>)}
+              <dt style={{ color: "var(--fg)", fontWeight: 700, borderTop: "1px solid var(--line)", paddingTop: 6 }}>Total job time</dt><dd className="mono" style={{ borderTop: "1px solid var(--line)", paddingTop: 6, fontWeight: 800 }}>{hm(jobTotal)}</dd></>
+              : <dd style={{ gridColumn: "1 / -1", textAlign: "left", fontWeight: 400 }} className="note">No time logged yet.</dd>}</dl></div>
           <div className="panel"><div className="ph"><h2>Other actions</h2></div>
             <ul className="actions">
               {!readOnly ? <li><button type="button" className="link" onClick={() => onEdit()}>✎ Edit job details</button></li> : null}
