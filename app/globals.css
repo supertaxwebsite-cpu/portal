@@ -216,7 +216,7 @@ button.big,.btn.big{padding:11px 16px;font-size:15px;width:100%;text-align:cente
 .chip input{margin:0;accent-color:var(--brand-orange)}
 .chip.on{border-color:var(--brand-orange);background:var(--accent-soft, var(--surface-2))}
 
-.statusrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.statusrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(102px,1fr));gap:8px}
 .statuschip{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);text-align:left}
 .statuschip strong{font-size:18px}
 .statuschip:disabled{opacity:.55;cursor:default}
@@ -729,7 +729,7 @@ ol.tasks{list-style:none;margin:0;padding:0}
 /* Overview: tiles with a line under, status chips in one row, attention list */
 .tile .note{font-size:12px}
 .tile.info .val{color:var(--accent)} .tile.lodg{border-top:3px solid var(--ok)} .tile.lodg .val{color:var(--ok)}
-@media (min-width:1100px){.statusrow{grid-template-columns:repeat(10,minmax(0,1fr))}}
+@media (min-width:1100px){.statusrow{grid-template-columns:repeat(11,minmax(0,1fr));gap:6px}.statusrow .statuschip{padding:9px 6px}.statusrow .statuschip .pill{font-size:11px;padding:2px 6px;letter-spacing:-.1px;max-width:100%}}
 .attention .list li,.rtypes .list li{display:flex;align-items:center;gap:12px;flex-wrap:nowrap}
 .attention .grow,.rtypes .grow{flex:1;min-width:0}
 .attention .s{overflow:hidden;text-overflow:ellipsis}
@@ -889,3 +889,11 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 @media (max-width:700px){.mgmtlist .mgbody{padding-left:16px}}
 .taskhead>div:nth-child(2){min-width:180px!important}
 .taskhead .jsact{flex-wrap:wrap;justify-content:flex-end}
+.creplies{border-left:4px solid #1f8a4c;margin-bottom:16px}
+.creplies .ph h2{display:flex;align-items:center;gap:8px}
+.creplies .list li{align-items:flex-start;gap:12px}
+.creplies .crsnip{margin-top:4px;font-size:13px;color:var(--fg);background:color-mix(in srgb,#1f8a4c 8%,transparent);border-radius:6px;padding:6px 9px;white-space:normal}
+@media (max-width:640px){.creplies .list li{grid-template-columns:minmax(0,1fr)}}
+.statuschip.replied:not(:disabled){border-color:#1f8a4c;box-shadow:inset 0 0 0 1px #1f8a4c}
+.statuschip.replied.on{background:color-mix(in srgb,#1f8a4c 10%,var(--surface))}
+.statusrow + div .creplies{margin-bottom:0}

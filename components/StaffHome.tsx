@@ -18,12 +18,14 @@ type Kind = "all" | "overdue" | "iq" | "review" | "sign" | "notes";
 
 /** Staff home: today's log-in and suggested log-out, this month's numbers, and the task list, most urgent first. */
 export default function StaffHome({ supabase, meId, firstName, jobs, closedThisMonth, closedLastMonth, running, busy, clientLine, personName, wasStarted,
-  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, children }: {
+  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, top, children }: {
   supabase: SB; meId: string; firstName: string; jobs: Job[]; closedThisMonth: number; closedLastMonth: number; running: JobTimer | null; busy: boolean;
   clientLine: (j: Job) => [string, string]; personName: (id: string | null) => string; wasStarted: (j: Job) => boolean;
   onOpen: (j: Job) => void; onStart: (j: Job) => void; onStop: () => void; onApprove: (j: Job) => void; onSendBack: (j: Job) => void;
   onSentForSign: (j: Job) => void; onSigned: (j: Job) => void; onClientSigned?: (j: Job) => void; onReplied: (j: Job) => void; onAnswer: (j: Job) => void; onPayroll: () => void;
   statusEl: (j: Job) => ReactNode; children?: ReactNode;
+  /** Shown above the task list (e.g. client email replies). */
+  top?: ReactNode;
   /** Jobs with an internal query raised to me and not answered yet: job id → who asked. */
   askedBy?: Map<string, string | null>;
 }) {
@@ -129,6 +131,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
         <div className="panel"><span className="lbl">Open review notes</span><span className={`val${openNotes ? " danger" : ""}`}>{s?.notes ? openNotes : "—"}</span>
           <span className="note">{s && !s.notes ? "Review notes aren't switched on yet" : openNotes ? "Fix them before you resubmit" : "Nothing to fix"}</span></div>
       </div>
+      {top}
       <div className="panel tasklist">
         <div className="ph"><h2>Task list</h2><span className="note">Time left turns amber within 2 days and red once overdue</span></div>
         {!list.length ? <div className="empty"><strong>{jobs.length ? "Nothing in this list." : "No open jobs assigned to you."}</strong>{jobs.length ? "Pick another filter above." : "Jobs assigned to you show here, ready to start."}</div> : (

@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 const imapHost = () => (process.env.IMAP_HOST || (process.env.SMTP_HOST || "").replace(/^smtp/i, "imap")).trim();
 const ready = () => !!(imapHost() && process.env.SMTP_USER && process.env.SMTP_PASS);
-const MIN_GAP_MS = 2 * 60 * 1000;
+const MIN_GAP_MS = 50 * 1000;
 
 /** Strip the quoted earlier message from a reply, so only the client's new text shows. */
 function newPart(text: string): string {

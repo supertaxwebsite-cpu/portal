@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Client, ClientLink, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import { periodOptions, clientUpcoming,
@@ -35,6 +35,7 @@ import JobFiles from "./JobFiles";
 import JobEmail from "./JobEmail";
 import MyJobs, { fmtHours } from "./MyJobs";
 import StaffHome from "./StaffHome";
+import ClientReplies, { newReplies, type MailRow } from "./ClientReplies";
 import { MyQueries, NeedsAttention, ReviewByPerson, ReviewTypes, useMyQueries } from "./OverviewPanels";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
@@ -127,6 +128,7 @@ export default function Workspace({ me }: { me: Profile }) {
   const [jsort, setJsort] = useState<{ k: string; dir: 1 | -1 }>({ k: "due", dir: 1 });
   // Ticked rows on the Jobs list, for changing several jobs at once.
   const [jsel, setJsel] = useState<Set<string>>(new Set());
+  const [showReplies, setShowReplies] = useState(false); // Overview: the Client replied box in All jobs by status opens the list
   const [ovTab, setOvTab] = useState<"mine" | "team" | "queries">("mine"); // managers: their own task list (default), the whole team, or queries raised to them
   const [bulk, setBulk] = useState({ assignee: "", reviewer: "", status: "", due: "" });
   // Open internal queries, open review notes and files per job (the flags under each job name).
@@ -247,14 +249,25 @@ export default function Workspace({ me }: { me: Profile }) {
     const t = setInterval(() => { if (istDay() !== start) out(); }, 60000);
     return () => clearInterval(t);
   }, [me.role, me.work_location, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Client replies to portal emails: while anyone has the portal open, check the team@ mailbox every 3 minutes
-  // (the server checks at most once every 2 minutes, whoever asks).
+  // Client replies to portal emails: while anyone has the portal open, check the team@ mailbox every minute
+  // (the server checks at most once every 50 seconds, whoever asks), then re-read which jobs have a new reply.
+  const [mailIn, setMailIn] = useState<MailRow[]>([]);
+  const loadReplies = useCallback(async () => {
+    const since = new Date(Date.now() - 45 * 864e5).toISOString();
+    const { data, error } = await supabase.from("job_emails").select("job_id, direction, created_at, from_addr, subject, body, files").gte("created_at", since).order("created_at");
+    if (!error) setMailIn((data as MailRow[] | null) ?? []);
+  }, [supabase]);
   useEffect(() => {
-    const check = () => { if (document.visibilityState === "visible") fetch("/api/email/inbox", { method: "POST" }).catch(() => {}); };
-    const first = setTimeout(check, 15000);
-    const t = setInterval(check, 3 * 60000);
+    const check = async () => {
+      if (document.visibilityState !== "visible") return;
+      await fetch("/api/email/inbox", { method: "POST" }).catch(() => null);
+      await loadReplies();
+    };
+    loadReplies();
+    const first = setTimeout(check, 5000);
+    const t = setInterval(check, 60000);
     return () => { clearTimeout(first); clearInterval(t); };
-  }, []);
+  }, [loadReplies]);
   // Team leaders can't read master admins' profiles, so ask the server who they are (for Submit for review).
   const [masterIds, setMasterIds] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -632,6 +645,10 @@ export default function Workspace({ me }: { me: Profile }) {
     const ym = (off: number) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + off); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
     const lastMonthLodged = jobs.filter((j) => (j.lodged_on ?? "").startsWith(ym(-1))).length;
     const myOpen = openJobs.filter(myJobFilter);
+    const replies = newReplies(mailIn, openJobs);
+    const myReplies = replies.filter((r) => [r.job.assignee_id, r.job.sign_owner, r.job.reviewer_id].includes(me.id));
+    const repliesEl = (list: typeof replies, title?: string) => <ClientReplies list={list} title={title} clientName={clientName} personName={personName} busy={timerBusy}
+      onOpen={(j) => openJob(j)} onReplied={(j) => myStatus(j, "in_progress")} />;
     const teamPill = me.role !== "staff" ? (
       <div className="quickpills">
         <button type="button" className={ovTab === "mine" ? "on" : undefined} onClick={() => setOvTab("mine")}>My tasks <i>{myOpen.length}</i></button>
@@ -658,7 +675,7 @@ export default function Workspace({ me }: { me: Profile }) {
           clientLine={(j) => { const c = clientById.get(j.client_id); return [clientName(j.client_id), `${practiceOf(c)}${c?.entity ? ` · ${c.entity}` : ""}`]; }}
           onOpen={(j) => openJob(j)} onStart={startJob} onStop={stopJob} onApprove={approveReview} onSendBack={sendBackReview} onSentForSign={markSentForSign}
           onSigned={markSigned} onClientSigned={markClientSigned} onReplied={(j) => myStatus(j, "in_progress")} onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} onPayroll={() => go("payroll")}
-          statusEl={(j) => <StatusSelect j={j} />} askedBy={askedBy}>
+          statusEl={(j) => <StatusSelect j={j} />} askedBy={askedBy} top={repliesEl(myReplies, "Client replied to your queries")}>
           {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
             onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })} onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")}
             onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} onAnswer={() => {}} onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} /></div> : null}
@@ -687,14 +704,18 @@ export default function Workspace({ me }: { me: Profile }) {
         <div className="tiles">
           <Tile lbl="Overdue" n={overdue.length} cls={overdue.length ? "danger" : ""} f={{ due: "overdue" }} sub="Click to see them in Jobs" />
           <Tile lbl="Due in the next 7 days" n={week.length} cls={week.length ? "warn" : ""} f={{ due: "week" }} sub="Click to see them in Jobs" />
-          <Tile lbl="Waiting on client" n={waiting.length} f={{ status: "waiting" }} sub={`+ ${openJobs.filter((j) => j.status === "client_query").length} client queries`} />
+          <Tile lbl="Waiting on client" n={waiting.length} f={{ status: "waiting" }} sub={`+ ${openJobs.filter((j) => j.status === "client_query").length} client queries${replies.length ? ` · ${replies.length} replied` : ""}`} />
           <Tile lbl="Ready for review or signing" n={review.length} cls="info" f={{ status: "review_any" }} sub={`${openJobs.filter((j) => j.status === "review").length} review · ${openJobs.filter((j) => j.status === "to_lodge").length} signing`} />
           <Tile lbl="Lodged this month" n={lodged.length} cls="lodg" f={{ status: "lodged" }} sub={`Last month ${lastMonthLodged}`} />
         </div>
         <div className="panel" style={{ padding: "12px 14px", marginBottom: 16 }}>
           <div className="ph" style={{ padding: 0, marginBottom: 8 }}><h2>All jobs by status</h2><button className="link" onClick={() => gotoJobs({ status: "" })}>See all {jobs.length}</button></div>
-          <div className="statusrow">{STATUSES.map((st) => { const n = jobs.filter((j) => j.status === st.id).length; return (
-            <button key={st.id} className="statuschip" onClick={() => gotoJobs({ status: st.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>); })}</div>
+          <div className="statusrow">{STATUSES.map((st) => { const n = jobs.filter((j) => j.status === st.id).length; return (<Fragment key={st.id}>
+            <button className="statuschip" onClick={() => gotoJobs({ status: st.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>
+            {st.id === "client_query" ? <button className={`statuschip replied${showReplies ? " on" : ""}`} aria-expanded={showReplies} onClick={() => setShowReplies(!showReplies)} disabled={!replies.length}
+              title="Client queries the client has answered by email"><strong className="mono">{replies.length}</strong><span className="pill ok">Client replied</span></button> : null}
+          </Fragment>); })}</div>
+          {showReplies && replies.length ? <div style={{ marginTop: 12 }}>{repliesEl(replies)}</div> : null}
         </div>
         {canSeeWorkload || seesOwnTeam ? <TeamBoard supabase={supabase} rows={rows} timers={teamRunning} jobById={(id) => jobs.find((j) => j.id === id)} clientName={clientName} meId={me.id}
           title={seesOwnTeam ? "My team board" : "Team board"} onOpen={(j) => openJob(j)} onViewTasks={(id) => gotoJobs({ assignee: id })} /> : null}
