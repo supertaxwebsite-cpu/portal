@@ -1,6 +1,7 @@
 "use client";
 import type { Job } from "@/lib/types";
 import { svcLabel } from "@/lib/domain";
+import { splitMail } from "@/lib/mailText";
 
 export interface MailRow { job_id: string; direction: string | null; created_at: string; from_addr: string | null; subject: string; body: string; files: string[] | null }
 export interface Reply { job: Job; mail: MailRow; count: number }
@@ -48,9 +49,9 @@ export default function ClientReplies({ list, clientName, personName, busy, onOp
         return (
           <li key={j.id}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="t"><button type="button" className="link jobname" onClick={() => onOpen(j)}>{clientName(j.client_id)} · {svcLabel(j.service)} {j.period}</button></div>
-              <div className="s">{m.from_addr || "Client"} · {ago(m.created_at)}{count > 1 ? ` · ${count} emails` : ""}{files ? ` · 📎 ${files} file${files === 1 ? "" : "s"}` : ""}{j.assignee_id ? ` · ${personName(j.assignee_id)}` : " · Unassigned"}</div>
-              {m.body.trim() ? <div className="crsnip">{snippet(m.body)}</div> : null}
+              <div className="t"><button type="button" className="link jobname" onClick={() => onOpen(j)}>{clientName(j.client_id)} · {svcLabel(j.service)} {j.period}</button>{files ? <span className="pill info clip" style={{ marginLeft: 8 }} title={m.files!.join(", ")}>📎 {files}</span> : null}</div>
+              <div className="s">{m.from_addr || "Client"} · {ago(m.created_at)}{count > 1 ? ` · ${count} emails` : ""}{j.assignee_id ? ` · ${personName(j.assignee_id)}` : " · Unassigned"}</div>
+              {(() => { const t = splitMail(m.body).main; return t ? <div className="crsnip">{snippet(t)}</div> : null; })()}
             </div>
             <div className="row" style={{ gap: 6, flexShrink: 0 }}>
               <button type="button" onClick={() => onOpen(j)}>Read reply</button>

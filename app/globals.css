@@ -897,3 +897,10 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .statuschip.replied:not(:disabled){border-color:#1f8a4c;box-shadow:inset 0 0 0 1px #1f8a4c}
 .statuschip.replied.on{background:color-mix(in srgb,#1f8a4c 10%,var(--surface))}
 .statusrow + div .creplies{margin-bottom:0}
+.qreplymail .qhead{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sigtoggle{font-size:12.5px;margin-top:6px}
+.mailsig{font-size:12px;color:var(--muted);border-top:1px dashed var(--line);margin-top:6px;padding-top:6px}
+.mailfiles{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.mailfiles .chip{font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2)}
+.pill.clip{font-weight:600}
+.pill.clip::before{display:none}

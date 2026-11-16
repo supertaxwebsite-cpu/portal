@@ -1,4 +1,5 @@
 "use client";
+import { splitMail } from "@/lib/mailText";
 import type { MouseEvent as RMouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
@@ -316,13 +317,12 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
         <div className="taskhead"><span className="tdot">{replied ? "✓" : "?"}</span>
           <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Client query · {personName(x.actor_id) || "Someone"} → client</div>
             <div className="tks">Raised {when(x.created_at)}{replied ? ` · client replied ${when(replied)}` : ""}</div></div>
+          {(() => { const n = inbound.filter((m) => m.created_at > x.created_at).reduce((t, m) => t + (m.files?.length ?? 0), 0); return n ? <span className="pill info clip" title={`The client attached ${n} file${n === 1 ? "" : "s"} (saved in Files)`}>📎 {n}</span> : null; })()}
           <span className={`pill ${replied ? "ok" : "warn"}`}>{replied ? "Replied" : "Waiting on client"}</span></div>
         <div className="qpair">
           <div className="qcol ask"><div className="qhead"><span className="pill warn">Client query</span> {personName(x.actor_id) || "Someone"}</div><div className="qbody">{x.body.replace(/^Client query: /, "")}</div></div>
           <div className="qcol ans">{inbound.filter((m) => m.created_at > x.created_at).map((m) => (
-            <div key={m.id} className="qreplymail"><div className="qhead"><span className="pill ok">Client email</span> {m.from_addr ?? ""} <span className="note">{when(m.created_at)}</span></div>
-              <div className="qbody" style={{ whiteSpace: "pre-wrap" }}>{m.body || "(no text)"}</div>
-              {m.files?.length ? <div className="note">Attached: {m.files.join(", ")} (saved in Files)</div> : null}</div>))}
+            <MailReply key={m.id} m={m} when={when} />))}
             {replied ? <div className="note">The client replied {when(replied)}. Processing continues below.</div>
             : !readOnly && tasks.onClientReplied && job.status === "client_query" ? <div className="qreply"><p className="note" style={{ margin: "0 0 8px" }}>When the client answers, press Client replied. A new Processing task opens for the preparer.</p><button type="button" className="primary" onClick={tasks.onClientReplied}>Client replied</button></div>
             : <div className="note qwait">Waiting for the client to reply.</div>}</div>
@@ -392,6 +392,23 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
           {!readOnly ? askForm : null}
         </>}
       </section>
+    </div>
+  );
+}
+
+/** A client's email reply on the client query card: their message, with their signature and disclaimer folded away. */
+function MailReply({ m, when }: { m: { id: string; from_addr: string | null; body: string; files: string[]; created_at: string }; when: (t: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const { main, sig } = splitMail(m.body);
+  const n = m.files?.length ?? 0;
+  return (
+    <div className="qreplymail">
+      <div className="qhead"><span className="pill ok">Client email</span> {m.from_addr ?? ""} <span className="note">{when(m.created_at)}</span></div>
+      <div className="qbody" style={{ whiteSpace: "pre-wrap" }}>{main || "(no text)"}</div>
+      {sig ? <>
+        <button type="button" className="link sigtoggle" onClick={() => setOpen(!open)}>{open ? "Hide signature" : "Show signature"}</button>
+        {open ? <div className="qbody mailsig" style={{ whiteSpace: "pre-wrap" }}>{sig}</div> : null}</> : null}
+      {n ? <div className="mailfiles">{m.files.map((f) => <span key={f} className="chip">📄 {f}</span>)}<span className="note">Saved in Files</span></div> : null}
     </div>
   );
 }
