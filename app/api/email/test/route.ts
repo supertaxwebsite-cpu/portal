@@ -5,6 +5,7 @@ import { mailConfigured, mailFrom, sendMail } from "@/lib/graphMail";
 import { codeStepOn } from "@/lib/loginCode";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /** Master admins: is everything ready for the email sign-in code? */
 export async function GET() {

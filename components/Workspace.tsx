@@ -1248,8 +1248,9 @@ function SignInCodePanel() {
   const [busy, setBusy] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   useEffect(() => {
-    fetch("/api/email/test").then(async (r) => { const d = await r.json().catch(() => null); if (r.ok && d) setSt(d); else setLoadErr(d?.error || `The check didn't load (error ${r.status}). Reload the page after the latest deploy.`); })
-      .catch(() => setLoadErr("The check didn't load. Reload the page."));
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 20000);
+    fetch("/api/email/test", { signal: ac.signal, cache: "no-store" }).finally(() => clearTimeout(t)).then(async (r) => { const d = await r.json().catch(() => null); if (r.ok && d) setSt(d); else setLoadErr(d?.error || `The check didn't load (error ${r.status}). Reload the page after the latest deploy.`); })
+      .catch(() => setLoadErr("The check didn't answer within 20 seconds. Reload the page and try again."));
   }, []);
   if (!st) return <div className="panel" style={{ marginTop: 16 }}><div className="ph"><h2>Email sign-in code</h2></div><p className="note" style={{ margin: "0 16px 14px" }}>{loadErr || "Checking…"}</p></div>;
   const Row = ({ ok, children }: { ok: boolean; children: React.ReactNode }) => <li><span className={`pill ${ok ? "ok" : "warn"}`}>{ok ? "✓ Done" : "To do"}</span> {children}</li>;
@@ -1262,7 +1263,7 @@ function SignInCodePanel() {
         <Row ok={st.envOn}>LOGIN_CODE = on in Vercel</Row>
       </ul>
       <div className="row" style={{ padding: "0 16px 14px" }}>
-        <button type="button" disabled={busy || !st.mail} onClick={async () => { setBusy(true); setMsg("Sending…"); try { const r = await fetch("/api/email/test", { method: "POST" }); const d = await r.json().catch(() => ({})); setMsg(r.ok ? `✓ Test email sent to ${d.to}. Check that inbox (and junk).` : `✗ ${d.error || `Couldn't send (error ${r.status})`}`); } catch { setMsg("✗ No answer from the server. Try again."); } setBusy(false); }}>{busy ? "Sending…" : "Send me a test email"}</button>
+        <button type="button" disabled={busy || !st.mail} onClick={async () => { setBusy(true); setMsg("Sending…"); try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 45000); const r = await fetch("/api/email/test", { method: "POST", signal: ac.signal }).finally(() => clearTimeout(tm)); const d = await r.json().catch(() => ({})); setMsg(r.ok ? `✓ Test email sent to ${d.to}. Check that inbox (and junk).` : `✗ ${d.error || `Couldn't send (error ${r.status})`}`); } catch { setMsg("✗ No answer from the mail server within 45 seconds. Check SMTP_HOST and SMTP_PORT in Vercel."); } setBusy(false); }}>{busy ? "Sending…" : "Send me a test email"}</button>
         <span className="note" style={{ fontWeight: msg ? 600 : undefined }}>{msg || "Send a test first. Switch LOGIN_CODE on only once the test email arrives, so nobody gets locked out."}</span>
       </div>
     </div>

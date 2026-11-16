@@ -83,6 +83,8 @@ async function sendSmtp(m: { to: string[]; cc: string[]; replyTo?: string; subje
   const t = nodemailer.createTransport({
     host: process.env.SMTP_HOST!.trim(), port, secure: port === 465,
     auth: { user: process.env.SMTP_USER!.trim(), pass: process.env.SMTP_PASS!.trim() },
+    // Fail with a clear error instead of hanging when the server can't be reached.
+    connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000,
   });
   try {
     await t.sendMail({
