@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { codeStepOn, hashCode, makeCookie, sessionIdOf, CODE_COOKIE, CODE_MAX_TRIES } from "@/lib/loginCode";
+import { codeStepOn, hashCode, makeCookie, makeDeviceCookie, sessionIdOf, CODE_COOKIE, CODE_MAX_TRIES, DEVICE_COOKIE } from "@/lib/loginCode";
 
 export const dynamic = "force-dynamic";
 
@@ -33,5 +33,8 @@ export async function POST(req: Request) {
   const c = await makeCookie(user.id, sid);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(CODE_COOKIE, c.value, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: c.maxAge });
+  // This browser is trusted for this person for the next 3 hours: signing in again here won't ask for a code.
+  const d = await makeDeviceCookie(user.id);
+  res.cookies.set(DEVICE_COOKIE, d.value, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: d.maxAge });
   return res;
 }

@@ -57,6 +57,30 @@ export async function cookieOk(value: string | undefined, userId: string, sessio
   return diff === 0;
 }
 
+/** Trusted browser: after a right code, this browser skips the code for the same person for 3 hours,
+ *  even after signing out and in again. A new browser or computer, or another person, still needs a code. */
+export const DEVICE_COOKIE = "pd_device";
+export const DEVICE_HOURS = 3;
+
+export async function makeDeviceCookie(userId: string): Promise<{ value: string; maxAge: number }> {
+  const exp = Math.floor(Date.now() / 1000) + DEVICE_HOURS * 3600;
+  const body = `dev.${userId}.${exp}`;
+  return { value: `${body}.${await hmac(body)}`, maxAge: DEVICE_HOURS * 3600 };
+}
+
+export async function deviceOk(value: string | undefined, userId: string): Promise<boolean> {
+  if (!value || !secret()) return false;
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "dev") return false;
+  const [, u, exp, sig] = parts;
+  if (u !== userId || Number(exp) * 1000 < Date.now()) return false;
+  const want = await hmac(`dev.${u}.${exp}`);
+  if (want.length !== sig.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0;
+}
+
 export function newCode(): string {
   const n = new Uint32Array(1);
   crypto.getRandomValues(n);
