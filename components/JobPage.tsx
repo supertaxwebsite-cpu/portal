@@ -108,7 +108,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
       const changes = onClientChanges ? <button type="button" disabled={busy} title="The client wants changes: reopen the job and send it back to processing" onClick={() => onClientChanges(job)}>↺ Client needs changes</button> : null;
       if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{changes}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
       if (job.status === "sent_for_sign") { const ok = !stageL || (stageL.sign.done && stageL.lodge.done);
-        return <>{changes}{onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Marks it signed and lodged" : "Mark every Client signature and Lodge checklist item first"} onClick={() => onSigned(job)}>Client signed</button> : null}</>; }
+        const why = !stageL || ok ? "" : !stageL.sign.done ? `Tick the Client signature checklist first (${stageL.sign.marked} of ${stageL.sign.total})` : `Tick the Lodge checklist below first (${stageL.lodge.marked} of ${stageL.lodge.total}): Client signed also marks the job lodged`;
+        return <>{changes}{onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Marks it signed and lodged" : why} onClick={() => onSigned(job)}>Client signed</button> : null}{why ? <span className="note" style={{ flexBasis: "100%", textAlign: "right" }}>{why}</span> : null}</>; }
     }
     return null;
   };
