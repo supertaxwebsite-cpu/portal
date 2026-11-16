@@ -3164,3 +3164,30 @@ select cron.schedule('supertax-auto-logout', '*/15 * * * *', 'select public.auto
 select public.auto_logout_stale();
 
 notify pgrst, 'reload schema';
+
+-- ===== database-update-client-email-replies.sql =====
+-- Client replies by email come back into the portal. Add-only.
+-- 1. Remember each email's Message-ID (to match replies), and store incoming replies too.
+alter table public.job_emails add column if not exists message_id text;
+alter table public.job_emails add column if not exists direction text not null default 'out';
+alter table public.job_emails add column if not exists from_addr text;
+create index if not exists job_emails_message_id_idx on public.job_emails (message_id);
+
+-- 2. Where the mailbox check got to (only the server reads and writes this).
+create table if not exists public.mail_sync (
+  id int primary key,
+  uidvalidity bigint,
+  last_uid bigint,
+  last_run timestamptz
+);
+alter table public.mail_sync enable row level security;
+revoke all on public.mail_sync from anon, authenticated;
+
+-- 3. A bell notification when a client replies.
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check
+  check (kind in ('job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned',
+                  'sign_reminder', 'client_query_reminder', 'sign_handover', 'review_note', 'review_fixed',
+                  'leave_request', 'leave_decided', 'leave_cancelled', 'client_email'));
+
+notify pgrst, 'reload schema';

@@ -52,6 +52,9 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const [replyFile, setReplyFile] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
   const [askKind, setAskKind] = useState<"internal" | "client">("internal");
+  // Client query by email: who it goes to, subject and message (CC info@ and the signature are added by the server).
+  const [mail, setMail] = useState<{ ready: boolean | null; to: string; subject: string; body: string; touched: boolean }>({ ready: null, to: "", subject: "", body: "", touched: false });
+  const [inbound, setInbound] = useState<{ id: string; from_addr: string | null; subject: string; body: string; files: string[]; created_at: string }[]>([]);
   // Task rows fold up when you click their header. Finished ones start folded.
   const tasksRef = useRef<HTMLOListElement>(null);
   useEffect(() => {
@@ -78,6 +81,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
       supabase.from("job_activity").select("id,kind,body,from_value,to_value,actor_id,created_at").eq("job_id", job.id).in("kind", ["comment", "status"]).order("created_at"),
     ]);
     setActs((a.data as Act[] | null) ?? []);
+    supabase.from("job_emails").select("id, from_addr, subject, body, files, created_at, direction").eq("job_id", job.id).eq("direction", "in").order("created_at")
+      .then(({ data, error }) => { if (!error) setInbound((data as typeof inbound | null) ?? []); });
     if (q.error) { setMissing(true); setQs([]); return; }
     const list = q.data as Query[];
     setQs(list); setChecks((c.data as Check[] | null) ?? []);
@@ -90,6 +95,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
       .on("postgres_changes", { event: "*", schema: "public", table: "job_queries", filter: `job_id=eq.${job.id}` }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "job_checks", filter: `job_id=eq.${job.id}` }, () => load())
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_activity", filter: `job_id=eq.${job.id}` }, () => load())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_emails", filter: `job_id=eq.${job.id}` }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [supabase, job.id, load]);
@@ -117,6 +123,34 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
       onAnswered?.(job, stillOpen);
     } else onRaised?.(job, "internal");
     await load(); return true;
+  }
+  useEffect(() => {
+    if (askKind !== "client" || !askOpen || mail.ready !== null) return;
+    (async () => {
+      const [cfg, c] = await Promise.all([
+        fetch("/api/email").then((r) => r.json()).catch(() => ({ configured: false })),
+        supabase.from("clients").select("email, contact").eq("id", job.client_id).maybeSingle(),
+      ]);
+      const cl = (c.data as { email?: string | null; contact?: string | null } | null) ?? {};
+      const first = (cl.contact ?? "").trim().split(/\s+/)[0] ?? "";
+      setMail({ ready: !!cfg.configured, to: (cl.email ?? "").trim(), touched: false,
+        subject: `${clientName} - ${svcLabel(job.service)} ${job.period} - information required`,
+        body: `Hi ${first || "there"},\n\nTo complete your ${svcLabel(job.service)} for ${job.period}, could you please send us the following:\n\n1. \n\n` });
+    })();
+  }, [askKind, askOpen, mail.ready, supabase, job.client_id, job.service, job.period, clientName]);
+  async function sendClientEmail() {
+    if (!mail.to.trim() || !mail.subject.trim() || !mail.body.trim()) { say("Fill in To, Subject and the message first.", true); return false; }
+    setBusy(true);
+    const fileId = askFile ? await upload(askFile) : null;
+    if (fileId === false) { setBusy(false); return false; }
+    const r = await fetch(`/api/jobs/${job.id}/email`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ to: mail.to, subject: mail.subject, body: mail.body, fileIds: fileId ? [fileId] : [], clientQuery: true, markQuery: false }) });
+    const d = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { say(d.error ?? "The email wasn't sent. Try again.", true); return false; }
+    await load();
+    onRaised?.(job, "client");
+    return true;
   }
   async function postClientQuery(body: string) {
     if (!body.trim()) { say("Type the query first.", true); return false; }
@@ -203,10 +237,19 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
               <button type="button" className="primary" disabled={busy || !ask.body.trim() || !ask.to} onClick={async () => { if (await post({ body: ask.body, to_id: ask.to }, askFile)) { setAsk({ ...ask, body: "" }); setAskFile(null); setAskOpen(false); say(`Query sent to ${personName(ask.to)}. Your timer stopped and the job is now Internal query`); } }}>Send internal query</button></div>
             <span className="note">{ask.to ? `Only ${personName(ask.to)} can respond. ` : "Only the person you pick can respond. "}Your timer stops and the job moves to Internal query until they answer.</span>
             </> : <>
+            {mail.ready ? <>
+            <label className="f">To<input id="q-mail-to" type="text" value={mail.to} placeholder="client@example.com" onChange={(e) => setMail({ ...mail, to: e.target.value })} /></label>
+            <label className="f">Subject<input id="q-mail-subject" type="text" value={mail.subject} onChange={(e) => setMail({ ...mail, subject: e.target.value })} /></label>
+            <textarea id="q-mail-body" rows={9} value={mail.body} onChange={(e) => setMail({ ...mail, body: e.target.value })} />
+            <div className="row">{pickFile(setAskFile, askFile, "q-mail-file")}<span style={{ flex: 1 }} />
+              <button type="button" className="primary" disabled={busy || !mail.to.trim() || !mail.subject.trim() || !mail.body.trim()} onClick={async () => { if (await sendClientEmail()) { setAskFile(null); setAskOpen(false); setMail({ ready: null, to: "", subject: "", body: "", touched: false }); say(`Email sent to ${mail.to}. The job is now Query with client`); } }}>{busy ? "Sending…" : "Send email to client"}</button></div>
+            <span className="note">Sent from team@supertax.com.au with info@supertax.com.au copied in and the Supertax signature added at the bottom. When the client replies, it shows here on the job and you get a bell notification. Your timer stops and the job moves to Query with client, with a reminder if there&apos;s no reply in 2 days.</span>
+            </> : mail.ready === false ? <>
             <textarea id="q-ask-client" placeholder="What did you ask the client? e.g. Please send the bank statements for September and October." value={ask.body} onChange={(e) => setAsk({ ...ask, body: e.target.value })} />
             <div className="row"><span style={{ flex: 1 }} />
               <button type="button" className="primary" disabled={busy || !ask.body.trim()} onClick={async () => { if (await postClientQuery(ask.body)) { setAsk({ ...ask, body: "" }); setAskOpen(false); say("Client query noted. Your timer stopped and the job is now Query with client"); } }}>Mark query sent to client</button></div>
-            <span className="note">Send the query to the client by email as usual. This notes it on the job history, stops your timer and moves the job to Query with client. You get a bell reminder if there&apos;s no reply in 2 days.</span>
+            <span className="note">Email sending isn&apos;t set up, so send the query by email as usual. This notes it on the job history, stops your timer and moves the job to Query with client.</span>
+            </> : <span className="note">Loading…</span>}
             </>}
           </div>);
   const ansCol = (q: Query, rs: Query[], mine: boolean) => (<div className="qcol ans">{rs.length ? rs.map((r) => (
@@ -276,7 +319,11 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
           <span className={`pill ${replied ? "ok" : "warn"}`}>{replied ? "Replied" : "Waiting on client"}</span></div>
         <div className="qpair">
           <div className="qcol ask"><div className="qhead"><span className="pill warn">Client query</span> {personName(x.actor_id) || "Someone"}</div><div className="qbody">{x.body.replace(/^Client query: /, "")}</div></div>
-          <div className="qcol ans">{replied ? <div className="note">The client replied {when(replied)}. Processing continues below.</div>
+          <div className="qcol ans">{inbound.filter((m) => m.created_at > x.created_at).map((m) => (
+            <div key={m.id} className="qreplymail"><div className="qhead"><span className="pill ok">Client email</span> {m.from_addr ?? ""} <span className="note">{when(m.created_at)}</span></div>
+              <div className="qbody" style={{ whiteSpace: "pre-wrap" }}>{m.body || "(no text)"}</div>
+              {m.files?.length ? <div className="note">Attached: {m.files.join(", ")} (saved in Files)</div> : null}</div>))}
+            {replied ? <div className="note">The client replied {when(replied)}. Processing continues below.</div>
             : !readOnly && tasks.onClientReplied && job.status === "client_query" ? <div className="qreply"><p className="note" style={{ margin: "0 0 8px" }}>When the client answers, press Client replied. A new Processing task opens for the preparer.</p><button type="button" className="primary" onClick={tasks.onClientReplied}>Client replied</button></div>
             : <div className="note qwait">Waiting for the client to reply.</div>}</div>
         </div>

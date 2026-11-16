@@ -247,6 +247,14 @@ export default function Workspace({ me }: { me: Profile }) {
     const t = setInterval(() => { if (istDay() !== start) out(); }, 60000);
     return () => clearInterval(t);
   }, [me.role, me.work_location, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Client replies to portal emails: while anyone has the portal open, check the team@ mailbox every 3 minutes
+  // (the server checks at most once every 2 minutes, whoever asks).
+  useEffect(() => {
+    const check = () => { if (document.visibilityState === "visible") fetch("/api/email/inbox", { method: "POST" }).catch(() => {}); };
+    const first = setTimeout(check, 15000);
+    const t = setInterval(check, 3 * 60000);
+    return () => { clearTimeout(first); clearInterval(t); };
+  }, []);
   // Team leaders can't read master admins' profiles, so ask the server who they are (for Submit for review).
   const [masterIds, setMasterIds] = useState<Set<string>>(new Set());
   useEffect(() => {

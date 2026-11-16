@@ -42,7 +42,7 @@ async function graph(t: string, path: string, init: RequestInit = {}) {
 
 /** Creates a draft in MAIL_FROM's mailbox, attaches the files (large ones in chunks) and sends it.
  *  The email lands in that mailbox's Sent Items, and replies come back to it. */
-export async function sendMail(m: { to: string[]; cc: string[]; replyTo?: string; subject: string; html: string; files: MailFile[] }) {
+export async function sendMail(m: { to: string[]; cc: string[]; replyTo?: string; subject: string; html: string; files: MailFile[]; messageId?: string }) {
   if (smtpReady()) return sendSmtp(m);
   const t = await token();
   const box = `/users/${encodeURIComponent(mailFrom())}`;
@@ -77,7 +77,7 @@ export async function sendMail(m: { to: string[]; cc: string[]; replyTo?: string
   }
 }
 
-async function sendSmtp(m: { to: string[]; cc: string[]; replyTo?: string; subject: string; html: string; files: MailFile[] }) {
+async function sendSmtp(m: { to: string[]; cc: string[]; replyTo?: string; subject: string; html: string; files: MailFile[]; messageId?: string }) {
   const nodemailer = (await import("nodemailer")).default;
   const port = Number(process.env.SMTP_PORT || 465);
   const t = nodemailer.createTransport({
@@ -89,7 +89,7 @@ async function sendSmtp(m: { to: string[]; cc: string[]; replyTo?: string; subje
   try {
     await t.sendMail({
       from: { name: process.env.MAIL_NAME?.trim() || "Supertax", address: mailFrom() },
-      to: m.to, cc: m.cc.length ? m.cc : undefined, replyTo: m.replyTo, subject: m.subject, html: m.html,
+      to: m.to, cc: m.cc.length ? m.cc : undefined, replyTo: m.replyTo, subject: m.subject, html: m.html, messageId: m.messageId,
       attachments: m.files.map((f) => ({ filename: f.name, content: Buffer.from(f.bytes), contentType: f.type || undefined })),
     });
   } catch (e) {
