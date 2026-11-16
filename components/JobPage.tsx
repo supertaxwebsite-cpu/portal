@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person } from "@/lib/types";
-import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel } from "@/lib/domain";
+import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned } from "@/lib/domain";
 import { STEPS, checklistFor } from "@/lib/checklists";
 import JobBrief, { type PrepRow, type StageLists } from "./JobBrief";
 import JobFiles from "./JobFiles";
@@ -18,11 +18,11 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
-  onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void; onClientChanges?: (j: Job) => void;
+  onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void; onClientChanges?: (j: Job) => void; onClientSigned?: (j: Job) => void;
   job: Job; client?: Client; meId: string; team: Person[]; canAnswerAll: boolean; canDelete: boolean; readOnly: boolean; supabase: SB;
   personName: (id: string | null) => string; say: (m: string, e?: boolean) => void; statusEl: ReactNode; hours: number;
   running: JobTimer | null; busy: boolean; onStart: (j: Job) => void; onStop: () => void; wasStarted: (j: Job) => boolean;
@@ -37,7 +37,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
 
   const d = job.due_date ? daysFrom(job.due_date) : null;
   const open = isOpen(job.status);
-  const stage = !open ? 4 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
+  const signed = isSigned(job);
+  const stage = !open ? 4 : signed ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
   const signer = job.sign_owner ?? job.reviewer_id ?? job.assignee_id;
   const [takingSign, setTakingSign] = useState(false);
@@ -50,8 +51,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
       : !wasStarted(job) ? "Not started yet: press Start processing"
       : `In progress · checklist ${prog.marked} of ${prog.total}${checklistDone ? ": ready to complete" : ""}` },
     { t: "Review", who: job.reviewer_id, s: stage > 1 ? "Approved" : stage === 1 ? "Reviewing now" : "Opens when preparation is sent to review" },
-    { t: "Client signature", who: job.needs_signature === false ? null : signer, s: job.needs_signature === false ? "Not needed for this job" : job.status === "sent_for_sign" ? `Sent for signing${job.sign_sent_at ? ` ${fmtDate(job.sign_sent_at.slice(0, 10))}` : ""}` : stage > 2 ? "Signed" : "Send for signing, then mark signed" },
-    { t: job.needs_signature === false ? "Complete" : "Lodge", who: null, s: !open ? `${job.status === "done" ? "Completed" : "Lodged"}${job.lodged_on ? ` ${fmtDate(job.lodged_on)}` : ""}` : "Lodgment date and receipt" },
+    { t: "Client signature", who: job.needs_signature === false ? null : signer, s: job.needs_signature === false ? "Not needed for this job" : signed ? "Client signed" : job.status === "sent_for_sign" ? `Sent for signing${job.sign_sent_at ? ` ${fmtDate(job.sign_sent_at.slice(0, 10))}` : ""}` : stage > 2 ? "Signed" : "Send for signing, then mark signed" },
+    { t: job.needs_signature === false ? "Complete" : "Lodge", who: signed ? signer : null, s: signed ? "Ready to lodge: tick the checklist, then press Lodged" : !open ? `${job.status === "done" ? "Completed" : "Lodged"}${job.lodged_on ? ` ${fmtDate(job.lodged_on)}` : ""}` : "Lodgment date and receipt" },
   ];
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   // Small counts for the chips and the summary panel.
@@ -107,9 +108,13 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
       if (!me && !canAnswerAll) return null;
       const changes = onClientChanges ? <button type="button" disabled={busy} title="The client wants changes: reopen the job and send it back to processing" onClick={() => onClientChanges(job)}>↺ Client needs changes</button> : null;
       if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{changes}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
-      if (job.status === "sent_for_sign") { const ok = !stageL || (stageL.sign.done && stageL.lodge.done);
-        const why = !stageL || ok ? "" : !stageL.sign.done ? `Tick the Client signature checklist first (${stageL.sign.marked} of ${stageL.sign.total})` : `Tick the Lodge checklist below first (${stageL.lodge.marked} of ${stageL.lodge.total}): Client signed also marks the job lodged`;
-        return <>{changes}{onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Marks it signed and lodged" : why} onClick={() => onSigned(job)}>Client signed</button> : null}{why ? <span className="note" style={{ flexBasis: "100%", textAlign: "right" }}>{why}</span> : null}</>; }
+      if (job.status === "sent_for_sign" && !signed) { const ok = !stageL || stageL.sign.done;
+        return <>{changes}{onClientSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "The client has signed: open the Lodge step" : "Tick every Client signature checklist item first"} onClick={() => onClientSigned(job)}>Client signed</button> : null}</>; }
+    }
+    if (i === 3 && signed) {
+      if (!mineRow(2) && !canAnswerAll) return null;
+      const ok = !stageL || stageL.lodge.done;
+      return onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Lodged: close the job" : "Tick every Lodge checklist item first"} onClick={() => onSigned(job)}>Lodged</button> : null;
     }
     return null;
   };
@@ -204,7 +209,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                       : `It's with ${personName(signer)}${job.status === "sent_for_sign" ? ", who gets the reminders." : ". It's in their My tasks."}`}</span>
                   </div> : null}
                   {!noSign && stage >= 2 ? <div className="taskbody">{L.sign.el}</div> : null}</li>
-                <li className={`task${stage > 3 ? " done" : stage >= 2 ? " now" : " later"}`}>{head(3)}
+                <li className={`task${stage > 3 ? " done" : stage === 3 ? " now" : " later"}`}>{head(3)}
                   {stage >= 2 || (noSign && stage === 1) ? <div className="taskbody">{L.lodge.el}</div> : null}</li>
               </>; } }} />
           </div>

@@ -887,3 +887,5 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .mgcomments .qbody{white-space:pre-wrap}
 .mgmtlist textarea{width:100%;min-height:60px}
 @media (max-width:700px){.mgmtlist .mgbody{padding-left:16px}}
+.taskhead>div:nth-child(2){min-width:180px!important}
+.taskhead .jsact{flex-wrap:wrap;justify-content:flex-end}

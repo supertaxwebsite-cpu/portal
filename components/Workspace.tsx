@@ -6,6 +6,7 @@ import { periodOptions, clientUpcoming,
   ENTITIES, PRACTICES, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
+  isSigned, SIGNED_MARK,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
@@ -497,9 +498,15 @@ export default function Workspace({ me }: { me: Profile }) {
   async function followedUp(j: Job) {
     await save(() => supabase.from("jobs").update({ sign_sent_at: new Date().toISOString(), sign_reminded_at: null }).eq("id", j.id), "Got it. It comes back in 2 days if the client still hasn't answered");
   }
+  /** The client has signed: the signing step is done and the Lodge step opens. */
+  async function markClientSigned(j: Job) {
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    await supabase.from("job_activity").insert({ job_id: j.id, actor_id: me.id, kind: "comment", body: "Client signed" });
+    await save(() => supabase.from("jobs").update({ sign_reminded_at: SIGNED_MARK }).eq("id", j.id), `${clientName(j.client_id)} signed. Now lodge it and press Lodged`);
+  }
   async function markSigned(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
-    await save(() => supabase.from("jobs").update({ status: "lodged", lodged_on: j.lodged_on ?? todayISO() }).eq("id", j.id), `${clientName(j.client_id)} signed. Job marked lodged`);
+    await save(() => supabase.from("jobs").update({ status: "lodged", lodged_on: j.lodged_on ?? todayISO() }).eq("id", j.id), `${clientName(j.client_id)} lodged. Job closed`);
   }
   const wasStarted = (j: Job) => !started || started.has(j.id) || running?.job_id === j.id;
   /** Submit for review: pick the senior or manager who checks it (defaults to the job's reviewer or your team leader). */
@@ -552,12 +559,13 @@ export default function Workspace({ me }: { me: Profile }) {
   };
   /** Where a job is in its life: preparation, review, signing, lodged. */
   const STAGE_NAMES = ["Preparation", "Review", "Signing", "Lodged"];
-  const stageOf = (j: Job) => (!isOpen(j.status) ? 3 : j.status === "review" ? 1 : j.status === "to_lodge" || j.status === "sent_for_sign" ? 2 : 0);
+  const stageOf = (j: Job) => (!isOpen(j.status) || isSigned(j) ? 3 : j.status === "review" ? 1 : j.status === "to_lodge" || j.status === "sent_for_sign" ? 2 : 0);
   const Stage = ({ j }: { j: Job }) => { const s = stageOf(j); const lbl = ST[j.status]?.label ?? ""; return (
     <div className="stagecell" title={`Stage ${s + 1} of 4: ${STAGE_NAMES[s]}`}><div className="stagedots">{STAGE_NAMES.map((n, i) => <i key={n} className={i < s || (s === 3) ? "d" : i === s ? "n" : ""} />)}</div>
       <small>{s === 0 && j.status !== "in_progress" && j.status !== "not_started" ? lbl : j.status === "done" ? "Completed" : STAGE_NAMES[s]}</small></div>); };
   const TimeLeft = ({ j }: { j: Job }) => {
     if (!isOpen(j.status)) return <div className="tleft ok"><b>{j.status === "done" ? "Completed" : "Lodged"}</b><small>{j.lodged_on ? fmtDate(j.lodged_on) : ""}</small></div>;
+    if (isSigned(j)) return <div className="tleft ok"><b>Signed, to lodge</b><small>{j.due_date ? `Due ${fmtDate(j.due_date)}` : ""}</small></div>;
     if (j.status === "sent_for_sign" && j.sign_sent_at) { const d = -daysFrom(j.sign_sent_at.slice(0, 10)); return <div className="tleft ok"><b>Sent {d ? `${d} day${d === 1 ? "" : "s"} ago` : "today"}</b><small>{j.due_date ? `Due ${fmtDate(j.due_date)}` : ""}</small></div>; }
     if (!j.due_date) return <div className="tleft"><b className="muted">No due date</b></div>;
     const d = daysFrom(j.due_date);
@@ -641,7 +649,7 @@ export default function Workspace({ me }: { me: Profile }) {
           running={running} busy={timerBusy} personName={personName} wasStarted={wasStarted}
           clientLine={(j) => { const c = clientById.get(j.client_id); return [clientName(j.client_id), `${practiceOf(c)}${c?.entity ? ` · ${c.entity}` : ""}`]; }}
           onOpen={(j) => openJob(j)} onStart={startJob} onStop={stopJob} onApprove={approveReview} onSendBack={sendBackReview} onSentForSign={markSentForSign}
-          onSigned={markSigned} onReplied={(j) => myStatus(j, "in_progress")} onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} onPayroll={() => go("payroll")}
+          onSigned={markSigned} onClientSigned={markClientSigned} onReplied={(j) => myStatus(j, "in_progress")} onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} onPayroll={() => go("payroll")}
           statusEl={(j) => <StatusSelect j={j} />} askedBy={askedBy}>
           {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
             onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })} onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")}
@@ -1168,7 +1176,7 @@ export default function Workspace({ me }: { me: Profile }) {
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
           onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered}
-          onComplete={(j) => setModal({ kind: "submit", job: j })} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onReplied={(j) => myStatus(j, "in_progress")} />;
+          onComplete={(j) => setModal({ kind: "submit", job: j })} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onClientSigned={markClientSigned} onReplied={(j) => myStatus(j, "in_progress")} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}

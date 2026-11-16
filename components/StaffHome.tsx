@@ -2,7 +2,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Job, JobTimer } from "@/lib/types";
-import { ST, daysFrom, fmtDate, svcLabel, todayISO } from "@/lib/domain";
+import { ST, daysFrom, fmtDate, svcLabel, todayISO, isSigned } from "@/lib/domain";
 
 type SB = ReturnType<typeof createClient>;
 const WEEK_TARGET = 6 * 8.25;
@@ -18,11 +18,11 @@ type Kind = "all" | "overdue" | "iq" | "review" | "sign" | "notes";
 
 /** Staff home: today's log-in and suggested log-out, this month's numbers, and the task list, most urgent first. */
 export default function StaffHome({ supabase, meId, firstName, jobs, closedThisMonth, closedLastMonth, running, busy, clientLine, personName, wasStarted,
-  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, children }: {
+  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, children }: {
   supabase: SB; meId: string; firstName: string; jobs: Job[]; closedThisMonth: number; closedLastMonth: number; running: JobTimer | null; busy: boolean;
   clientLine: (j: Job) => [string, string]; personName: (id: string | null) => string; wasStarted: (j: Job) => boolean;
   onOpen: (j: Job) => void; onStart: (j: Job) => void; onStop: () => void; onApprove: (j: Job) => void; onSendBack: (j: Job) => void;
-  onSentForSign: (j: Job) => void; onSigned: (j: Job) => void; onReplied: (j: Job) => void; onAnswer: (j: Job) => void; onPayroll: () => void;
+  onSentForSign: (j: Job) => void; onSigned: (j: Job) => void; onClientSigned?: (j: Job) => void; onReplied: (j: Job) => void; onAnswer: (j: Job) => void; onPayroll: () => void;
   statusEl: (j: Job) => ReactNode; children?: ReactNode;
   /** Jobs with an internal query raised to me and not answered yet: job id → who asked. */
   askedBy?: Map<string, string | null>;
@@ -103,7 +103,8 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
       <button type="button" disabled={busy} onClick={() => onSendBack(j)}>Send back</button>
       <button type="button" className="primary" disabled={busy} onClick={() => onApprove(j)}>{j.needs_signature === false ? "Approve & complete" : "Approve"}</button></>}</>;
     if (j.status === "to_lodge") return <>{timer(j)}<button type="button" className="primary" disabled={busy} onClick={() => onSentForSign(j)}>Sent for signing</button></>;
-    if (j.status === "sent_for_sign") return <button type="button" className="primary" disabled={busy} onClick={() => onSigned(j)}>Client signed</button>;
+    if (j.status === "sent_for_sign") return isSigned(j) ? <button type="button" className="primary" disabled={busy} onClick={() => onSigned(j)}>Lodged</button>
+      : <button type="button" className="primary" disabled={busy} onClick={() => (onClientSigned ?? onSigned)(j)}>Client signed</button>;
     if (j.status === "client_query") return <button type="button" className="primary" disabled={busy} onClick={() => onReplied(j)}>Client replied</button>;
     if (j.status === "internal_query" && j.assignee_id !== meId) return <span className="pill danger">Away</span>;
     if (j.status === "internal_query" && j.query_from) return <>{timer(j)}<button type="button" disabled={busy} onClick={() => onAnswer(j)}>Send back</button></>;

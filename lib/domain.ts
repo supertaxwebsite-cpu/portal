@@ -41,6 +41,10 @@ export const STATUSES: Status[] = [
 ];
 export const ST: Record<string, Status> = Object.fromEntries(STATUSES.map((s) => [s.id, s]));
 export const isOpen = (status: string) => ST[status]?.open !== false;
+/** Client signed but not lodged yet: the job stays Sent for sign, with this far-future reminder time
+ *  so no more "client hasn't signed" reminders go out. The Lodge step then closes it. */
+export const SIGNED_MARK = "2999-12-31T00:00:00.000Z";
+export const isSigned = (j: { status: string; sign_reminded_at?: string | null }) => j.status === "sent_for_sign" && !!j.sign_reminded_at && j.sign_reminded_at.startsWith("2999");
 
 export const ENTITIES = ["Individual", "Sole trader", "Company", "Trust", "Partnership", "SMSF", "Other"];
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

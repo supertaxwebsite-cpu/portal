@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Job, JobTimer, StatusId } from "@/lib/types";
-import { STATUSES, ST, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, daysFrom, fmtDate, svcLabel } from "@/lib/domain";
+import { STATUSES, ST, STAFF_CANT_PICK, SUBMITTED_LOCK_MSG, staffSubmittedLock, daysFrom, fmtDate, svcLabel, isSigned } from "@/lib/domain";
 import { dateOf, isLink, timeOf, type Meeting } from "./Meetings";
 
 export const fmtHours = (h: number) => { const m = Math.max(1, Math.round(h * 60)); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
@@ -15,7 +15,7 @@ function Due({ date }: { date: string | null }) {
 }
 
 /** The signed-in person's open jobs, with Start / Stop, status and Submit for review. */
-export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onSentForSign, onFollowedUp, onHandSign, onComplete, onAnswer, onOpen, onSeeAll, title = "My jobs" }: {
+export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDone, myId, personName, running, clientName, reviewerName, busy, onStart, onStop, onStatus, onSubmit, wasStarted, onApprove, onSendBack, onPayroll, isStaff, onOpenClient, onSigned, onClientSigned, onSentForSign, onFollowedUp, onHandSign, onComplete, onAnswer, onOpen, onSeeAll, title = "My jobs" }: {
   title?: string;
   jobs: Job[];
   meetings?: Meeting[];
@@ -42,6 +42,7 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
   onFollowedUp?: (j: Job) => void;
   onOpenClient?: (id: string) => void;
   onSigned?: (j: Job) => void;
+  onClientSigned?: (j: Job) => void;
   onSentForSign?: (j: Job) => void;
   onOpen: (j: Job) => void;
   onSeeAll: () => void;
@@ -99,7 +100,8 @@ export default function MyJobs({ jobs, meetings = [], onOpenMeeting, onMeetingDo
                   <button disabled={busy} onClick={onStop}>Stop</button>
                 </> : <button disabled={busy} onClick={() => onStart(j)} title="Time goes to your timesheet">Start</button>}
                 {onHandSign ? <button disabled={busy} onClick={() => onHandSign(j)} title="Give the signing follow-up to a team member">Hand to…</button> : null}
-                <button className="primary" disabled={busy} onClick={() => onSigned?.(j)}>Client signed, mark lodged</button>
+                {isSigned(j) ? <button className="primary" disabled={busy} onClick={() => onSigned?.(j)} title="Lodged with the ATO: close the job">Lodged</button>
+                  : <button className="primary" disabled={busy} onClick={() => (onClientSigned ?? onSigned)?.(j)}>Client signed</button>}
               </div> : cq ? <div className="row actions">
                 {cqDays >= 2 && onFollowedUp ? <button disabled={busy} onClick={() => onFollowedUp(j)}>Followed up, remind me in 2 days</button> : null}
                 <button className="primary" disabled={busy} onClick={() => onStatus(j, "in_progress")}>Client replied, back to work</button>
