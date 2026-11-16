@@ -304,7 +304,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
         {dayLeave ? <><span className="pill info">On {leaveLabel(dayLeave.kind).toLowerCase()}{dayLeave.part !== "full" ? ` (${dayLeave.part === "am" ? "morning" : "afternoon"})` : ""}</span> · </> : null}{myDayAtt.length ? <>Logged in {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No log-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
       </p>
       <div className="tablebox solo" style={{ margin: 12 }}>
-        <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>What you did</th><th></th></tr></thead>
+        <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th style={{ minWidth: 280 }}>What you did (detail comment)</th><th></th></tr></thead>
           <tbody>
             {myDay.map((e) => <EntryRow key={e.id} e={e} locked={!dayOpen} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
             {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">{dayFuture ? "This day hasn't happened yet, so no time can be added." : dayLeave && dayLeave.part === "full" ? "You're on leave this day, so no time can be added." : "Nothing was recorded for this day."}</td></tr> : null}
@@ -560,6 +560,8 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
         <div className="panel b-danger"><span className="val">{n1(leaveTaken)}{leaveAhead ? <small> + {n1(leaveAhead)} booked</small> : null}</span><span className="lbl">Leave days this month</span></div>
       </div>
 
+      <div id="ts-dayjobs" style={{ marginBottom: 16 }}>{dayEl}</div>
+
       <div className="mtsgrid">
         <div className="section">
           <div className="panel">
@@ -612,7 +614,6 @@ function MyTimesheet({ me, supabase, embedded, month, setMonth, att, entries, le
             </div>
           </div>
 
-          <div id="ts-dayjobs">{dayEl}</div>
         </div>
 
         <div className="section">
@@ -712,8 +713,10 @@ function EntryRow({ e, day, locked, userId, clients, jobs, supabase, say, onSave
       <td><select aria-label="Job" value={v.job_id} onChange={(x) => setV({ ...v, job_id: x.target.value })} disabled={!v.client_id} style={{ maxWidth: 170 }}>
         <option value="">—</option>{clientJobs.map((j) => <option key={j.id} value={j.id}>{svcLabel(j.service)} · {j.period}</option>)}</select></td>
       <td style={{ textAlign: "right" }}><input aria-label="Hours" type="number" min="0.25" max="24" step="0.25" value={v.hours} onChange={(x) => setV({ ...v, hours: x.target.value })} style={{ width: 72 }} /></td>
-      <td><input aria-label="What you did" value={v.description} onChange={(x) => setV({ ...v, description: x.target.value })} style={{ minWidth: 160, width: "100%" }}
-        onKeyDown={(x) => { if (x.key === "Enter" && dirty) save(); }} /></td>
+      <td><textarea aria-label="What you did" rows={Math.min(6, Math.max(2, v.description.split("\n").length))} value={v.description} onChange={(x) => setV({ ...v, description: x.target.value })}
+        placeholder="Detail comment: what you did on this job, what is left, anything to follow up" style={{ minWidth: 260, width: "100%", resize: "vertical", font: "inherit" }}
+        onKeyDown={(x) => { if (x.key === "Enter" && !x.shiftKey && dirty) { x.preventDefault(); save(); } }} />
+        <span className="note" style={{ fontSize: 11 }}>Enter to save · Shift+Enter for a new line</span></td>
       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
         {dirty ? <button type="button" className={e ? undefined : "primary"} disabled={busy} onClick={save}>{e ? "Save" : "Add"}</button> : null}
         {e ? <button type="button" className="link" onClick={() => { setEditing(false); setV({ client_id: e.client_id ?? "", job_id: e.job_id ?? "", hours: String(e.hours), description: e.description }); }} style={{ marginLeft: 6 }}>Cancel</button> : null}
