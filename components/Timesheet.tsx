@@ -304,9 +304,11 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
         {dayLeave ? <><span className="pill info">On {leaveLabel(dayLeave.kind).toLowerCase()}{dayLeave.part !== "full" ? ` (${dayLeave.part === "am" ? "morning" : "afternoon"})` : ""}</span> · </> : null}{myDayAtt.length ? <>Logged in {myDayAtt.map((a) => `${time(a.clock_in)}–${a.clock_out ? time(a.clock_out) : "now"}`).join(", ")} · {hm(myDayAtt.reduce((s, a) => s + mins(a, now), 0))}</> : "No log-in this day."} · Timesheet <strong>{hrs(myHours)}</strong>
       </p>
       <div className="tablebox solo" style={{ margin: 12 }}>
-        <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th style={{ minWidth: 280 }}>What you did (detail comment)</th><th></th></tr></thead>
+        <table id="my-entries"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th style={{ minWidth: 280 }}>Timer times and comment</th><th></th></tr></thead>
           <tbody>
-            {myDay.map((e) => <EntryRow key={e.id} e={e} locked={!dayOpen} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
+            {dayLines(myDay).map((g) => g.length === 1 && !timerParts(g[0])
+              ? <EntryRow key={g[0].id} e={g[0]} locked={!dayOpen} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />
+              : <TimerLine key={g[0].id} list={g} locked={!dayOpen} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
             {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">{dayFuture ? "This day hasn't happened yet, so no time can be added." : dayLeave && dayLeave.part === "full" ? "You're on leave this day, so no time can be added." : "Nothing was recorded for this day."}</td></tr> : null}
             {dayOpen ? <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} /> : null}
           </tbody></table>
@@ -723,4 +725,72 @@ function EntryRow({ e, day, locked, userId, clients, jobs, supabase, say, onSave
       </td>
     </tr>
   );
+}
+
+/** A timer line: "Preparing for signing, timer 4:05pm to 4:06pm IST", then the person's comment on the lines below. */
+const TIMER_RE = /^(.*?\btimer (\d{1,2}:\d{2}[ap]m)(?: to (\d{1,2}:\d{2}[ap]m))?(?: IST)?(, stopped automatically at midnight \(forgot to stop\))?)(.*)$/i;
+function timerParts(e: TimeEntry) {
+  if (!e.job_id) return null;
+  const [first, ...rest] = (e.description || "").split("\n");
+  const m = TIMER_RE.exec(first);
+  if (!m) return null;
+  const label = first.slice(0, first.toLowerCase().indexOf("timer ")).replace(/[,\s]+$/, "");
+  const extra = m[5].replace(/^[\s,.:;\u2013-]+/, "").trim();
+  const comment = [extra, ...rest].join("\n").trim();
+  return { head: m[1], start: m[2], end: m[3] ?? (m[4] ? "midnight (auto stop)" : ""), label, comment };
+}
+/** One line per job for the day: every start/stop of the timer on a job goes on the same line. Hand-added lines stay as they are. */
+function dayLines(list: TimeEntry[]): TimeEntry[][] {
+  const out: TimeEntry[][] = [];
+  const byJob = new Map<string, TimeEntry[]>();
+  for (const e of list) {
+    if (!timerParts(e)) { out.push([e]); continue; }
+    const g = byJob.get(e.job_id!);
+    if (g) g.push(e); else { const n = [e]; byJob.set(e.job_id!, n); out.push(n); }
+  }
+  return out;
+}
+
+function TimerLine({ list, locked, clients, jobs, supabase, say, onSaved }: {
+  list: TimeEntry[]; locked: boolean; clients: Client[]; jobs: Job[]; supabase: SB; say: (m: string, er?: boolean) => void; onSaved: () => void;
+}) {
+  const parts = list.map((e) => ({ e, p: timerParts(e)! }));
+  const comment = parts.map((x) => x.p.comment).filter(Boolean).join("\n");
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(comment);
+  const [busy, setBusy] = useState(false);
+  const c = clients.find((x) => x.id === list[0].client_id);
+  const j = jobs.find((x) => x.id === list[0].job_id);
+  const total = list.reduce((s, e) => s + Number(e.hours), 0);
+  async function save() {
+    setBusy(true);
+    // The comment sits under the first timer of the day; the timer times themselves never change.
+    const t = text.trim();
+    const writes = parts.map(({ e, p }, i) => {
+      const want = i === 0 && t ? `${p.head}\n${t}` : p.head;
+      return want === e.description ? null : supabase.from("timesheet_entries").update({ description: want }).eq("id", e.id);
+    }).filter(Boolean);
+    const res = await Promise.all(writes);
+    setBusy(false);
+    const bad = res.find((r) => r && r.error);
+    if (bad && bad.error) { say(`Not saved: ${bad.error.message}`, true); return; }
+    say("Comment saved");
+    setEditing(false);
+    onSaved();
+  }
+  return <tr className="tsline">
+    <td>{c?.name ?? "General / admin"}</td><td>{j ? `${svcLabel(j.service)} · ${j.period}` : "—"}</td>
+    <td className="mono" style={{ textAlign: "right" }}>{Number(total.toFixed(2))} h</td>
+    <td>
+      <div className="tsess" title="Timer start and stop times can't be changed">{parts.map(({ e, p }) => <span key={e.id} className="tchip">🔒 {p.start}{p.end ? `–${p.end}` : ""}{p.label ? ` · ${p.label}` : ""}<i>{Number(Number(e.hours).toFixed(2))}h</i></span>)}</div>
+      {editing ? <><textarea aria-label="Comment" autoFocus rows={Math.min(6, Math.max(2, text.split("\n").length))} value={text} onChange={(x) => setText(x.target.value)}
+          placeholder="Comment: what you did on this job, what is left, anything to follow up" style={{ width: "100%", resize: "vertical", font: "inherit", marginTop: 6 }}
+          onKeyDown={(x) => { if (x.key === "Enter" && !x.shiftKey) { x.preventDefault(); save(); } if (x.key === "Escape") { setEditing(false); setText(comment); } }} />
+        <span className="note" style={{ fontSize: 11 }}>Enter to save · Shift+Enter for a new line</span></>
+        : comment ? <div className="tcomment">{comment}</div> : <div className="note tcomment">{locked ? "No comment" : "No comment yet"}</div>}
+    </td>
+    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{locked ? null : editing
+      ? <><button type="button" className="primary" disabled={busy} onClick={save}>Save</button><button type="button" className="link" style={{ marginLeft: 6 }} onClick={() => { setEditing(false); setText(comment); }}>Cancel</button></>
+      : <button type="button" className="link" onClick={() => { setText(comment); setEditing(true); }}>{comment ? "Edit comment" : "Add comment"}</button>}</td>
+  </tr>;
 }
