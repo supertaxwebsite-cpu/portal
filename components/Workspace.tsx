@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { createClient } from "@/lib/supabase/client";
 import type { Client, ClientLink, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import { periodOptions, clientUpcoming,
-  ENTITIES, PRACTICES, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
+  ENTITIES, PRACTICES, practicesFor, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
   isSigned, SIGNED_MARK,
@@ -1486,9 +1486,9 @@ function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACT
         {quick ? <div className="full quickclient">
           <strong>New client</strong>
           <div className="qrow">
-            <label className="f">Practice<select id="qc-practice" value={quick.practice} disabled={practices.length === 1} onChange={(e) => setQuick({ ...quick, practice: e.target.value })}>{practices.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
+            <label className="f">Practice<select id="qc-practice" value={quick.practice} disabled={practices.length === 1} onChange={(e) => setQuick({ ...quick, practice: e.target.value })}>{[...new Set([...practicesFor(quick.entity, practices), quick.practice])].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
             <label className="f">Name<input id="qc-name" autoFocus value={quick.name} onChange={(e) => { setQuick({ ...quick, name: e.target.value }); setQuickDupes(null); }} placeholder="e.g. Sahej Logistics Pty Ltd" /></label>
-            <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => setQuick({ ...quick, entity: e.target.value })}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
+            <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => { const entity = e.target.value; setQuick({ ...quick, entity, practice: practicesFor(entity, practices).includes(quick.practice) ? quick.practice : (practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practicesFor(entity, practices)[0] ?? DEFAULT_PRACTICE) }); }}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
             <label className="f">ABN<input id="qc-abn" value={quick.abn} onChange={(e) => { setQuick({ ...quick, abn: e.target.value }); setQuickDupes(null); }} placeholder="Optional" inputMode="numeric" /></label>
           </div>
           {quickDupes?.length ? <div className="dupwarn" role="alert">
@@ -1647,14 +1647,14 @@ function ClientModal({ client, practices = [...PRACTICES], clients, team, canDel
     <Overlay onClose={onClose}><form className="modal" onSubmit={submit}>
       <header><h2>{client ? "Edit client" : "Add client"}</h2><button type="button" onClick={onClose}>Close</button></header>
       <div className="body">
-        <label className="f full">Practice{practices.length === 1 ? <span className="hint"> · you can add clients for {practices[0]} only</span> : null}<select id="c-practice" value={v.practice} disabled={practices.length === 1 && v.practice === practices[0]} onChange={set("practice")}>{[...new Set([...practices, ...(client ? [v.practice] : [])])].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
+        <label className="f full">Practice{practices.length === 1 ? <span className="hint"> · you can add clients for {practices[0]} only</span> : null}<select id="c-practice" value={v.practice} disabled={practices.length === 1 && v.practice === practices[0]} onChange={set("practice")}>{[...new Set([...practicesFor(v.entity, practices), v.practice])].map((p) => <option key={p} value={p}>{p}</option>)}</select>{v.entity === "SMSF" ? <span className="hint">SMSF funds can also belong to Makari &amp; Company, Prosperity or J &amp; C Accountant</span> : null}</label>
         <label className="f full">Client name<input id="c-name" required value={v.name} onChange={set("name")} placeholder="e.g. Harbourside Plumbing Pty Ltd" /></label>
         {dupes?.length ? <div className="full dupwarn" role="alert">
           <strong>This client may already exist</strong>
           <ul>{dupes.map((d) => <li key={d.client.id}>{d.client.name}{d.client.abn ? <span className="note"> · ABN {d.client.abn}</span> : null} <span className="pill warn">{d.why}</span></li>)}</ul>
           <span className="note">Check it isn&apos;t the same client. If it&apos;s a different one, click {client ? "Save anyway" : "Yes, add anyway"}.</span>
         </div> : null}
-        <label className="f">Entity type<select id="c-entity" value={v.entity} onChange={set("entity")}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
+        <label className="f">Entity type<select id="c-entity" value={v.entity} onChange={(e) => { const entity = e.target.value; setV((x) => ({ ...x, entity, practice: practicesFor(entity, practices).includes(x.practice) ? x.practice : (practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practicesFor(entity, practices)[0] ?? DEFAULT_PRACTICE) })); }}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
         <label className="f">ABN<input id="c-abn" inputMode="numeric" value={v.abn} onChange={set("abn")} placeholder="11 digits" /></label>
         <label className="f">Contact person<input id="c-contact" value={v.contact} onChange={set("contact")} /></label>
         <label className="f">Manager<select id="c-manager" value={v.manager_id} onChange={set("manager_id")}><option value="">No manager</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>

@@ -3191,3 +3191,11 @@ alter table public.notifications add constraint notifications_kind_check
                   'leave_request', 'leave_decided', 'leave_cancelled', 'client_email'));
 
 notify pgrst, 'reload schema';
+
+-- ---------- SMSF practices (Makari & Company, Prosperity, J & C Accountant) ----------
+alter table public.clients drop constraint if exists clients_practice_check;
+alter table public.clients add constraint clients_practice_check
+  check (practice in ('Supertax', 'Titantax', 'Workpaper', 'Monarch Accounting', 'Makari & Company', 'Prosperity', 'J & C Accountant'));
+alter table public.prospects drop constraint if exists prospects_practice_check;
+alter table public.prospects add constraint prospects_practice_check
+  check (practice in ('Supertax', 'Titantax', 'Workpaper', 'Monarch Accounting', 'Makari & Company', 'Prosperity', 'J & C Accountant'));

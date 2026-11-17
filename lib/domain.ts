@@ -279,7 +279,11 @@ export function staffSubmittedLock(j: { status: string; reviewer_id?: string | n
 export const SUBMITTED_LOCK_MSG = "Submitted for review. Only the reviewer can change the status now, unless they send it back to you.";
 
 /** The practices we manage clients for. Every client belongs to one. */
-export const PRACTICES = ["Supertax", "Titantax", "Workpaper", "Monarch Accounting"] as const;
+export const PRACTICES = ["Supertax", "Titantax", "Workpaper", "Monarch Accounting", "Makari & Company", "Prosperity", "J & C Accountant"] as const;
+/** Practices we only do SMSF work for: offered only for SMSF clients. */
+export const SMSF_PRACTICES: readonly string[] = ["Makari & Company", "Prosperity", "J & C Accountant"];
+/** The practices a client of this entity type can belong to. */
+export const practicesFor = (entity: string, list: readonly string[]) => list.filter((p) => entity === "SMSF" || !SMSF_PRACTICES.includes(p));
 export const DEFAULT_PRACTICE = "Supertax";
 export const practiceOf = (c?: { practice?: string | null } | null) => c?.practice || DEFAULT_PRACTICE;
 
