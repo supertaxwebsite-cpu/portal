@@ -97,6 +97,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [from, setFrom] = useState(monday());
   const [to, setTo] = useState(todayISO());
   const [who, setWho] = useState("");
+  const [tday, setTday] = useState(todayISO()); // Team timesheets: the day shown
+  const [twho, setTwho] = useState("");
   const [att, setAtt] = useState<Attendance[]>([]);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [now, setNow] = useState(Date.now());
@@ -107,7 +109,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const [leaves, setLeaves] = useState<LeaveReq[]>([]);
   const [leaveMissing, setLeaveMissing] = useState(false);
 
-  const [tab, setTab] = useState<"grid" | "cal" | "req" | "log" | "mine">(startTab === "req" && canSeeTeam ? "req" : startTab === "mine" ? "mine" : canSeeTeam ? "grid" : "mine");
+  const [tab, setTab] = useState<"grid" | "team" | "cal" | "req" | "log" | "mine">(startTab === "req" && canSeeTeam ? "req" : startTab === "mine" ? "mine" : canSeeTeam ? "grid" : "mine");
   const [gm, setGm] = useState(todayISO().slice(0, 7));
   const [adding, setAdding] = useState(false);
   const [mm, setMm] = useState(todayISO().slice(0, 7)); // My timesheet month
@@ -115,8 +117,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
   const monthStart = todayISO().slice(0, 8) + "01";
   const gDays = monthDays(gm);
   const gStart = gDays[0], gEnd = gDays[gDays.length - 1];
-  const lo = [day, from, monthStart, mmDays[0], ...(canSeeTeam ? [gStart] : [])].sort()[0];
-  const hi = [day, to, mmDays[mmDays.length - 1], ...(canSeeTeam ? [gEnd] : [])].sort().pop()!;
+  const lo = [day, tday, from, monthStart, mmDays[0], ...(canSeeTeam ? [gStart] : [])].sort()[0];
+  const hi = [day, tday, to, mmDays[mmDays.length - 1], ...(canSeeTeam ? [gEnd] : [])].sort().pop()!;
   const yearStart = `${todayISO().slice(0, 4)}-01-01`;
   const load = useCallback(async () => {
     const [a, e] = await Promise.all([
@@ -359,6 +361,59 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
           ) : null}
     </>
   );
+  // ----- team timesheets: one day, each person with their jobs on one line each -----
+  const tPeople = visible.filter((p) => (!twho || p.id === twho) && p.active !== false);
+  const tDays = new Map(buildDays(att, entries, tPeople, tday, tday, now, overrides, requests, leaves).map((d) => [d.user, d]));
+  const tCards = tPeople.map((p) => ({ p, d: tDays.get(p.id), list: entries.filter((e) => e.user_id === p.id && e.work_date === tday) }))
+    .sort((a, b) => Number(!!b.d?.first || b.list.length > 0) - Number(!!a.d?.first || a.list.length > 0) || a.p.full_name.localeCompare(b.p.full_name));
+  const tTotal = tCards.reduce((s, c) => s + c.list.reduce((x, e) => x + Number(e.hours), 0), 0);
+  const tIn = tCards.reduce((s, c) => s + (c.d?.m ?? 0), 0);
+  const tRun = (uid: string) => timers.find((t) => t.user_id === uid && !t.ended_at);
+  const shiftDay = (n: number) => { const v = addDays(tday, n); if (v <= todayISO()) setTday(v); };
+  const teamDayEl = (
+    <>
+      <div className="toolbar tdaybar">
+        <button type="button" aria-label="Previous day" onClick={() => shiftDay(-1)}>‹</button>
+        <input type="date" id="td-day" value={tday} max={todayISO()} onChange={(e) => e.target.value && setTday(e.target.value > todayISO() ? todayISO() : e.target.value)} />
+        <button type="button" aria-label="Next day" disabled={tday >= todayISO()} onClick={() => shiftDay(1)}>›</button>
+        {tday !== todayISO() ? <button type="button" className="link" onClick={() => setTday(todayISO())}>Today</button> : null}
+        <select aria-label="Person" value={twho} onChange={(e) => setTwho(e.target.value)}><option value="">Everyone</option>{visible.filter((p) => p.active !== false).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>
+        <span className="row" style={{ marginLeft: "auto", gap: 6 }}><span className="pill info">Timesheet {hrs(tTotal)}</span><span className="pill">Logged in {hm(tIn)}</span>{tIn ? <span className="pill ok">{Math.round((tTotal * 60 / tIn) * 100)}% on jobs</span> : null}</span>
+      </div>
+      {!tCards.length ? <div className="panel"><div className="empty"><strong>Nobody to show.</strong>Pick another person.</div></div> : tCards.map(({ p, d, list }) => {
+        const lines = dayLines(list);
+        const h = list.reduce((x, e) => x + Number(e.hours), 0);
+        const run = tday === todayISO() ? tRun(p.id) : undefined;
+        const runJob = run ? jobs.find((j) => j.id === run.job_id) : undefined;
+        return (
+          <div key={p.id} className="panel tdcard">
+            <div className="tdhead">
+              <div><strong>{p.full_name}</strong>{p.title ? <span className="note"> · {p.title}</span> : null}</div>
+              <div className="tdmeta">
+                {d?.first ? <span>In <b>{time(d.first, d.office)}</b></span> : null}
+                {d?.first ? <span>Out <b>{d.open ? (tday === todayISO() ? "still in" : "not logged out") : d.auto ? "auto" : time(d.last, d.office) || "—"}</b></span> : null}
+                {d?.m ? <span>Logged in <b>{hm(d.m)}</b></span> : null}
+                <span>Timesheet <b>{hrs(h)}</b></span>
+                {d?.m ? <span>On jobs <b>{Math.round((h * 60 / d.m) * 100)}%</b></span> : null}
+                {d ? <Status d={d} /> : <span className="pill">No log-in</span>}
+              </div>
+            </div>
+            {run ? <div className="tdrun">▶ Timer running now on <b>{clientName(runJob?.client_id ?? null) || "a job"}</b>{runJob ? ` · ${svcLabel(runJob.service)} ${runJob.period}` : ""} since {time(run.started_at)}</div> : null}
+            {!lines.length ? <div className="note" style={{ padding: "10px 16px 14px" }}>No timesheet lines for this day.</div> : (
+              <div style={{ overflowX: "auto" }}><table className="tdtable"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>Timer times and comment</th></tr></thead>
+                <tbody>{lines.map((g) => {
+                  const ps = g.map((e) => ({ e, t: timerParts(e) }));
+                  const comment = ps.map(({ e, t }) => (t ? t.comment : e.description)).filter(Boolean).join("\n");
+                  return <tr key={g[0].id}><td>{clientName(g[0].client_id) || "General / admin"}</td><td>{jobLabel(g[0].job_id) || "—"}</td>
+                    <td className="mono" style={{ textAlign: "right" }}>{hrs(g.reduce((x, e) => x + Number(e.hours), 0))}</td>
+                    <td>{ps.some((x) => x.t) ? <div className="tsess">{ps.map(({ e, t }) => t ? <span key={e.id} className="tchip">🔒 {t.start}{t.end ? `–${t.end}` : ""}{t.label ? ` · ${t.label}` : ""}<i>{Number(Number(e.hours).toFixed(2))}h</i></span> : null)}</div> : <span className="pill">Added by hand</span>}
+                      {comment ? <div className="tcomment">{comment}</div> : <div className="note tcomment">No comment</div>}</td></tr>;
+                })}</tbody>
+                <tfoot><tr className="tstotal"><td colSpan={2}>Total</td><td className="mono" style={{ textAlign: "right" }}>{hrs(h)}</td><td className="note">{hm(h * 60)} across {lines.length} line{lines.length === 1 ? "" : "s"}</td></tr></tfoot></table></div>)}
+          </div>);
+      })}
+    </>
+  );
   const monthLabel = new Date(`${gm}-01T00:00:00`).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
 
   return (
@@ -371,7 +426,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
           <button type="button" onClick={() => setAdding(!adding)}>+ Add leave for someone</button>
         </div>
       </div>
-      <div className="quickpills">{([["grid", "Month grid", 0], ["cal", "Leave calendar", 0], ["req", "Requests", reqCount], ["log", "Day by day", 0], ["mine", "My own timesheet", 0]] as [typeof tab, string, number][]).map(([k, l, n]) => (
+      <div className="quickpills">{([["grid", "Month grid", 0], ["team", "Team timesheets", 0], ["cal", "Leave calendar", 0], ["req", "Requests", reqCount], ["log", "Day by day", 0], ["mine", "My own timesheet", 0]] as [typeof tab, string, number][]).map(([k, l, n]) => (
         <button key={k} type="button" className={tab === k ? "on" : undefined} onClick={() => setTab(k)}>{l}{n ? <i className="hot">{n}</i> : null}</button>))}</div>
       {adding ? <AddLeave people={team.filter((p) => canApproveLeave(p.id))} supabase={supabase} meId={me.id} say={say} onDone={() => { setAdding(false); load(); }} /> : null}
       {tab === "grid" ? <>
@@ -393,6 +448,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
       {tab === "req" ? <>
         <Approvals me={me} people={team} leaves={leaves} requests={requests} att={att} canApprove={canApproveLeave} onLeave={decideLeave} onLate={decide} />
       </> : null}
+      {tab === "team" ? teamDayEl : null}
       {tab === "log" ? logEl : null}
       {tab === "mine" ? mineEl : null}
     </>

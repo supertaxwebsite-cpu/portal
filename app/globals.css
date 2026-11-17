@@ -922,3 +922,15 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .tchip i { font-style: normal; font-weight: 600; color: inherit; opacity: .8; }
 .tcomment { margin-top: 6px; white-space: pre-wrap; }
 .tstotal td { font-weight: 700; border-top: 2px solid var(--line); background: var(--surface-2); }
+/* Team timesheets: one card per person for the chosen day */
+.tdaybar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.tdcard { margin-bottom: 14px; padding: 0; overflow: hidden; }
+.tdhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.tdhead strong { font-size: 16px; }
+.tdmeta { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.tdmeta b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.tdrun { padding: 8px 16px; font-size: 13px; color: var(--ok); border-bottom: 1px solid var(--line); }
+.tdtable { width: 100%; }
+.tdtable td, .tdtable th { vertical-align: top; }
+.tdtable { table-layout: fixed; min-width: 760px; }
+.tdtable th:nth-child(1) { width: 24%; } .tdtable th:nth-child(2) { width: 22%; } .tdtable th:nth-child(3) { width: 90px; }
