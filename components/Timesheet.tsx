@@ -311,7 +311,8 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
               : <TimerLine key={g[0].id} list={g} locked={!dayOpen} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} />)}
             {!dayOpen && !myDay.length ? <tr><td colSpan={5} className="note">{dayFuture ? "This day hasn't happened yet, so no time can be added." : dayLeave && dayLeave.part === "full" ? "You're on leave this day, so no time can be added." : "Nothing was recorded for this day."}</td></tr> : null}
             {dayOpen ? <EntryRow key={`new-${day}-${myDay.length}`} day={day} userId={me.id} clients={clients} jobs={jobs} supabase={supabase} say={say} onSaved={load} /> : null}
-          </tbody></table>
+          </tbody>
+          {myDay.length ? <tfoot><tr className="tstotal"><td colSpan={2}>Total for {fmtDate(day)}</td><td className="mono" style={{ textAlign: "right" }}>{hrs(myHours)}</td><td className="note">{hm(myHours * 60)} across {dayLines(myDay).length} line{dayLines(myDay).length === 1 ? "" : "s"}</td><td /></tr></tfoot> : null}</table>
       </div>
       {dayLeave && dayLeave.part !== "full" && dayOpen ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>Half day leave: add only the hours you worked (about 4h).</p> : null}
       {!dayOpen && !dayFuture && !(dayLeave && dayLeave.part === "full") ? <p className="note" style={{ padding: "0 14px 12px", margin: 0 }}>🔒 Previous days are locked and can&apos;t be changed. Ask your manager if something needs correcting.</p> : null}

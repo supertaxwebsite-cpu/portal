@@ -921,3 +921,4 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .tchip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tchip i { font-style: normal; font-weight: 600; color: inherit; opacity: .8; }
 .tcomment { margin-top: 6px; white-space: pre-wrap; }
+.tstotal td { font-weight: 700; border-top: 2px solid var(--line); background: var(--surface-2); }
