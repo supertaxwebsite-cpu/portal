@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import Workspace from "@/components/Workspace";
+import ViewAsRoot from "@/components/ViewAsRoot";
 import type { Profile } from "@/lib/types";
 import AuthCard from "@/components/AuthCard";
 import SignOutButton from "@/components/SignOutButton";
@@ -20,5 +20,5 @@ export default async function Home() {
     );
   }
   if (me.must_change_password) redirect("/change-password");
-  return <Workspace me={me as Profile} />;
+  return <ViewAsRoot me={me as Profile} />;
 }

@@ -11,6 +11,7 @@ import { periodOptions, clientUpcoming,
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import WorkGate from "./WorkGate";
+import { blockApiWrites, viewOnlyClient } from "@/lib/viewOnly";
 import JobBrief from "./JobBrief";
 import Reminders from "./Reminders";
 import UpdateBanner from "./UpdateBanner";
@@ -98,8 +99,16 @@ async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ da
 
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 
-export default function Workspace({ me }: { me: Profile }) {
-  const supabase = useMemo(() => createClient(), []);
+export default function Workspace({ me, viewer, onViewAs }: {
+  me: Profile;
+  /** Set when a master admin is viewing the portal as this person: everything is view only. */
+  viewer?: Profile;
+  /** Master admins: open the portal as this team member sees it. */
+  onViewAs?: (id: string) => void;
+}) {
+  const viewOnly = !!viewer;
+  const supabase = useMemo(() => (viewOnly ? viewOnlyClient(createClient()) : createClient()), [viewOnly]);
+  useEffect(() => (viewOnly ? blockApiWrites() : undefined), [viewOnly]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -233,7 +242,7 @@ export default function Workspace({ me }: { me: Profile }) {
   // A team leader picks assignees and reviewers from their own team, who can see the client's practice.
   // Staff and team leaders are signed out when the date changes where they work (the database closes their day at midnight).
   useEffect(() => {
-    if (me.role === "master") return;
+    if (me.role === "master" || viewOnly) return;
     const KEY = "supertax-ist-day";
     const office = officeOf(me);
     const istDay = () => localDay(office);
@@ -1146,7 +1155,7 @@ export default function Workspace({ me }: { me: Profile }) {
                 {p.role !== "master" ? chip(!!p.can_see_mgmt_notes, "Sees management notes") : chip(true, "Sees management notes")}
                 {chip(p.role === "master" || !!p.can_see_workload, "Sees team workload", isMaster && p.role !== "master" && p.active ? async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); } : undefined)}
               </div>
-              <div className="row">{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Edit</button> : null}<button onClick={() => gotoJobs({ assignee: p.id })}>View jobs</button></div>
+              <div className="row">{isMaster && p.id !== me.id ? <button onClick={() => setModal({ kind: "member", member: p })}>Edit</button> : null}{isMaster && onViewAs && p.id !== me.id && p.role !== "master" && p.active ? <button type="button" title={`Open the portal as ${p.full_name} sees it (view only)`} onClick={() => onViewAs(p.id)}>👁 View as</button> : null}<button onClick={() => gotoJobs({ assignee: p.id })}>View jobs</button></div>
             </div>); })}</div>
         {!isMaster && sorted.length <= 1 ? <p className="note">No team members are allocated to you yet. Ask for team members to be allocated to you.</p> : null}
         {isMaster ? <SignInCodePanel /> : null}
@@ -1171,7 +1180,7 @@ export default function Workspace({ me }: { me: Profile }) {
 
   if (!loaded) {
     return (
-      <Shell me={me} view={view} go={go} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab}>
+      <Shell me={me} viewOnly={viewOnly} view={view} go={go} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab}>
         <div className="panel empty"><strong>{loadError ? "The practice database did not answer." : "Loading your practice…"}</strong>{loadError ? `${loadError}. Reload the page to try again.` : "Clients, jobs and due dates appear here in a moment."}</div>
       </Shell>
     );
@@ -1195,8 +1204,8 @@ export default function Workspace({ me }: { me: Profile }) {
   }
 
   return (
-    <Shell me={me} view={view} go={navGo} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
-      <WorkGate supabase={supabase} meId={me.id} isStaff={me.role === "staff"} gate={me.role !== "master"} running={running} onTimesheet={view === "timesheet"} onMyJobs={() => navGo("overview")} say={say}>
+    <Shell me={me} viewOnly={viewOnly} view={view} go={navGo} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
+      <WorkGate supabase={supabase} meId={me.id} isStaff={me.role === "staff" && !viewOnly} gate={me.role !== "master" && !viewOnly} running={running} onTimesheet={view === "timesheet"} onMyJobs={() => navGo("overview")} say={say}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? (() => {
         const jp = jobPageId ? jobs.find((x) => x.id === jobPageId) : undefined;
@@ -1302,7 +1311,7 @@ function SignInCodePanel() {
 }
 
 /* ---------- layout ---------- */
-function Shell({ me, view, go, live, showTeam, showTeamTab = showTeam, bell, wide, badges, children }: { me: Profile; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; showTeamTab?: boolean; bell?: React.ReactNode; wide?: boolean; badges?: Partial<Record<View, number>>; children: React.ReactNode }) {
+function Shell({ me, view, go, live, showTeam, showTeamTab = showTeam, bell, wide, badges, viewOnly = false, children }: { me: Profile; viewOnly?: boolean; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; showTeamTab?: boolean; bell?: React.ReactNode; wide?: boolean; badges?: Partial<Record<View, number>>; children: React.ReactNode }) {
   const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeamTab ? [["team", "Team"] as [View, string]] : []), ...(showTeam ? [["meetings", "Meetings"] as [View, string]] : []), ...(me.role === "master" ? [["management", "Management"] as [View, string]] : [])];
   return (
     <>
@@ -1316,7 +1325,7 @@ function Shell({ me, view, go, live, showTeam, showTeamTab = showTeam, bell, wid
         })()}<small>Practice Desk</small></div>
         <nav className="tabs" aria-label="Sections">{tabs.map(([v, l]) => (
           <a key={v} href={`#${v}`} aria-current={view === v ? "page" : undefined} onClick={(e) => { e.preventDefault(); go(v); }}>{l}{badges?.[v] ? <span className="navbadge" title={`${badges[v]} follow-up${badges[v] === 1 ? "" : "s"} due`}>{badges[v]}</span> : null}</a>))}</nav>
-        <div className="userbox">{bell}<span><strong>{me.full_name}</strong></span><SignOutButton /></div>
+        <div className="userbox">{bell}<span><strong>{me.full_name}</strong></span>{viewOnly ? null : <SignOutButton />}</div>
       </div></header>
       <IdleSignOut />
       <UpdateBanner />

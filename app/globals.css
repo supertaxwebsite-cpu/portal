@@ -912,3 +912,7 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .noteslist .nhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
 .noteslist .nbody{white-space:pre-wrap;font-size:14px}
 .noteslist .nfix{margin-top:6px;font-size:13px;color:var(--muted);white-space:pre-wrap}
+.viewasbar{position:sticky;top:0;z-index:60;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;padding:8px 16px;background:#6d28d9;color:#fff;font-size:14px}
+.viewasbar .vo{opacity:.85}
+.viewasbar select{max-width:260px;color:var(--fg);background:var(--surface)}
+.viewasbar button.primary{background:#fff;color:#4c1d95;border-color:#fff}
