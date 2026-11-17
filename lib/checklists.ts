@@ -184,6 +184,19 @@ const PAYROLL = {
     "STP receipt and final payslips saved in Files",
   ],
 };
+/** Pay runs with no client approval: after Review come two steps, Super paid then STP lodged. */
+const PAYROLL_SUPER = [
+  "Super worked out for every employee in this pay run",
+  "Super paid through the clearing house",
+  "Paid in time to reach the funds within 7 days of payday",
+  "Super payment receipt saved in Files",
+];
+const PAYROLL_STP = [
+  "Pay run finalised and payslips emailed to employees",
+  "Bank payment (ABA) file or pay summary sent to the client to pay wages",
+  "STP pay event lodged with the ATO and accepted",
+  "STP receipt and final payslips saved in Files",
+];
 const TPAR = {
   proc: ["Industry checked: building, cleaning, courier, road freight, IT, security or government grants", "Contractor payments listed from the ledger", "ABNs checked on the ABN lookup, names and addresses correct", "Amounts paid include GST where charged", "Totals agree to the ledger", "TPAR prepared (due 28 August)"],
 };
@@ -236,7 +249,7 @@ export const KEY = { ir: (i: string) => `IR: ${i}`, review: (i: string) => `RV: 
 const plain = (k: string) => k.replace(/^N\/A: /, "");
 
 /** Every task's checklist for a job type. Jobs ticked against an older list keep that list. */
-export function taskLists(service: string, ticked: string[] = []) {
+export function taskLists(service: string, ticked: string[] = [], opts: { noSign?: boolean } = {}) {
   const t = TASKS[service] ?? {};
   const has = new Set(ticked.map(plain));
   let proc = CHECKLISTS[service] ?? [];
@@ -244,6 +257,7 @@ export function taskLists(service: string, ticked: string[] = []) {
   if (old && old.some((i) => has.has(i) && !proc.includes(i))) proc = old;
   let ir = t.ir ?? IR_DEFAULT;
   if (ir !== IR_DEFAULT && IR_DEFAULT.some((i) => has.has(KEY.ir(i)) && !ir.includes(i))) ir = IR_DEFAULT;
+  if (service === "payroll" && opts.noSign) return { ir, proc, review: t.review ?? REVIEW_DEFAULT, sign: PAYROLL_SUPER, lodge: PAYROLL_STP };
   return { ir, proc, review: t.review ?? REVIEW_DEFAULT, sign: t.sign ?? SIGN_DEFAULT, lodge: t.lodge ?? LODGE_DEFAULT };
 }
 /** Jobs done in steps: each step has its own checklist. */

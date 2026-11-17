@@ -43,7 +43,9 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const signed = isSigned(job);
   // Nothing to sign: once approved, the job skips Client signature and goes straight to Complete.
   const skipSign = job.needs_signature === false && job.status === "to_lodge";
-  const stage = !open ? 4 : signed || skipSign ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
+  // Pay runs with nothing to approve: after Review come Super paid, then STP lodged.
+  const payFlow = job.service === "payroll" && job.needs_signature === false;
+  const stage = !open ? 4 : payFlow && job.status === "to_lodge" ? (job.super_done_at ? 3 : 2) : signed || skipSign ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
   // Tick every 15 seconds while the timer runs here, so the clock and the totals stay live.
   const [now, setNow] = useState(() => Date.now());
@@ -61,8 +63,13 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
       : !wasStarted(job) ? "Not started yet: press Start processing"
       : `In progress · checklist ${prog.marked} of ${prog.total}${checklistDone ? ": ready to complete" : ""}` },
     { t: "Review", who: job.reviewer_id, s: stage > 1 ? "Approved" : stage === 1 ? "Reviewing now" : "Opens when preparation is sent to review" },
+    ...(payFlow ? [
+      { t: "Super paid", who: null, s: job.super_done_at ? `Confirmed ${fmtDate(job.super_done_at.slice(0, 10))}` : stage === 2 ? "Pay the super, tick the checklist, then press Confirm super paid" : "Opens when the pay run is approved" },
+      { t: "STP lodged", who: null, s: job.stp_done_at ? `Lodged ${fmtDate(job.stp_done_at.slice(0, 10))}` : !open ? "Finished" : stage === 3 ? "Lodge STP, tick the checklist, then press STP lodged, finish" : "Opens when super is confirmed" },
+    ] : [
     { t: "Client signature", who: job.needs_signature === false ? null : signer, s: job.needs_signature === false ? "Not needed for this job" : signed ? "Client signed" : job.status === "sent_for_sign" ? `Sent for signing${job.sign_sent_at ? ` ${fmtDate(job.sign_sent_at.slice(0, 10))}` : ""}` : stage > 2 ? "Signed" : "Send for signing, then mark signed" },
     { t: job.needs_signature === false ? "Complete" : "Lodge", who: signed ? signer : null, s: signed ? "Ready to lodge: tick the checklist, then press Lodged" : !open ? `${job.status === "done" ? "Completed" : "Lodged"}${job.lodged_on ? ` ${fmtDate(job.lodged_on)}` : ""}` : "Lodgment date and receipt" },
+    ]),
   ];
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   // Small counts for the chips and the summary panel.
@@ -123,19 +130,21 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           onClick={async () => { if (on) await onStop(); onComplete(job); }}>Complete preparation</button> : null}</>;
     }
     if (i === 1) return me ? timerBtn("Start review") : null;
+    if (payFlow && i === 2 && stage === 2) {
+      const ok = !stageL || stageL.sign.done;
+      return onPayStep ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Super is paid: open the STP step" : "Tick every Super paid checklist item first"} onClick={() => onPayStep(job, "super")}>Confirm super paid</button> : null;
+    }
+    if (payFlow && i === 3 && stage === 3) {
+      const ok = !stageL || stageL.lodge.done;
+      return onPayStep ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "STP lodged: finish the pay run" : "Tick every STP lodged checklist item first"} onClick={() => onPayStep(job, "stp")}>STP lodged, finish</button> : null;
+    }
+    if (payFlow) return null;
     if (i === 2) {
       if (!me && !canAnswerAll) return null;
       const changes = onClientChanges ? <button type="button" disabled={busy} title="The client wants changes: reopen the job and send it back to processing" onClick={() => onClientChanges(job)}>↺ Client needs changes</button> : null;
       if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{changes}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
       if (job.status === "sent_for_sign" && !signed) { const ok = !stageL || stageL.sign.done;
         return <>{changes}{onClientSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "The client has signed: open the Lodge step" : "Tick every Client signature checklist item first"} onClick={() => onClientSigned(job)}>Client signed</button> : null}</>; }
-    }
-    if (i === 3 && skipSign && job.service === "payroll") {
-      const ok = !stageL || stageL.lodge.done;
-      if (!onPayStep) return null;
-      return !job.super_done_at
-        ? <button type="button" className="primary" disabled={busy} onClick={() => onPayStep(job, "super")}>Confirm super paid</button>
-        : <button type="button" className="primary" disabled={busy || !ok} title={ok ? "STP lodged: finish the pay run" : "Tick every Complete checklist item first"} onClick={() => onPayStep(job, "stp")}>STP lodged, finish</button>;
     }
     if (i === 3 && (signed || skipSign)) {
       if (!mineRow(2) && !canAnswerAll) return null;
@@ -228,7 +237,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                     <div className="row">{onSendBack ? <button type="button" disabled={busy} onClick={() => onSendBack(job)}>↩ Send back to {personName(job.assignee_id).split(" ")[0] || "the preparer"}</button> : null}
                       {onApprove ? <button type="button" className="primary" disabled={busy || !approveReady} title={approveReady ? undefined : `Mark every Review checklist item first${noSign && !pay ? ", and the Complete checklist" : ""}`} onClick={() => onApprove(job)}>{pay ? "Approve pay run" : job.needs_signature === false ? "Approve and complete" : "Approve → Client signature"}</button> : null}</div>
                     {!approveReady ? <p className="note" style={{ margin: "6px 0 0" }}>{!L.review.done ? "Tick every Review checklist item to approve." : "This job has nothing to sign, so approving finishes it: tick the Complete checklist below first."}</p>
-                      : pay ? <p className="note" style={{ margin: "6px 0 0" }}>Approving sends the pay run to the Payroll page: confirm super paid, then STP lodged to finish it.</p> : null}</div> : null}</li>
+                      : pay ? <p className="note" style={{ margin: "6px 0 0" }}>Approving opens the next two steps: Super paid, then STP lodged.</p> : null}</div> : null}</li>
                 <li className={`task${stage === 2 ? " now" : stage > 2 ? " done" : " later"}`}>{head(2)}
                                     {stage === 2 && open && !pay && !readOnly && onHandSign && (signer === meId || canAnswerAll) ? <div className="taskbody signwho">
                     <span className="note">{job.status === "sent_for_sign" ? "Who follows up with the client?" : "Who sends it for signing?"}</span>
@@ -240,10 +249,9 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                     <span className="note">{signer === meId ? (job.status === "sent_for_sign" ? "It's with you: you get the reminders and mark it Client signed." : "It's with you: press Start, then Sent for signing.")
                       : `It's with ${personName(signer)}${job.status === "sent_for_sign" ? ", who gets the reminders." : ". It's in their My tasks."}`}</span>
                   </div> : null}
-                  {!noSign && stage >= 2 ? <div className="taskbody">{L.sign.el}</div> : null}</li>
+                  {(!noSign || pay) && stage >= 2 ? <div className="taskbody">{L.sign.el}</div> : null}</li>
                 <li className={`task${stage > 3 ? " done" : stage === 3 ? " now" : " later"}`}>{head(3)}
-                  {stage === 3 && open && pay ? <div className="taskbody"><p className="note" style={{ margin: 0 }}>{job.super_done_at ? "Super confirmed. Lodge STP, tick the checklist, then press STP lodged, finish." : "Approved. Pay the super (it must reach the funds within 7 days of payday), then press Confirm super paid."} You can also do this on the Payroll page.</p></div> : null}
-                  {stage >= 2 || (noSign && stage === 1) ? <div className="taskbody">{L.lodge.el}</div> : null}</li>
+                  {pay ? (stage >= 3 ? <div className="taskbody">{L.lodge.el}</div> : null) : stage >= 2 || (noSign && stage === 1) ? <div className="taskbody">{L.lodge.el}</div> : null}</li>
               </>; } }} />
           </div>
           <div className="panel" id="jp-files" style={{ padding: "12px 16px" }}><h2>Files</h2>

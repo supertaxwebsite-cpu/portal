@@ -188,7 +188,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     <button type="button" onClick={() => (document.getElementById(id) as HTMLInputElement | null)?.click()}>{f ? `📎 ${f.name}` : "Attach query sheet"}</button>
     {f ? <button type="button" className="link" onClick={() => onPick(null)}>Remove</button> : null}</>;
 
-  const lists = taskLists(job.service, checks.map((c) => c.item));
+  const lists = taskLists(job.service, checks.map((c) => c.item), { noSign: job.needs_signature === false });
   const items = lists.proc;
   const IR_ITEMS = lists.ir;
   const done = new Map(checks.map((c) => [c.item, c]));
