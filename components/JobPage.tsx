@@ -19,11 +19,13 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
   onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void; onClientChanges?: (j: Job) => void; onClientSigned?: (j: Job) => void;
+  /** Payroll pay runs: confirm super paid, then STP lodged (finishes the pay run). */
+  onPayStep?: (j: Job, step: "super" | "stp") => void;
   job: Job; client?: Client; meId: string; team: Person[]; canAnswerAll: boolean; canDelete: boolean; readOnly: boolean; supabase: SB;
   personName: (id: string | null) => string; say: (m: string, e?: boolean) => void; statusEl: ReactNode; hours: number;
   running: JobTimer | null; busy: boolean; onStart: (j: Job) => void; onStop: () => void; wasStarted: (j: Job) => boolean;
@@ -39,7 +41,9 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const d = job.due_date ? daysFrom(job.due_date) : null;
   const open = isOpen(job.status);
   const signed = isSigned(job);
-  const stage = !open ? 4 : signed ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
+  // Nothing to sign: once approved, the job skips Client signature and goes straight to Complete.
+  const skipSign = job.needs_signature === false && job.status === "to_lodge";
+  const stage = !open ? 4 : signed || skipSign ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
   // Tick every 15 seconds while the timer runs here, so the clock and the totals stay live.
   const [now, setNow] = useState(() => Date.now());
@@ -126,7 +130,14 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
       if (job.status === "sent_for_sign" && !signed) { const ok = !stageL || stageL.sign.done;
         return <>{changes}{onClientSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "The client has signed: open the Lodge step" : "Tick every Client signature checklist item first"} onClick={() => onClientSigned(job)}>Client signed</button> : null}</>; }
     }
-    if (i === 3 && signed) {
+    if (i === 3 && skipSign && job.service === "payroll") {
+      const ok = !stageL || stageL.lodge.done;
+      if (!onPayStep) return null;
+      return !job.super_done_at
+        ? <button type="button" className="primary" disabled={busy} onClick={() => onPayStep(job, "super")}>Confirm super paid</button>
+        : <button type="button" className="primary" disabled={busy || !ok} title={ok ? "STP lodged: finish the pay run" : "Tick every Complete checklist item first"} onClick={() => onPayStep(job, "stp")}>STP lodged, finish</button>;
+    }
+    if (i === 3 && (signed || skipSign)) {
       if (!mineRow(2) && !canAnswerAll) return null;
       const ok = !stageL || stageL.lodge.done;
       return onSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "Lodged: close the job" : "Tick every Lodge checklist item first"} onClick={() => onSigned(job)}>Lodged</button> : null;
@@ -219,8 +230,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                     {!approveReady ? <p className="note" style={{ margin: "6px 0 0" }}>{!L.review.done ? "Tick every Review checklist item to approve." : "This job has nothing to sign, so approving finishes it: tick the Complete checklist below first."}</p>
                       : pay ? <p className="note" style={{ margin: "6px 0 0" }}>Approving sends the pay run to the Payroll page: confirm super paid, then STP lodged to finish it.</p> : null}</div> : null}</li>
                 <li className={`task${stage === 2 ? " now" : stage > 2 ? " done" : " later"}`}>{head(2)}
-                  {stage === 2 && open && pay ? <div className="taskbody"><p className="note" style={{ margin: 0 }}>Approved. On the <b>Payroll</b> page: confirm super paid, then press STP lodged to finish the pay run. Tick the Complete checklist below as you go.</p></div> : null}
-                  {stage === 2 && open && !pay && !readOnly && onHandSign && (signer === meId || canAnswerAll) ? <div className="taskbody signwho">
+                                    {stage === 2 && open && !pay && !readOnly && onHandSign && (signer === meId || canAnswerAll) ? <div className="taskbody signwho">
                     <span className="note">{job.status === "sent_for_sign" ? "Who follows up with the client?" : "Who sends it for signing?"}</span>
                     <div className="seg" role="radiogroup" aria-label="Who does the signing">
                       <button type="button" role="radio" aria-checked={signer === meId} className={signer === meId ? "on" : undefined} disabled={busy || takingSign}
@@ -232,6 +242,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                   </div> : null}
                   {!noSign && stage >= 2 ? <div className="taskbody">{L.sign.el}</div> : null}</li>
                 <li className={`task${stage > 3 ? " done" : stage === 3 ? " now" : " later"}`}>{head(3)}
+                  {stage === 3 && open && pay ? <div className="taskbody"><p className="note" style={{ margin: 0 }}>{job.super_done_at ? "Super confirmed. Lodge STP, tick the checklist, then press STP lodged, finish." : "Approved. Pay the super (it must reach the funds within 7 days of payday), then press Confirm super paid."} You can also do this on the Payroll page.</p></div> : null}
                   {stage >= 2 || (noSign && stage === 1) ? <div className="taskbody">{L.lodge.el}</div> : null}</li>
               </>; } }} />
           </div>
