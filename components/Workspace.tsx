@@ -332,7 +332,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
         }
         setJobHours(hrs);
       }
-      setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); setClients(c); setJobs(j); setLoaded(true); setLoadError("");
+      setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); setClients(c); setJobs(j.map((x) => x.service === "payroll" && x.needs_signature !== false ? { ...x, needs_signature: false } : x)); setLoaded(true); setLoadError("");
     } catch (e) {
       setLoadError((e as Error).message);
     }
@@ -1441,7 +1441,7 @@ function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACT
     setBusy(true);
     // Staff can only change the status and notes of an existing job (the database enforces this too).
     const row: Partial<Job> = locked ? { status: v.status, notes: v.notes, ...(ownPick && v.reviewer_id && v.reviewer_id !== job?.reviewer_id ? { reviewer_id: v.reviewer_id } : {}), ...(v.status === "lodged" && !job?.lodged_on ? { lodged_on: todayISO() } : {}) } : { ...v, period: v.period.trim(), due_date: v.due_date || null, assignee_id: v.assignee_id || null, reviewer_id: v.reviewer_id || null,
-      lodged_on: v.lodged_on || (v.status === "lodged" ? todayISO() : null), ...(hasSignCol ? { needs_signature: needsSign } : {}) };
+      lodged_on: v.lodged_on || (v.status === "lodged" ? todayISO() : null), ...(hasSignCol ? { needs_signature: v.service === "payroll" ? false : needsSign } : {}) };
     // Choosing Internal query: save the other changes, then pick who to send it to.
     const query = !!job && v.status === "internal_query" && job.status !== "internal_query";
     if (query) row.status = job.status;
@@ -1522,7 +1522,7 @@ function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACT
           </>}
         </div> : null}
         <label className="f">Due date<input id="m-due" type="date" disabled={locked} value={v.due_date} onChange={set("due_date")} /></label>
-        {hasSignCol ? <label className="f full row" style={{ gap: 8, flexDirection: "row", alignItems: "center", fontSize: 14, fontWeight: 400, color: "inherit" }}><input id="m-needsign" type="checkbox" disabled={locked} checked={needsSign} onChange={(e) => setNeedsSign(e.target.checked)} /> Needs the client&apos;s signature <span className="note">(untick if there&apos;s nothing to sign: approving it then marks it Completed)</span></label> : null}
+        {hasSignCol && v.service !== "payroll" ? <label className="f full row" style={{ gap: 8, flexDirection: "row", alignItems: "center", fontSize: 14, fontWeight: 400, color: "inherit" }}><input id="m-needsign" type="checkbox" disabled={locked} checked={needsSign} onChange={(e) => setNeedsSign(e.target.checked)} /> Needs the client&apos;s signature <span className="note">(untick if there&apos;s nothing to sign: approving it then marks it Completed)</span></label> : null}
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked && !ownPick} value={v.reviewer_id} onChange={set("reviewer_id")}>{ownPick ? <><option value="">No reviewer</option>{team.map((p) => <option key={p.id} value={p.id}>{p.id === meId ? `${p.full_name} (me)` : p.full_name}</option>)}</> : opts("No reviewer")}</select></label>
