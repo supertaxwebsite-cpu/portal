@@ -477,6 +477,10 @@ export default function Workspace({ me, viewer, onViewAs }: {
   /** Reviewer: approve (ready for signing) or send back to the preparer with a note. */
   async function approveReview(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
+    if (j.service === "payroll" && j.needs_signature === false) {
+      await save(() => supabase.from("jobs").update({ status: "to_lodge" }).eq("id", j.id), "Pay run approved. Confirm super paid, then STP lodged, on the Payroll page");
+      return;
+    }
     if (j.needs_signature === false) {
       await save(() => supabase.from("jobs").update({ status: "done" }).eq("id", j.id), "Approved and completed. Nothing for the client to sign");
       return;
