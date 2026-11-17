@@ -12,6 +12,7 @@ const LEGACY: Record<string, string[]> = {
   fbt: ["Cars and logbooks", "Entertainment and meals", "Loans and other benefits", "Employee contributions", "FBT calculation checked"],
   tpar: ["Contractor payments listed", "ABNs and details checked", "Totals agree to the ledger"],
   ias: ["PAYG instalment amount or rate checked", "PAYG withholding agrees to STP", "Compared with last period"],
+  payroll: ["Timesheets and pay changes received", "Pay run processed and checked", "Super calculated", "STP lodged", "Payslips sent"],
 };
 
 // ---------- Company tax return ----------
@@ -148,6 +149,41 @@ const FBT = {
   ir: ["Prior year FBT return reviewed", "List of employees and benefits received", "Car logbooks, odometer readings and running costs received", "Entertainment, loans and other benefit records received", "Anything missing listed (raise a query for it)"],
   proc: ["Cars: statutory or logbook method, days available and employee contributions", "Car parking benefits checked", "Entertainment and meals: 50/50 split or actual method", "Loans, expense payments and housing benefits", "Living away from home allowances checked", "Exempt benefits taken out (portable devices, minor benefits under $300)", "Employee contributions recorded", "Gross-up type 1 and type 2 and FBT payable worked out", "Reportable fringe benefits worked out for STP", "FBT return prepared", "Workpapers saved in Files"],
 };
+// ---------- Payroll (pay run from the client's timesheets) ----------
+const PAYROLL = {
+  ir: [
+    "Timesheet received from the client for this pay period",
+    "Timesheet checked: every employee, dates and hours (anything unclear asked of the client)",
+    "Anything missing listed (raise a query for it)",
+  ],
+  proc: [
+    "Hours from the timesheet entered for each employee: ordinary, overtime, weekend and public holiday",
+    "Leave on the timesheet entered and balances updated",
+    "Pay rates checked against the award, agreement or contract",
+    "PAYG withholding checked against the ATO tax tables",
+    "Super worked out at 12% of ordinary time earnings",
+    "Gross, tax, super and net pay compared with the last pay run, differences explained",
+    "Pay run report and draft payslips saved in Files",
+  ],
+  review: [
+    "Pay run agrees to the timesheet: every employee and their hours",
+    "Rates, leave, tax and super checked",
+    "Net pay total agrees to the bank payment (ABA) file",
+    "Review notes cleared",
+  ],
+  sign: [
+    "Pay run summary (hours, gross and net pay per employee) sent to the client to approve",
+    "Client approved the pay run",
+    "Approval saved in Files",
+  ],
+  lodge: [
+    "Pay run finalised and payslips emailed to employees",
+    "Bank payment (ABA) file or pay summary sent to the client to pay wages",
+    "STP pay event lodged with the ATO and accepted",
+    "Super paid through the clearing house so it reaches the funds within 7 days of payday",
+    "STP receipt and final payslips saved in Files",
+  ],
+};
 const TPAR = {
   proc: ["Industry checked: building, cleaning, courier, road freight, IT, security or government grants", "Contractor payments listed from the ledger", "ABNs checked on the ABN lookup, names and addresses correct", "Amounts paid include GST where charged", "Totals agree to the ledger", "TPAR prepared (due 28 August)"],
 };
@@ -158,7 +194,7 @@ const IAS = {
 export const CHECKLISTS: Record<string, string[]> = {
   bas: BAS,
   ias: IAS.proc,
-  payroll: ["Timesheets and pay changes received", "Pay run processed and checked", "Super calculated", "STP lodged", "Payslips sent"],
+  payroll: PAYROLL.proc,
   bookkeeping: ["Bank feeds up to date", "Transactions coded", "Receipts and invoices matched", "Bank reconciled", "Queries listed for the client"],
   itr: ITR.proc,
   ctr: CTR.proc,
@@ -191,6 +227,7 @@ const TASKS: Record<string, Partial<Lists>> = {
   ctr: CTR, itr: ITR, trust: TRUST, partnership: PARTNERSHIP, smsf: SMSF, fin: FIN, fbt: FBT,
   tpar: { lodge: ["TPAR lodged with the ATO", "Lodgment receipt saved in Files"] },
   bas: { lodge: BAS_LODGE }, ias: { lodge: BAS_LODGE },
+  payroll: PAYROLL,
 };
 TASKS.fbt = { ...FBT, lodge: ["FBT return lodged with the ATO", "Lodgment receipt saved in Files", "FBT payable and due date sent to the client", "Next year's FBT instalments noted"] };
 
