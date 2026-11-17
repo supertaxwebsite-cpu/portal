@@ -56,7 +56,8 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
 
   const signer = (j: Job) => (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === meId;
   const isReview = (j: Job) => j.status === "review" && (j.reviewer_id === meId || (!j.reviewer_id && j.assignee_id === meId));
-  const isSign = (j: Job) => j.status === "to_lodge" || j.status === "sent_for_sign" || j.status === "client_query";
+  const isPay = (j: Job) => j.service === "payroll";
+  const isSign = (j: Job) => !isPay(j) && j.status === "to_lodge" || j.status === "sent_for_sign" || j.status === "client_query";
   const over = (j: Job) => !!j.due_date && daysFrom(j.due_date) < 0;
   const asked = (j: Job) => !!askedBy?.has(j.id);
   const noteJobs = new Set((s?.notes ?? []).map((n) => n.job_id));
@@ -72,8 +73,9 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     ...(s?.notes ? [["notes", "Review notes", (j: Job) => noteJobs.has(j.id), true] as [Kind, string, (j: Job) => boolean, boolean]] : []),
   ];
   const f = PILLS.find((p) => p[0] === kind)?.[2] ?? (() => true);
-  const list = ordered.filter(f);
+  const list = ordered.filter((j) => f(j) && !isPay(j));
   const shown = all ? list : list.slice(0, 10);
+  const payList = ordered.filter((j) => f(j) && isPay(j));
 
   const daysTarget = workDaysSoFar();
   const openNotes = s?.notes?.length ?? 0;
@@ -83,6 +85,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     if (asked(j)) return `Internal query from ${personName(askedBy!.get(j.id) ?? null) || "someone"}: answer it on the job`;
     if (isReview(j)) return j.assignee_id && j.assignee_id !== meId ? `Prepared by ${personName(j.assignee_id)}` : "Review";
     if (j.status === "internal_query") return j.assignee_id !== meId ? `With ${personName(j.assignee_id)} for an internal query` : j.query_from ? `Internal query from ${personName(j.query_from)}` : "Internal query raised: waiting for the answer";
+    if (isPay(j) && j.status === "to_lodge") return j.super_done_at ? "Super paid: lodge the STP pay event" : "Pay run approved: pay super, then confirm it";
     if (j.status === "to_lodge") return "Approved: send it to the client for signing";
     if (j.status === "sent_for_sign" || j.status === "client_query") {
       const d = j.sign_sent_at ? Math.floor((now - Date.parse(j.sign_sent_at)) / 864e5) : 0;
@@ -104,6 +107,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     if (isReview(j)) return <>{timer(j, "Start review")}{j.service === "payroll" ? <button type="button" onClick={onPayroll}>Sign off in Payroll</button> : <>
       <button type="button" disabled={busy} onClick={() => onSendBack(j)}>Send back</button>
       <button type="button" className="primary" disabled={busy} onClick={() => onApprove(j)}>{j.needs_signature === false ? "Approve & complete" : "Approve"}</button></>}</>;
+    if (isPay(j) && j.status === "to_lodge") return <>{timer(j)}<button type="button" className="primary" onClick={() => onOpen(j)}>{j.super_done_at ? "Lodge STP" : "Confirm super"}</button></>;
     if (j.status === "to_lodge") return <>{timer(j)}<button type="button" className="primary" disabled={busy} onClick={() => onSentForSign(j)}>Sent for signing</button></>;
     if (j.status === "sent_for_sign") return isSigned(j) ? <button type="button" className="primary" disabled={busy} onClick={() => onSigned(j)}>Lodged</button>
       : <button type="button" className="primary" disabled={busy} onClick={() => (onClientSigned ?? onSigned)(j)}>Client signed</button>;
@@ -112,6 +116,20 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     if (j.status === "internal_query" && j.query_from) return <>{timer(j)}<button type="button" disabled={busy} onClick={() => onAnswer(j)}>Send back</button></>;
     return timer(j);
   };
+  const table = (rows: Job[]) => (
+          <div style={{ overflowX: "auto" }}>
+            <table className="jobtable"><thead><tr><th>Client · practice</th><th>Task</th><th>Due / time left</th><th>Status</th><th>Priority</th><th></th></tr></thead>
+              <tbody>{rows.map((j) => { const [cn, cl] = clientLine(j); const r = rank.get(j.id) ?? 0; return (
+                <tr key={j.id} className={`${running?.job_id === j.id ? "running" : ""}${over(j) ? " over" : ""}`}>
+                  <td className="client">{cn}<div className="note">{cl}</div></td>
+                  <td><button type="button" className="link jobname" onClick={() => onOpen(j)}>{svcLabel(j.service)} {j.period}{isReview(j) ? " · Review" : ""}</button>
+                    <div className="note">{sub(j)}</div></td>
+                  <td>{due(j)}</td>
+                  <td>{isPay(j) && j.status === "to_lodge" ? <span className="pill warn">{j.super_done_at ? "STP to lodge" : "Super to pay"}</span> : showStatus(j) ? statusEl(j) : <span className={`pill ${ST[j.status]?.cls ?? ""}`}>{ST[j.status]?.label ?? j.status}</span>}</td>
+                  <td><span className={`rank${over(j) ? " hot" : ""}`} title={j.priority === "high" ? "High priority" : undefined}>{r}</span>{j.priority === "high" ? <span className="pill danger" style={{ marginLeft: 6 }}>High</span> : null}</td>
+                  <td><div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>{action(j)}</div></td>
+                </tr>); })}</tbody></table>
+          </div>);
   const showStatus = (j: Job) => !isReview(j) && !isSign(j) && !(j.status === "internal_query");
 
   return (
@@ -133,23 +151,16 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
       </div>
       {top}
       <div className="panel tasklist">
-        <div className="ph"><h2>Task list</h2><span className="note">Time left turns amber within 2 days and red once overdue</span></div>
-        {!list.length ? <div className="empty"><strong>{jobs.length ? "Nothing in this list." : "No open jobs assigned to you."}</strong>{jobs.length ? "Pick another filter above." : "Jobs assigned to you show here, ready to start."}</div> : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="jobtable"><thead><tr><th>Client · practice</th><th>Task</th><th>Due / time left</th><th>Status</th><th>Priority</th><th></th></tr></thead>
-              <tbody>{shown.map((j) => { const [cn, cl] = clientLine(j); const r = rank.get(j.id) ?? 0; return (
-                <tr key={j.id} className={`${running?.job_id === j.id ? "running" : ""}${over(j) ? " over" : ""}`}>
-                  <td className="client">{cn}<div className="note">{cl}</div></td>
-                  <td><button type="button" className="link jobname" onClick={() => onOpen(j)}>{svcLabel(j.service)} {j.period}{isReview(j) ? " · Review" : ""}</button>
-                    <div className="note">{sub(j)}</div></td>
-                  <td>{due(j)}</td>
-                  <td>{showStatus(j) ? statusEl(j) : <span className={`pill ${ST[j.status]?.cls ?? ""}`}>{ST[j.status]?.label ?? j.status}</span>}</td>
-                  <td><span className={`rank${over(j) ? " hot" : ""}`} title={j.priority === "high" ? "High priority" : undefined}>{r}</span>{j.priority === "high" ? <span className="pill danger" style={{ marginLeft: 6 }}>High</span> : null}</td>
-                  <td><div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>{action(j)}</div></td>
-                </tr>); })}</tbody></table>
-          </div>)}
+        <div className="ph"><h2>Task list{payList.length || jobs.some(isPay) ? " · other jobs" : ""}</h2><span className="note">Time left turns amber within 2 days and red once overdue</span></div>
+        {!list.length ? <div className="empty"><strong>{jobs.length ? (payList.length ? "No other jobs in this list." : "Nothing in this list.") : "No open jobs assigned to you."}</strong>{jobs.length ? "Pick another filter above." : "Jobs assigned to you show here, ready to start."}</div> : (
+          table(shown))}
         <div className="count">Showing {shown.length} of {list.length}{list.length > shown.length ? <> · <button type="button" className="link" onClick={() => setAll(true)}>show all</button></> : null} · click a task to open its job page</div>
       </div>
+      {jobs.some(isPay) ? <div className="panel tasklist paylist">
+        <div className="ph"><h2>Payroll <span className="pill info">{payList.length}</span></h2><span className="note">Your pay runs: timesheets in, process, review, super paid, then STP lodged</span>
+          <button type="button" onClick={onPayroll}>Open Payroll page</button></div>
+        {payList.length ? table(payList) : <div className="empty"><strong>No pay runs in this list.</strong>Pick another filter above.</div>}
+      </div> : null}
       {children}
     </>
   );
