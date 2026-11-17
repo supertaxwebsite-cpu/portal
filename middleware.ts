@@ -1,7 +1,7 @@
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase/env";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { codeStepOn, cookieOk, deviceOk, sessionIdOf, CODE_COOKIE, DEVICE_COOKIE } from "@/lib/loginCode";
+import { codeStepOn, cookieOk, deviceOk, deviceExp, makeDeviceCookie, sessionIdOf, CODE_COOKIE, DEVICE_COOKIE, DEVICE_HOURS } from "@/lib/loginCode";
 
 const PUBLIC = ["/login", "/setup", "/api/setup"];
 /** Open after the password but before the emailed code. */
@@ -43,6 +43,12 @@ export async function middleware(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = "/verify"; url.search = path !== "/" ? `?next=${encodeURIComponent(path)}` : "";
       return NextResponse.redirect(url);
+    }
+    // Checked and active: the 3 hours of trust on this browser restart from now (refreshed at most every 5 minutes).
+    const left = deviceExp(request.cookies.get(DEVICE_COOKIE)?.value, user.id) - Date.now();
+    if (left < DEVICE_HOURS * 3600e3 - 5 * 60e3) {
+      const d = await makeDeviceCookie(user.id);
+      response.cookies.set(DEVICE_COOKIE, d.value, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: d.maxAge });
     }
   }
   // Signed-in and checked: the code page is no longer needed.

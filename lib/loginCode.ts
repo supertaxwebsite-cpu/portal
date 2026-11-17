@@ -57,7 +57,8 @@ export async function cookieOk(value: string | undefined, userId: string, sessio
   return diff === 0;
 }
 
-/** Trusted browser: after a right code, this browser skips the code for the same person for 3 hours,
+/** Trusted browser: after a right code, this browser skips the code for the same person until they
+ *  have been inactive for 3 hours (every page or data request while signed in restarts the 3 hours),
  *  even after signing out and in again. A new browser or computer, or another person, still needs a code. */
 export const DEVICE_COOKIE = "pd_device";
 export const DEVICE_HOURS = 3;
@@ -66,6 +67,12 @@ export async function makeDeviceCookie(userId: string): Promise<{ value: string;
   const exp = Math.floor(Date.now() / 1000) + DEVICE_HOURS * 3600;
   const body = `dev.${userId}.${exp}`;
   return { value: `${body}.${await hmac(body)}`, maxAge: DEVICE_HOURS * 3600 };
+}
+
+/** When this browser's trust ends for this person (ms), or 0. Not verified: only used to decide when to refresh. */
+export function deviceExp(value: string | undefined, userId: string): number {
+  const parts = (value ?? "").split(".");
+  return parts.length === 4 && parts[0] === "dev" && parts[1] === userId ? Number(parts[2]) * 1000 || 0 : 0;
 }
 
 export async function deviceOk(value: string | undefined, userId: string): Promise<boolean> {
