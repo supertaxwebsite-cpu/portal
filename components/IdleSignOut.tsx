@@ -2,10 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-/** Signs the person out after 20 minutes with no activity in any open portal tab.
+/** Signs the person out after 40 minutes with no activity in any open portal tab.
  *  A warning shows for the last minute so they can stay signed in. */
 export const IDLE_KEY = "supertax-last-activity";
-const IDLE_MS = 20 * 60 * 1000;
+const IDLE_MS = 40 * 60 * 1000;
 const WARN_MS = 60 * 1000;
 
 const readLast = () => { try { return Number(localStorage.getItem(IDLE_KEY)) || 0; } catch { return 0; } };
@@ -55,7 +55,7 @@ export default function IdleSignOut() {
     <div className="overlay" style={{ zIndex: 60 }} role="alertdialog" aria-modal="true" aria-labelledby="idle-title">
       <div className="modal" style={{ maxWidth: 420 }}>
         <header><h2 id="idle-title">Are you still there?</h2></header>
-        <div className="body"><p className="full" style={{ margin: 0 }}>For security, you&apos;ll be signed out in <strong>{left} second{left === 1 ? "" : "s"}</strong> because there&apos;s been no activity for almost 20 minutes.</p></div>
+        <div className="body"><p className="full" style={{ margin: 0 }}>For security, you&apos;ll be signed out in <strong>{left} second{left === 1 ? "" : "s"}</strong> because there&apos;s been no activity for almost 40 minutes.</p></div>
         <footer><span /><button type="button" className="primary" autoFocus onClick={() => { markActive(); setLeft(null); }}>Stay signed in</button></footer>
       </div>
     </div>
