@@ -11,7 +11,7 @@ import { periodOptions, clientUpcoming,
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
 import WorkGate from "./WorkGate";
-import { blockApiWrites, viewOnlyClient } from "@/lib/viewOnly";
+import { asSeenBy, blockApiWrites, viewOnlyClient } from "@/lib/viewOnly";
 import JobBrief from "./JobBrief";
 import Reminders from "./Reminders";
 import UpdateBanner from "./UpdateBanner";
@@ -332,7 +332,10 @@ export default function Workspace({ me, viewer, onViewAs }: {
         }
         setJobHours(hrs);
       }
-      setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); setClients(c); setJobs(j.map((x) => x.service === "payroll" && x.needs_signature !== false ? { ...x, needs_signature: false } : x)); setLoaded(true); setLoadError("");
+      setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); const seen = viewOnly ? asSeenBy(me, c, j) : { clients: c, jobs: j };
+      // Team leaders see only their practice's clients: drop jobs on any client they can't see (e.g. a team member's job for another practice).
+      if (me.role === "manager") { const ids = new Set(seen.clients.map((x) => x.id)); seen.jobs = seen.jobs.filter((x) => ids.has(x.client_id)); }
+       setClients(seen.clients); setJobs(seen.jobs.map((x) => x.service === "payroll" && x.needs_signature !== false ? { ...x, needs_signature: false } : x)); setLoaded(true); setLoadError("");
     } catch (e) {
       setLoadError((e as Error).message);
     }
@@ -843,7 +846,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
           <MultiPick id="jf-fy" all="Any financial year" value={jf.fy} onChange={(v) => setJf({ ...jf, fy: v })} options={jobFYs.map((y) => ({ v: String(y), l: `FY${y} (Jul ${y - 1} – Jun ${y})`, short: `FY${y}` }))} />
           <MultiPick id="jf-quarter" all="Any quarter or yearly" value={jf.quarter} onChange={(v) => setJf({ ...jf, quarter: v })} options={[...[1, 2, 3, 4].map((q) => ({ v: String(q), l: `Q${q} (${["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})`, short: `Q${q}` })), { v: "TAX", l: "Tax returns", short: "Tax returns" }, { v: "GST", l: "Annual GST", short: "Annual GST" }, { v: "FBT", l: "FBT", short: "FBT" }, { v: "A", l: "Other yearly work", short: "Other yearly" }]} />
           <MultiPick id="jf-entity" all="All entity types" value={jf.entity} onChange={(v) => setJf({ ...jf, entity: v })} options={ENTITIES.map((x) => ({ v: x, l: x === "SMSF" ? "Super fund (SMSF)" : x }))} />
-          <MultiPick id="jf-practice" all="All practices" value={jf.practice} onChange={(v) => setJf({ ...jf, practice: v })} options={PRACTICES.map((p) => ({ v: p, l: p }))} />
+          <MultiPick id="jf-practice" all="All practices" value={jf.practice} onChange={(v) => setJf({ ...jf, practice: v })} options={myPractices.map((p) => ({ v: p, l: p }))} />
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
             <option value="open">All open jobs</option><option value="review_any">Ready for review or signing</option>
             {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
@@ -948,7 +951,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
         <div className="quickpills">{QUICK.map(([k, l, f]) => { const n = base.filter(f).length; return <button key={k || "all"} type="button" className={cquick === k ? "on" : undefined} onClick={() => setCquick(k)}>{l} <i className={k === "overdue" && n ? "hot" : undefined}>{n.toLocaleString()}</i></button>; })}</div>
         <div className="toolbar">
           <input type="search" id="cq" placeholder="Search name, ABN, contact, email, phone or address" aria-label="Search clients" value={cq} onChange={(e) => setCq(e.target.value)} />
-          <select id="cpractice" aria-label="Practice" value={cpractice} onChange={(e) => setCpractice(e.target.value)}><option value="">All practices</option>{PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+          <select id="cpractice" aria-label="Practice" value={cpractice} onChange={(e) => setCpractice(e.target.value)}><option value="">All practices</option>{myPractices.map((p) => <option key={p} value={p}>{p}</option>)}</select>
           <select id="cservice" aria-label="Service" value={cservice} onChange={(e) => setCservice(e.target.value)}><option value="">Any service</option>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
         <details className="colpick"><summary>Columns</summary><div className="colmenu">
             {CLIENT_COLS.map((col) => <label key={col.id}><input type="checkbox" checked={show(col.id)} onChange={(e) => setCcols(e.target.checked ? CLIENT_COLS.map((x) => x.id).filter((x) => x === col.id || ccols.includes(x)) : ccols.filter((x) => x !== col.id))} /> {col.label}</label>)}

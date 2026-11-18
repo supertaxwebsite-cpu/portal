@@ -60,3 +60,21 @@ export function blockApiWrites(): () => void {
   };
   return () => { window.fetch = orig; };
 }
+
+/** "View as": the master's own session can read everything, so trim clients and jobs to what the
+ *  viewed person's sign-in would show (mirrors can_see_client / can_see_job in the database). */
+export function asSeenBy<C extends { id: string; entity?: string | null; practice?: string | null }, J extends { id: string; client_id: string; status: string; assignee_id?: string | null; reviewer_id?: string | null; sign_owner?: string | null; query_from?: string | null }>(
+  who: { id: string; role: string; client_types?: string[] | null; practices?: string[] | null }, clients: C[], jobs: J[],
+): { clients: C[]; jobs: J[] } {
+  if (who.role === "master") return { clients, jobs };
+  const mine = (j: J) => j.assignee_id === who.id || j.reviewer_id === who.id || j.sign_owner === who.id || j.query_from === who.id;
+  const types = who.client_types ?? [], prac = who.practices ?? [];
+  const onJob = new Set(jobs.filter(mine).map((j) => j.client_id));
+  const okClient = (c: C) => ((!types.length || types.includes(c.entity ?? "")) && (!prac.length || prac.includes(c.practice ?? ""))) || onJob.has(c.id);
+  const seen = clients.filter(okClient);
+  const ids = new Set(seen.map((c) => c.id));
+  const closed = new Set(["done", "sent_for_sign", "lodged"]);
+  const lead = who.role === "manager";
+  return { clients: seen, jobs: jobs.filter((j) => mine(j) || (lead && ids.has(j.client_id))
+    || (!j.assignee_id && !closed.has(j.status) && ids.has(j.client_id))) };
+}

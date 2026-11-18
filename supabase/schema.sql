@@ -3199,3 +3199,24 @@ alter table public.clients add constraint clients_practice_check
 alter table public.prospects drop constraint if exists prospects_practice_check;
 alter table public.prospects add constraint prospects_practice_check
   check (practice in ('Supertax', 'Titantax', 'Workpaper', 'Monarch Accounting', 'Makari & Company', 'Prosperity', 'J & C Accountant'));
+
+-- ===== Team leaders: own practice only =====
+-- Team leaders with a practice see only that practice's clients and jobs.
+-- Before: a team leader also saw every job of their team members, even for other practices' clients.
+-- After: a team leader sees jobs for clients they can see (their practice), plus jobs they are on themselves.
+-- Safe to run more than once. Changes no data.
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() = 'master'
+    or (public.my_role() = 'manager' and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or (j.assignee_id is null and j.status not in ('done', 'sent_for_sign', 'lodged')
+        and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or j.sign_owner = auth.uid()
+    or exists (select 1 from public.job_queries q where q.job_id = j.id and q.to_id = auth.uid())
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+  );
+$$;
