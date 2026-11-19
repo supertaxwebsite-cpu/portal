@@ -6,7 +6,7 @@ import { periodOptions, clientUpcoming,
   ENTITIES, PRACTICES, practicesFor, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
-  isSigned, SIGNED_MARK,
+  isSigned, SIGNED_MARK, industryLabel, industryHint,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
@@ -1088,7 +1088,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
           <aside className="jobside">
             {isMaster || me.can_see_mgmt_notes ? <ClientNotes key={`m-${c.id}`} mgmt clientId={c.id} meId={me.id} isManager={canManage} canDelete={false} supabase={supabase} personName={personName} say={say} /> : null}
             <div className="panel"><div className="ph"><h2>Contact</h2></div>
-              <dl className="people"><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Phone</dt><dd>{c.phone || "—"}</dd><dt>Email</dt><dd style={{ overflowWrap: "anywhere" }}>{c.email || "—"}</dd><dt>Address</dt><dd>{c.address || "—"}</dd></dl></div>
+              <dl className="people"><dt>{industryLabel(c.entity)}</dt><dd>{c.industry || "—"}</dd><dt>Contact</dt><dd>{c.contact || "—"}</dd><dt>Phone</dt><dd>{c.phone || "—"}</dd><dt>Email</dt><dd style={{ overflowWrap: "anywhere" }}>{c.email || "—"}</dd><dt>Address</dt><dd>{c.address || "—"}</dd></dl></div>
             <div className="panel"><div className="ph"><h2>Summary</h2></div>
               <ul className="actions summary">
                 <li><span>🕘 Time on this client&apos;s jobs</span><b>{fmtHours(yearH)}</b></li>
@@ -1622,7 +1622,7 @@ function ClientModal({ client, practices = [...PRACTICES], clients, team, canDel
 }) {
   const [v, setV] = useState({
     practice: client ? practiceOf(client) : practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE, name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
-    email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
+    email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", industry: client?.industry ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
     payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
   });
@@ -1640,7 +1640,7 @@ function ClientModal({ client, practices = [...PRACTICES], clients, team, canDel
     }
     setBusy(true);
     if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
-    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, address, ...base } = v;
+    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, address, industry, ...base } = v;
     // Default people for automatic jobs: only sent when set or changed, so saving works before that database update.
     const who: Record<string, string | null> = {};
     if (payroll_assignee || client?.payroll_assignee) who.payroll_assignee = hasPayroll ? payroll_assignee || null : null;
@@ -1650,7 +1650,9 @@ function ClientModal({ client, practices = [...PRACTICES], clients, team, canDel
     // Practice is sent when it isn't the default (or already stored), so saving works before that database update.
     const prac = practice !== DEFAULT_PRACTICE || client?.practice ? { practice } : {};
     const addr = address.trim() || client?.address ? { address: address.trim() } : {};
-    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, ...addr, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
+    // Industry / occupation: sent only when filled in (or already stored), so saving works before that database update.
+    const ind = industry.trim() || client?.industry ? { industry: industry.trim() } : {};
+    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, ...addr, ...ind, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
     const ok = client ? await save(() => supabase.from("clients").update(row).eq("id", client.id), "Client saved") : await save(() => supabase.from("clients").insert(row), "Client added");
     setBusy(false);
     if (ok) onClose();
@@ -1668,6 +1670,7 @@ function ClientModal({ client, practices = [...PRACTICES], clients, team, canDel
           <span className="note">Check it isn&apos;t the same client. If it&apos;s a different one, click {client ? "Save anyway" : "Yes, add anyway"}.</span>
         </div> : null}
         <label className="f">Entity type<select id="c-entity" value={v.entity} onChange={(e) => { const entity = e.target.value; setV((x) => ({ ...x, entity, practice: practicesFor(entity, practices).includes(x.practice) ? x.practice : (practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practicesFor(entity, practices)[0] ?? DEFAULT_PRACTICE) })); }}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
+        <label className="f">{industryLabel(v.entity)}{v.entity === "Individual" ? "" : " / nature of business"}<input id="c-industry" value={v.industry} onChange={set("industry")} placeholder={industryHint(v.entity)} maxLength={120} /></label>
         <label className="f">ABN<input id="c-abn" inputMode="numeric" value={v.abn} onChange={set("abn")} placeholder="11 digits" /></label>
         <label className="f">Contact person<input id="c-contact" value={v.contact} onChange={set("contact")} /></label>
         <label className="f">Manager<select id="c-manager" value={v.manager_id} onChange={set("manager_id")}><option value="">No manager</option>{team.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>

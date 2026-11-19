@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { Client, Job, JobTimer, Person } from "@/lib/types";
-import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned } from "@/lib/domain";
+import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned, industryLabel } from "@/lib/domain";
 import { STEPS, checklistFor } from "@/lib/checklists";
 import JobBrief, { type PrepRow, type StageLists } from "./JobBrief";
 import JobFiles from "./JobFiles";
@@ -207,7 +207,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <div className="row"><span className={`pill ${st?.cls ?? ""}`}>{st?.label ?? job.status}</span>{!readOnly ? <button type="button" onClick={() => onEdit()}>✎ Edit job</button> : null}</div>
         </div>
         <div className="facts">
-          <span>Practice <b>{practiceOf(client)}</b></span><span>Entity <b>{client?.entity ?? "—"}</b></span>
+          <span>Practice <b>{practiceOf(client)}</b></span><span>Entity <b>{client?.entity ?? "—"}</b></span><span>{industryLabel(client?.entity)} <b>{client?.industry || <span className="note">not set</span>}</b></span>
           <span>Due <b>{job.due_date ? fmtDate(job.due_date) : "not set"}</b>{open && d !== null && d < 0 ? <> <span className="pill danger">{-d} day{d === -1 ? "" : "s"} overdue</span></> : open && d !== null && d <= 7 ? <> <span className="pill warn">{d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} left`}</span></> : null}</span>
           <span>Priority <b>{job.priority === "high" ? "High" : "Normal"}</b></span>
           <span>Client signature <b>{job.needs_signature === false ? "Not needed" : "Needed"}</b></span>

@@ -52,6 +52,8 @@ export interface Client {
   email: string;
   phone: string;
   address?: string | null;
+  /** Occupation (individuals) or nature of business / industry (everyone else). */
+  industry?: string | null;
   manager_id: string | null;
   services: string[];
   bas_freq: "quarterly" | "monthly" | "annual";

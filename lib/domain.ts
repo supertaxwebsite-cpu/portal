@@ -330,3 +330,8 @@ export function clientGroup(id: string, links: { client_id: string; related_id: 
   while (todo.length) for (const n of adj.get(todo.pop() as string) ?? []) if (!seen.has(n)) { seen.add(n); todo.push(n); }
   return seen;
 }
+
+/** What the client's "industry" field means for its entity type. */
+export const industryLabel = (entity?: string | null) => (entity === "Individual" ? "Occupation" : "Industry");
+export const industryHint = (entity?: string | null) => (entity === "Individual" ? "e.g. Registered nurse, Electrician, Uber driver"
+  : entity === "SMSF" ? "e.g. Investment in shares and property" : "e.g. Electrical contracting, Cafe, Residential construction");

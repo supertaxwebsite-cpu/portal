@@ -3359,3 +3359,6 @@ language sql stable security definer set search_path = public as $$
     or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
   );
 $$;
+
+-- ===== Client industry / occupation =====
+alter table public.clients add column if not exists industry text not null default '';
