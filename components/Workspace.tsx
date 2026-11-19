@@ -727,10 +727,12 @@ export default function Workspace({ me, viewer, onViewAs }: {
         </div>
         <div className="panel" style={{ padding: "12px 14px", marginBottom: 16 }}>
           <div className="ph" style={{ padding: 0, marginBottom: 8 }}><h2>All jobs by status</h2><button className="link" onClick={() => gotoJobs({ status: "" })}>See all {jobs.length}</button></div>
-          <div className="statusrow">{STATUSES.map((st) => { const n = jobs.filter((j) => j.status === st.id).length; return (<Fragment key={st.id}>
+          <div className="statusrow">{STATUSES.map((st) => { const n = jobs.filter((j) => j.status === st.id && !(st.id === "sent_for_sign" && isSigned(j))).length; return (<Fragment key={st.id}>
             <button className="statuschip" onClick={() => gotoJobs({ status: st.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>
             {st.id === "client_query" ? <button className={`statuschip replied${showReplies ? " on" : ""}`} aria-expanded={showReplies} onClick={() => setShowReplies(!showReplies)} disabled={!replies.length}
               title="Client queries the client has answered by email"><strong className="mono">{replies.length}</strong><span className="pill ok">Client replied</span></button> : null}
+            {st.id === "sent_for_sign" ? (() => { const r = jobs.filter(isSigned).length; return <button className="statuschip" onClick={() => gotoJobs({ status: "ready_lodge" })} disabled={!r}
+              title="The client has signed: check and lodge"><strong className="mono">{r}</strong><span className="pill ok">Ready to lodge</span></button>; })() : null}
           </Fragment>); })}</div>
           {showReplies && replies.length ? <div style={{ marginTop: 12 }}>{repliesEl(replies)}</div> : null}
         </div>
@@ -762,6 +764,8 @@ export default function Workspace({ me, viewer, onViewAs }: {
       const has = (list: string, v: string | undefined | null) => !list || list.split(",").includes(v ?? "");
       if (!has(f.service, j.service)) return false;
       if (f.status === "review_any" && !(j.status === "review" || j.status === "to_lodge")) return false;
+      if (f.status === "ready_lodge" && !isSigned(j)) return false;
+      if (f.status === "sent_for_sign" && isSigned(j)) return false;
       if (f.status === "has_notes" && !flags.get(j.id)?.rn) return false;
       if (ST[f.status] && j.status !== f.status) return false;
       if (f.client && (inGroup ? !inGroup.has(j.client_id) : j.client_id !== f.client)) return false;
@@ -849,7 +853,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
           <MultiPick id="jf-entity" all="All entity types" value={jf.entity} onChange={(v) => setJf({ ...jf, entity: v })} options={ENTITIES.map((x) => ({ v: x, l: x === "SMSF" ? "Super fund (SMSF)" : x }))} />
           <MultiPick id="jf-practice" all="All practices" value={jf.practice} onChange={(v) => setJf({ ...jf, practice: v })} options={myPractices.map((p) => ({ v: p, l: p }))} />
           <select id="jf-status" aria-label="Status" value={jf.status} onChange={set("status")}>
-            <option value="open">All open jobs</option><option value="review_any">Ready for review or signing</option>
+            <option value="open">All open jobs</option><option value="review_any">Ready for review or signing</option><option value="ready_lodge">Ready to lodge (client signed)</option>
             {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             <option value="">Everything</option>
           </select>

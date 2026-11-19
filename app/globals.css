@@ -729,7 +729,7 @@ ol.tasks{list-style:none;margin:0;padding:0}
 /* Overview: tiles with a line under, status chips in one row, attention list */
 .tile .note{font-size:12px}
 .tile.info .val{color:var(--accent)} .tile.lodg{border-top:3px solid var(--ok)} .tile.lodg .val{color:var(--ok)}
-@media (min-width:1100px){.statusrow{grid-template-columns:repeat(11,minmax(0,1fr));gap:6px}.statusrow .statuschip{padding:9px 6px}.statusrow .statuschip .pill{font-size:11px;padding:2px 6px;letter-spacing:-.1px;max-width:100%}}
+@media (min-width:1100px){.statusrow{grid-template-columns:repeat(12,minmax(0,1fr));gap:6px}.statusrow .statuschip{padding:9px 6px}.statusrow .statuschip .pill{font-size:11px;padding:2px 6px;letter-spacing:-.1px;max-width:100%}}
 .attention .list li,.rtypes .list li{display:flex;align-items:center;gap:12px;flex-wrap:nowrap}
 .attention .grow,.rtypes .grow{flex:1;min-width:0}
 .attention .s{overflow:hidden;text-overflow:ellipsis}
@@ -974,3 +974,4 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .ttable td { padding: 8px 12px; border-top: 1px solid var(--line); }
 .sq.late { background: #f6b4b4; border-color: var(--danger); }
 .mts .c-late { background: var(--danger); }
+@media (min-width:1100px){ .statusrow .statuschip .pill { white-space: normal; line-height: 1.2; } .statusrow .statuschip .pill::before { display: none; } }
