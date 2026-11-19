@@ -934,3 +934,43 @@ ol.tasks > li.task:not(:has(> :nth-child(2))) > .taskhead::after{content:none}
 .tdtable td, .tdtable th { vertical-align: top; }
 .tdtable { table-layout: fixed; min-width: 760px; }
 .tdtable th:nth-child(1) { width: 24%; } .tdtable th:nth-child(2) { width: 22%; } .tdtable th:nth-child(3) { width: 90px; }
+/* Attendance: late in red, breaks, streak, punctuality, idle alert */
+.latetxt { color: var(--danger) !important; font-weight: 700; }
+.warntxt { color: var(--warn) !important; font-weight: 700; }
+.goodtxt { color: var(--ok) !important; font-weight: 700; }
+.pill.solid { background: var(--danger); color: #fff; }
+.pill.solid::before { display: none; }
+.mts .mcal .mc.late { background: var(--danger-soft); border-color: var(--danger); border-left-color: var(--danger); }
+.xbar { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+.xbar.two { grid-template-columns: 1fr 1fr; }
+.xbar .panel { padding: 14px 16px; margin: 0; }
+.xbar h3 { margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.brkbar { height: 10px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; margin: 8px 0 6px; display: flex; }
+.brkbar b { background: var(--warn); display: block; } .brkbar b.ok { background: var(--ok); } .brkbar i { background: var(--danger); display: block; }
+.streak { font-size: 28px; font-weight: 700; font-family: var(--font-data); }
+.streak small { font-size: 13px; font-family: var(--font-ui); font-weight: 400; }
+.sdots { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+.sdots span { width: 20px; height: 20px; border-radius: 5px; font-size: 10px; display: grid; place-items: center; color: #fff; font-weight: 600; }
+.sdots .g { background: var(--ok); } .sdots .r { background: var(--danger); }
+.idlealert { display: flex; gap: 12px; align-items: center; justify-content: space-between; background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
+.atiles .tv-bad .val { color: var(--danger); } .atiles .tv-warn .val { color: var(--warn); } .atiles .tv-good .val { color: var(--ok); }
+.todaybar .tb-r { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+@media (max-width: 900px) { .xbar, .xbar.two { grid-template-columns: 1fr; } }
+/* Team today board */
+.teamtoday .ttsum { display: flex; gap: 6px; flex-wrap: wrap; }
+.teamtoday .tt-body { padding: 0 16px 16px; }
+.ttcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.ttcol { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.ttcol h4 { margin: 0; padding: 8px 12px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+.ttcol.in h4 { background: var(--ok-soft); color: var(--ok); } .ttcol.late h4 { background: var(--danger-soft); color: var(--danger); }
+.ttcol.brk h4 { background: var(--warn-soft); color: var(--warn); } .ttcol.out h4 { background: var(--surface-2); color: var(--muted); } .ttcol.lv h4 { background: var(--info-soft); color: var(--info); }
+.ttp { padding: 10px 12px; border-top: 1px solid var(--line); font-size: 13px; }
+.ttp > b { display: block; font-size: 14px; } .ttp > .note { display: block; margin-top: 2px; }
+.tflag { display: inline-block; margin: 5px 4px 0 0; font-size: 11px; font-weight: 700; color: #fff; background: var(--danger); border-radius: 999px; padding: 2px 8px; }
+.tflag.w { background: var(--warn); }
+.ttable { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+.ttable table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+.ttable th { background: var(--surface-2); text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.ttable td { padding: 8px 12px; border-top: 1px solid var(--line); }
+.sq.late { background: #f6b4b4; border-color: var(--danger); }
+.mts .c-late { background: var(--danger); }

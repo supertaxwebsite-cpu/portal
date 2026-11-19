@@ -108,7 +108,15 @@ export interface TimeEntry {
   job_id: string | null;
   hours: number;
   description: string;
+  created_at?: string;
 }
+
+/** A break during the working day (Start break / End break), times from the server clock. */
+export interface AttBreak { id: string; user_id: string; work_date: string; started_at: string; ended_at: string | null }
+/** Daily break allowance in minutes. */
+export const BREAK_ALLOWANCE_MIN = 45;
+/** Minutes with no job timer running before the idle alert shows. */
+export const IDLE_ALERT_MIN = 30;
 
 export interface JobTimer {
   id: string;

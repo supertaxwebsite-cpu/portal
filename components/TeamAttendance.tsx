@@ -76,7 +76,7 @@ export function MonthGrid({ month, people, days, leaves, entries, requests, leav
                 {leaveOnly ? <td className="num mono">{n1(lvDays)}</td> : <>
                   <td className="num mono">{mine.filter((d) => (d.first || d.h) && !d.leave).length}</td>
                   <td className="num mono">{n1(h)}</td>
-                  <td className="num mono" style={{ color: mine.some((d) => d.late) ? "var(--warn)" : undefined }}>{mine.filter((d) => d.late).length}</td>
+                  <td className="num mono" style={{ color: mine.some((d) => d.late) ? "var(--danger)" : undefined }}>{mine.filter((d) => d.late).length}</td>
                   <td className="num mono">{mine.filter((d) => d.half).length}</td>
                   <td className="num mono" style={{ color: lvDays ? "var(--danger)" : undefined }}>{n1(lvDays)}</td>
                   <td className="num mono" style={{ color: pct !== null && pct < 80 ? "var(--danger)" : undefined }}>{pct === null ? "—" : `${pct}%`}</td>

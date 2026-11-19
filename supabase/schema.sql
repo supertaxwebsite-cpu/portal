@@ -3220,3 +3220,118 @@ language sql stable security definer set search_path = public as $$
     or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
   );
 $$;
+
+-- ===== Breaks and late-start alerts =====
+-- Breaks (Start break / End break) and a late-start alert to the team leader.
+-- Adds one table, four functions, two triggers and a new notification kind. Changes no existing data.
+-- Safe to run more than once.
+
+-- 1. Breaks: times come from the server clock only, through start_break() and end_break().
+create table if not exists public.attendance_breaks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  work_date date not null,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  check (ended_at is null or ended_at >= started_at)
+);
+create index if not exists attendance_breaks_user_date_idx on public.attendance_breaks (user_id, work_date);
+alter table public.attendance_breaks enable row level security;
+drop policy if exists "see own or team breaks" on public.attendance_breaks;
+create policy "see own or team breaks" on public.attendance_breaks
+  for select to authenticated using (public.can_view_person(user_id));
+revoke insert, update, delete on public.attendance_breaks from authenticated, anon;
+
+-- Start a break: you must be logged in for the day. A running job timer stops first.
+create or replace function public.start_break() returns public.attendance_breaks
+language plpgsql security definer set search_path = public as $$
+declare a public.attendance; b public.attendance_breaks;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into a from public.attendance where user_id = auth.uid() and clock_out is null order by clock_in desc limit 1;
+  if not found then raise exception 'Log in for the day before you take a break'; end if;
+  select * into b from public.attendance_breaks where user_id = auth.uid() and ended_at is null limit 1;
+  if found then return b; end if;
+  perform public.end_job_timer(auth.uid());
+  insert into public.attendance_breaks (user_id, work_date) values (auth.uid(), a.work_date) returning * into b;
+  return b;
+end $$;
+
+create or replace function public.end_break() returns public.attendance_breaks
+language plpgsql security definer set search_path = public as $$
+declare b public.attendance_breaks;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  update public.attendance_breaks set ended_at = now() where user_id = auth.uid() and ended_at is null returning * into b;
+  if not found then raise exception 'You are not on a break'; end if;
+  return b;
+end $$;
+revoke all on function public.start_break(), public.end_break() from public, anon;
+grant execute on function public.start_break(), public.end_break() to authenticated;
+
+-- A break ends by itself when you log out for the day or start a job.
+create or replace function public.close_open_break() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_table_name = 'attendance' then
+    if new.clock_out is not null and old.clock_out is null then
+      update public.attendance_breaks set ended_at = greatest(started_at, new.clock_out) where user_id = new.user_id and ended_at is null;
+    end if;
+  else
+    update public.attendance_breaks set ended_at = greatest(started_at, new.started_at) where user_id = new.user_id and ended_at is null;
+  end if;
+  return new;
+end $$;
+revoke all on function public.close_open_break() from public, anon, authenticated;
+drop trigger if exists attendance_close_break on public.attendance;
+create trigger attendance_close_break after update of clock_out on public.attendance
+  for each row execute function public.close_open_break();
+drop trigger if exists job_timer_close_break on public.job_timers;
+create trigger job_timer_close_break after insert on public.job_timers
+  for each row execute function public.close_open_break();
+
+do $$ begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.attendance_breaks; exception when duplicate_object then null; end;
+  end if;
+end $$;
+
+-- 2. Late-start alert: from the 3rd late start in a month, the team leader (or the master admins,
+--    if the person has no team leader) gets a notification. Late = first log-in of the day after
+--    7:45 am India time (9:15 am Sydney time for the Australia office).
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check check (kind in (
+  'job_assigned', 'internal_query', 'query_answered', 'review', 'meeting', 'review_approved', 'review_returned',
+  'sign_reminder', 'client_query_reminder', 'sign_handover', 'review_note', 'review_fixed',
+  'leave_request', 'leave_decided', 'leave_cancelled', 'client_email', 'late_start'));
+
+create or replace function public.notify_late_start() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare p public.profiles; tz text; late_after int; n int; m int;
+begin
+  select * into p from public.profiles where id = new.user_id;
+  if not found then return new; end if;
+  if coalesce(p.work_location, 'India') = 'Australia' then tz := 'Australia/Sydney'; late_after := 9 * 60 + 15;
+  else tz := 'Asia/Kolkata'; late_after := 7 * 60 + 45; end if;
+  -- Only the first log-in of the day counts.
+  if exists (select 1 from public.attendance x where x.user_id = new.user_id and x.work_date = new.work_date and x.id <> new.id) then return new; end if;
+  m := extract(hour from new.clock_in at time zone tz)::int * 60 + extract(minute from new.clock_in at time zone tz)::int;
+  if m <= late_after then return new; end if;
+  select count(*) into n from (
+    select min(clock_in) f from public.attendance
+    where user_id = new.user_id and date_trunc('month', work_date) = date_trunc('month', new.work_date)
+    group by work_date) d
+  where extract(hour from d.f at time zone tz)::int * 60 + extract(minute from d.f at time zone tz)::int > late_after;
+  if n < 3 then return new; end if;
+  insert into public.notifications (user_id, actor_id, kind, body)
+  select t.id, new.user_id, 'late_start',
+         format('Late start number %s this month: logged in at %s, %s min late', n,
+                lower(to_char(new.clock_in at time zone tz, 'FMHH12:MIam')), m - late_after)
+  from public.profiles t
+  where t.active and t.id <> new.user_id and (t.id = p.reports_to or (p.reports_to is null and t.role = 'master'));
+  return new;
+end $$;
+revoke all on function public.notify_late_start() from public, anon, authenticated;
+drop trigger if exists attendance_late_alert on public.attendance;
+create trigger attendance_late_alert after insert on public.attendance
+  for each row execute function public.notify_late_start();
