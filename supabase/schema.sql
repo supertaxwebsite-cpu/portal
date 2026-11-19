@@ -3335,3 +3335,27 @@ revoke all on function public.notify_late_start() from public, anon, authenticat
 drop trigger if exists attendance_late_alert on public.attendance;
 create trigger attendance_late_alert after insert on public.attendance
   for each row execute function public.notify_late_start();
+
+-- ===== Can mark client signed =====
+-- "Can mark client signed": a team member with this tick can see every job in Sent for sign
+-- (for clients they can see) and mark it Client signed, which moves it to Ready to lodge.
+-- Adds one column (off for everyone) and updates who can see a job. Changes no data. Safe to run more than once.
+alter table public.profiles add column if not exists can_mark_signed boolean not null default false;
+
+create or replace function public.can_see_job(j public.jobs) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_active_member() and (
+    public.my_role() = 'master'
+    or (public.my_role() = 'manager' and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or (j.assignee_id is null and j.status not in ('done', 'sent_for_sign', 'lodged')
+        and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or (j.status = 'sent_for_sign' and coalesce((select p.can_mark_signed from public.profiles p where p.id = auth.uid()), false)
+        and public.can_see_client(j.client_id, (select c.entity from public.clients c where c.id = j.client_id)))
+    or j.assignee_id = auth.uid()
+    or j.reviewer_id = auth.uid()
+    or j.query_from = auth.uid()
+    or j.sign_owner = auth.uid()
+    or exists (select 1 from public.job_queries q where q.job_id = j.id and q.to_id = auth.uid())
+    or exists (select 1 from public.timesheet_entries e where e.job_id = j.id and e.user_id = auth.uid())
+  );
+$$;

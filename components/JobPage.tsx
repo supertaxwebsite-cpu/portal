@@ -19,11 +19,13 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep, canMarkSigned = false }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
   onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void; onClientChanges?: (j: Job) => void; onClientSigned?: (j: Job) => void;
+  /** May mark any job in Sent for sign as Client signed (Ready to lodge). */
+  canMarkSigned?: boolean;
   /** Payroll pay runs: confirm super paid, then STP lodged (finishes the pay run). */
   onPayStep?: (j: Job, step: "super" | "stp") => void;
   job: Job; client?: Client; meId: string; team: Person[]; canAnswerAll: boolean; canDelete: boolean; readOnly: boolean; supabase: SB;
@@ -140,7 +142,11 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
     }
     if (payFlow) return null;
     if (i === 2) {
-      if (!me && !canAnswerAll) return null;
+      if (!me && !canAnswerAll) {
+        if (!(canMarkSigned && job.status === "sent_for_sign" && !signed)) return null;
+        const ok = !stageL || stageL.sign.done;
+        return onClientSigned ? <button type="button" className="primary" disabled={busy || !ok} title={ok ? "The client has signed: move it to Ready to lodge" : "Tick every Client signature checklist item first"} onClick={() => onClientSigned(job)}>Client signed → Ready to lodge</button> : null;
+      }
       const changes = onClientChanges ? <button type="button" disabled={busy} title="The client wants changes: reopen the job and send it back to processing" onClick={() => onClientChanges(job)}>↺ Client needs changes</button> : null;
       if (job.status === "to_lodge") return <>{me ? timerBtn("Start") : null}{changes}{onSentForSign ? <button type="button" disabled={busy} onClick={() => onSentForSign(job)}>Sent for signing</button> : null}</>;
       if (job.status === "sent_for_sign" && !signed) { const ok = !stageL || stageL.sign.done;

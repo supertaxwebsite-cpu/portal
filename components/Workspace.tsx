@@ -513,7 +513,8 @@ export default function Workspace({ me, viewer, onViewAs }: {
    *  Jobs already with the client (sent for signing, query with client) are not tasks: the reminder goes to the bell only. */
   const myJobFilter = (j: Job) => {
     if (j.status === "to_lodge") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id;
-    if (j.status === "sent_for_sign" || j.status === "client_query") return false;
+    if (j.status === "sent_for_sign") return !!me.can_mark_signed && me.role !== "master" && !isSigned(j);
+    if (j.status === "client_query") return false;
     if (j.status === "review") return j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id);
     return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query") || askedBy.has(j.id);
   };
@@ -1159,6 +1160,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
                 {p.role === "staff" ? chip(!!p.can_pick_reviewer, "Chooses own reviewer") : null}
                 {chip(p.role === "master" || !!p.gets_sign_reminders, "Gets signing reminders")}
                 {p.role !== "master" ? chip(p.can_create_clients !== false, "Can create clients") : null}
+                {p.role !== "master" ? chip(!!p.can_mark_signed, "Moves signed jobs to Ready to lodge") : null}
                 {p.role !== "master" ? chip(!!p.can_see_mgmt_notes, "Sees management notes") : chip(true, "Sees management notes")}
                 {chip(p.role === "master" || !!p.can_see_workload, "Sees team workload", isMaster && p.role !== "master" && p.active ? async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); } : undefined)}
               </div>
@@ -1217,7 +1219,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
       {view === "jobs" ? (() => {
         const jp = jobPageId ? jobs.find((x) => x.id === jobPageId) : undefined;
         if (!jp) return JobsView();
-        return <JobPage key={jp.id} job={jp} client={clientById.get(jp.client_id)} meId={me.id} team={team} canAnswerAll={me.role !== "staff"} canDelete={canDelete}
+        return <JobPage key={jp.id} job={jp} client={clientById.get(jp.client_id)} meId={me.id} team={team} canAnswerAll={me.role !== "staff"} canMarkSigned={me.role === "master" || !!me.can_mark_signed} canDelete={canDelete}
           readOnly={!isOpen(jp.status) && !isMaster} supabase={supabase} personName={personName} say={say} statusEl={<StatusSelect j={jp} />} hours={jobHours[jp.id] ?? 0}
           running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
@@ -1695,9 +1697,9 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "", managerId: member?.manager_id ?? "", workLocation: member?.work_location ?? "India" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, canSelfReview: !!member?.can_self_review, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, canSelfReview: !!member?.can_self_review, canMarkSigned: !!member?.can_mark_signed, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ workLocation: v.workLocation, managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, canSelfReview: v.role === "manager" && perm.canSelfReview, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ workLocation: v.workLocation, managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, canSelfReview: v.role === "manager" && perm.canSelfReview, canMarkSigned: v.role !== "master" && perm.canMarkSigned, ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1740,6 +1742,7 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-teamtab" type="checkbox" checked={perm.canSeeTeamTab} onChange={(e) => setPerm({ ...perm, canSeeTeamTab: e.target.checked })} /> See the Team tab</label> : null}
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-selfreview" type="checkbox" checked={perm.canSelfReview} onChange={(e) => setPerm({ ...perm, canSelfReview: e.target.checked })} /> Can review their own jobs (otherwise they send for review to their manager or a master admin)</label> : null}
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-timesheet" type="checkbox" checked={perm.canAccessTimesheet} onChange={(e) => setPerm({ ...perm, canAccessTimesheet: e.target.checked })} /> See their team&apos;s timesheets, attendance and leave (otherwise only their own timesheet)</label> : null}
+          <label className="row" style={{ gap: 8 }}><input id="u-marksigned" type="checkbox" checked={perm.canMarkSigned} onChange={(e) => setPerm({ ...perm, canMarkSigned: e.target.checked })} /> Can mark any job in Sent for sign as Client signed, which moves it to Ready to lodge so a master admin can check and lodge it</label>
           <label className="row" style={{ gap: 8 }}><input id="u-signrem" type="checkbox" checked={perm.signReminders} onChange={(e) => setPerm({ ...perm, signReminders: e.target.checked })} /> Get the bell reminders to chase client signatures and client query replies on jobs they send out (otherwise the reminders go to the master admins)</label>
           <label className="row" style={{ gap: 8 }}><input id="u-candelete" type="checkbox" checked={perm.canDelete} onChange={(e) => setPerm({ ...perm, canDelete: e.target.checked })} /> Delete client notes and job comments</label>
           {v.role === "staff" ? <label className="row" style={{ gap: 8 }}><input id="u-pickrev" type="checkbox" checked={perm.canPickReviewer} onChange={(e) => setPerm({ ...perm, canPickReviewer: e.target.checked })} /> Choose the reviewer on their own jobs (including themselves)</label> : null}

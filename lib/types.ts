@@ -22,6 +22,8 @@ export interface Profile {
   can_see_team_tab?: boolean;
   can_access_timesheet?: boolean;
   can_self_review?: boolean;
+  /** May mark any job Sent for signing as Client signed (Ready to lodge). */
+  can_mark_signed?: boolean;
   /** "India" or "Australia": sets office hours, late time and the midnight log-out. */
   work_location?: string | null;
   can_see_mgmt_notes?: boolean;
