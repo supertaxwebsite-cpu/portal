@@ -692,7 +692,9 @@ export default function Workspace({ me, viewer, onViewAs }: {
           clientLine={(j) => { const c = clientById.get(j.client_id); return [clientName(j.client_id), `${practiceOf(c)}${c?.entity ? ` · ${c.entity}` : ""}`]; }}
           onOpen={(j) => openJob(j)} onStart={startJob} onStop={stopJob} onApprove={approveReview} onSendBack={sendBackReview} onSentForSign={markSentForSign}
           onSigned={markSigned} onClientSigned={markClientSigned} onReplied={(j) => myStatus(j, "in_progress")} onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} onPayroll={() => go("payroll")}
-          statusEl={(j) => <StatusSelect j={j} />} askedBy={askedBy} top={repliesEl(myReplies, "Client replied to your queries")}>
+          statusEl={(j) => <StatusSelect j={j} />} askedBy={askedBy} top={repliesEl(myReplies, "Client replied to your queries")}
+          unassigned={openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"))}
+          onTake={(j) => save(() => supabase.from("jobs").update({ assignee_id: me.id }).eq("id", j.id), "The job is yours. It's in My tasks now")}>
           {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
             onOpenMeeting={(m) => setModal({ kind: "meeting", meeting: m })} onMeetingDone={(m) => save(() => supabase.from("meetings").update({ done: true }).eq("id", m.id), "Meeting marked done")}
             onStart={startJob} onStop={stopJob} onStatus={myStatus} onSubmit={submitForReview} onAnswer={() => {}} onOpen={(j) => openJob(j)} onSeeAll={() => gotoJobs({ assignee: me.id })} /></div> : null}

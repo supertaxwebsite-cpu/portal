@@ -13,12 +13,13 @@ const monday = () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay(
 /** Working days (Mon to Sat) from the 1st of this month up to today. */
 const workDaysSoFar = () => { const t = new Date(); let n = 0; for (let d = 1; d <= t.getDate(); d++) if (new Date(t.getFullYear(), t.getMonth(), d).getDay() !== 0) n++; return n; };
 
-interface Stats { firstIn: string | null; daysAt: number; week: number; notes: { job_id: string }[] | null }
+interface Note { id: string; job_id: string; severity: string; category: string; body: string; author_id: string | null; created_at: string }
+interface Stats { firstIn: string | null; daysAt: number; week: number; notes: Note[] | null }
 type Kind = "all" | "overdue" | "iq" | "review" | "sign" | "notes";
 
 /** Staff home: today's log-in and suggested log-out, this month's numbers, and the task list, most urgent first. */
 export default function StaffHome({ supabase, meId, firstName, jobs, closedThisMonth, closedLastMonth, running, busy, clientLine, personName, wasStarted,
-  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, top, children }: {
+  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, top, children, unassigned = [], onTake }: {
   supabase: SB; meId: string; firstName: string; jobs: Job[]; closedThisMonth: number; closedLastMonth: number; running: JobTimer | null; busy: boolean;
   clientLine: (j: Job) => [string, string]; personName: (id: string | null) => string; wasStarted: (j: Job) => boolean;
   onOpen: (j: Job) => void; onStart: (j: Job) => void; onStop: () => void; onApprove: (j: Job) => void; onSendBack: (j: Job) => void;
@@ -28,6 +29,8 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
   top?: ReactNode;
   /** Jobs with an internal query raised to me and not answered yet: job id → who asked. */
   askedBy?: Map<string, string | null>;
+  /** Open jobs nobody (active) is assigned to, most urgent first, and how to take one. */
+  unassigned?: Job[]; onTake?: (j: Job) => void;
 }) {
   const [s, setS] = useState<Stats | null>(null);
   const [kind, setKind] = useState<Kind>("all");
@@ -41,14 +44,14 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
       const [a, e, rn] = await Promise.all([
         supabase.from("attendance").select("clock_in,work_date").eq("user_id", meId).gte("work_date", month).order("clock_in"),
         supabase.from("timesheet_entries").select("hours").eq("user_id", meId).gte("work_date", monday()).lte("work_date", todayISO()),
-        supabase.from("review_notes").select("job_id").eq("to_id", meId).eq("status", "open"),
+        supabase.from("review_notes").select("id,job_id,severity,category,body,author_id,created_at").eq("to_id", meId).eq("status", "open").order("created_at"),
       ]);
       const att = (a.data as { clock_in: string; work_date: string }[] | null) ?? [];
       const last = att[att.length - 1];
       // Today's shift: the first log-in on the latest work day, if that day started in the last 16 hours.
       const first = last && now - Date.parse(last.clock_in) < 16 * 3600e3 ? att.find((x) => x.work_date === last.work_date)?.clock_in ?? null : null;
       const week = ((e.data as { hours: number }[] | null) ?? []).reduce((t, r) => t + (Number(r.hours) || 0), 0);
-      if (live) setS({ firstIn: first, daysAt: new Set(att.map((x) => x.work_date)).size, week, notes: rn.error ? null : (rn.data as { job_id: string }[]) });
+      if (live) setS({ firstIn: first, daysAt: new Set(att.map((x) => x.work_date)).size, week, notes: rn.error ? null : (rn.data as Note[]) });
     })();
     return () => { live = false; };
     // Re-read when the running job changes: stopping a job adds time to the timesheet.
@@ -73,7 +76,10 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     ...(s?.notes ? [["notes", "Review notes", (j: Job) => noteJobs.has(j.id), true] as [Kind, string, (j: Job) => boolean, boolean]] : []),
   ];
   const f = PILLS.find((p) => p[0] === kind)?.[2] ?? (() => true);
-  const list = ordered.filter((j) => f(j) && !isPay(j));
+  // Coming up later: not started yet and due more than 7 days away. On "All" they sit in their own box instead of the task list.
+  const isLater = (j: Job) => j.status === "not_started" && !!j.due_date && daysFrom(j.due_date) > 7 && running?.job_id !== j.id && !asked(j) && !noteJobs.has(j.id);
+  const later = ordered.filter(isLater).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+  const list = ordered.filter((j) => f(j) && !isPay(j) && !(kind === "all" && isLater(j)));
   const shown = all ? list : list.slice(0, 10);
   const payList = ordered.filter((j) => f(j) && isPay(j));
 
@@ -155,6 +161,37 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
         {!list.length ? <div className="empty"><strong>{jobs.length ? (payList.length ? "No other jobs in this list." : "Nothing in this list.") : "No open jobs assigned to you."}</strong>{jobs.length ? "Pick another filter above." : "Jobs assigned to you show here, ready to start."}</div> : (
           table(shown))}
         <div className="count">Showing {shown.length} of {list.length}{list.length > shown.length ? <> · <button type="button" className="link" onClick={() => setAll(true)}>show all</button></> : null} · click a task to open its job page</div>
+      </div>
+      {s?.notes?.length ? <div className="panel tasklist" style={{ marginTop: 16 }}>
+        <div className="ph"><h2>Review notes to fix <span className="pill danger">{s.notes.length}</span></h2><span className="note">Open the job, fix it, then mark the note fixed</span></div>
+        <div style={{ overflowX: "auto" }}><table className="jobtable"><thead><tr><th>Client · job</th><th>From</th><th>Type</th><th>Note</th><th>Raised</th><th></th></tr></thead>
+          <tbody>{s.notes.map((n) => { const j = jobs.find((x) => x.id === n.job_id); return (
+            <tr key={n.id}><td className="client">{j ? clientLine(j)[0] : "A job"}<div className="note">{j ? `${svcLabel(j.service)} ${j.period}` : ""}</div></td>
+              <td>{personName(n.author_id) || "—"}</td>
+              <td><span className={`pill ${n.severity === "major" ? "danger" : "warn"}`}>{n.severity === "major" ? "Major" : "Minor"}</span><div className="note">{n.category}</div></td>
+              <td style={{ whiteSpace: "pre-wrap", maxWidth: 420 }}>{n.body.length > 180 ? `${n.body.slice(0, 180)}…` : n.body}</td>
+              <td className="note">{fmtDate(n.created_at.slice(0, 10))}</td>
+              <td>{j ? <button type="button" className="primary" onClick={() => onOpen(j)}>Fix</button> : null}</td></tr>); })}</tbody></table></div>
+      </div> : null}
+      <div className="grid2" style={{ marginTop: 16 }}>
+        <div className="panel tasklist">
+          <div className="ph"><h2>Unassigned jobs I can take <span className="pill info">{unassigned.length}</span></h2></div>
+          {unassigned.length ? <div style={{ overflowX: "auto" }}><table className="jobtable"><thead><tr><th>Client</th><th>Job</th><th>Due</th><th></th></tr></thead>
+            <tbody>{unassigned.slice(0, 8).map((j) => (
+              <tr key={j.id}><td className="client">{clientLine(j)[0]}</td><td><button type="button" className="link jobname" onClick={() => onOpen(j)}>{svcLabel(j.service)} {j.period}</button></td>
+                <td>{due(j)}</td><td>{onTake ? <button type="button" className="primary" disabled={busy} onClick={() => onTake(j)}>Take it</button> : null}</td></tr>))}</tbody></table></div>
+            : <div className="empty"><strong>No unassigned jobs right now.</strong>New jobs nobody has taken show here.</div>}
+          {unassigned.length > 8 ? <div className="count">Showing 8 of {unassigned.length} · the rest are in Jobs (Assigned to: Unassigned)</div> : null}
+        </div>
+        <div className="panel tasklist">
+          <div className="ph"><h2>Coming up later <span className="pill info">{later.length}</span></h2><span className="note">Not started, due after the next 7 days</span></div>
+          {later.length ? <div style={{ overflowX: "auto" }}><table className="jobtable"><thead><tr><th>Client · job</th><th>Due</th><th></th></tr></thead>
+            <tbody>{later.slice(0, 8).map((j) => (
+              <tr key={j.id}><td className="client">{clientLine(j)[0]}<div className="note"><button type="button" className="link" onClick={() => onOpen(j)}>{svcLabel(j.service)} {j.period}</button></div></td>
+                <td>{due(j)}</td><td>{timer(j)}</td></tr>))}</tbody></table></div>
+            : <div className="empty"><strong>Nothing coming up later.</strong>Jobs due after the next 7 days show here.</div>}
+          {later.length > 8 ? <div className="count">Showing 8 of {later.length} · the rest are in Jobs</div> : null}
+        </div>
       </div>
       {jobs.some(isPay) ? <div className="panel tasklist paylist">
         <div className="ph"><h2>Payroll <span className="pill info">{payList.length}</span></h2><span className="note">Your pay runs: timesheets in, process, review, super paid, then STP lodged</span>
