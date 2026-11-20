@@ -1,8 +1,8 @@
 "use client";
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
-import type { Client, Job, JobTimer, Person } from "@/lib/types";
-import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned, industryLabel } from "@/lib/domain";
+import type { AuditQuery, Client, Job, JobTimer, Person } from "@/lib/types";
+import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned, industryLabel, AUDIT_STATUSES } from "@/lib/domain";
 import { STEPS, checklistFor } from "@/lib/checklists";
 import JobBrief, { type PrepRow, type StageLists } from "./JobBrief";
 import JobFiles from "./JobFiles";
@@ -19,11 +19,13 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep, canMarkSigned = false }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep, onAudit, canMarkSigned = false }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
   onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void; onClientChanges?: (j: Job) => void; onClientSigned?: (j: Job) => void;
+  /** SMSF audit: move between Sent to auditor and Auditor query, or on to Client signature, saving the auditor queries. */
+  onAudit?: (j: Job, status: "with_auditor" | "auditor_query" | "to_lodge", queries?: AuditQuery[]) => Promise<unknown> | void;
   /** May mark any job in Sent for sign as Client signed (Ready to lodge). */
   canMarkSigned?: boolean;
   /** Payroll pay runs: confirm super paid, then STP lodged (finishes the pay run). */
@@ -47,7 +49,10 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const skipSign = job.needs_signature === false && job.status === "to_lodge";
   // Pay runs with nothing to approve: after Review come Super paid, then STP lodged.
   const payFlow = job.service === "payroll" && job.needs_signature === false;
-  const stage = !open ? 4 : payFlow && job.status === "to_lodge" ? (job.super_done_at ? 3 : 2) : signed || skipSign ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
+  // SMSF: an Audit step between Review and Client signature (stage 1.5 while the job is with the auditor).
+  const audit = job.service === "smsf" && job.needs_signature !== false;
+  const inAudit = audit && AUDIT_STATUSES.has(job.status);
+  const stage = !open ? 4 : inAudit ? 1.5 : payFlow && job.status === "to_lodge" ? (job.super_done_at ? 3 : 2) : signed || skipSign ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
   // Tick every 15 seconds while the timer runs here, so the clock and the totals stay live.
   const [now, setNow] = useState(() => Date.now());
@@ -196,6 +201,44 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
         {r.who ? <span className="av" title={personName(r.who)}>{initials(personName(r.who))}</span> : <span className="av">—</span>}
       </div></div>; };
 
+  // SMSF Audit step: checklist, the auditor's queries, and the buttons that move it on.
+  const [aq, setAq] = useState("");
+  const queries: AuditQuery[] = Array.isArray(job.audit_queries) ? job.audit_queries : [];
+  const openQ = queries.filter((q) => !q.done_at);
+  const canAudit = open && !readOnly && !!onAudit && (job.assignee_id === meId || job.reviewer_id === meId || canAnswerAll);
+  const auditLi = (L: StageLists) => {
+    const cls = inAudit ? "now" : stage >= 2 ? "done" : "later";
+    const who = job.assignee_id;
+    const sub = inAudit ? (job.status === "auditor_query" ? `Auditor query: ${openQ.length} open. Answer it, then mark it answered` : `With the auditor${queries.length ? ` · ${queries.length - openQ.length} of ${queries.length} queries answered` : ""}`)
+      : stage >= 2 ? "Audit report received" : "Opens when the reviewer approves it";
+    const ready = L.audit.done && !openQ.length;
+    const saveQ = async (list: AuditQuery[]) => { await onAudit?.(job, list.some((q) => !q.done_at) ? "auditor_query" : "with_auditor", list); };
+    return <li className={`task${cls === "later" ? " later" : ` ${cls}`}`}>
+      <div className={`taskhead ${cls === "later" ? "" : cls}`}>
+        <span className="tdot">{cls === "done" ? "✓" : ""}</span>
+        <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Audit{who ? ` · ${personName(who)}${who === meId ? " (you)" : ""}` : ""}</div>
+          <div className="tks">{inAudit && on ? <span className="runtxt">● Running · </span> : null}{sub}</div></div>
+        <div className="row jsact">
+          {inAudit && canAudit ? <>{job.assignee_id === meId ? timerBtn("Start") : null}
+            <button type="button" className="primary" disabled={busy || !ready} title={ready ? "The audit report is in: move on to Client signature" : openQ.length ? "Mark every auditor query answered first" : "Tick every Audit checklist item first"}
+              onClick={async () => { if (on) await onStop(); await onAudit?.(job, "to_lodge"); }}>Audit report received</button></> : null}
+          {who ? <span className="av" title={personName(who)}>{initials(personName(who))}</span> : <span className="av">—</span>}
+        </div></div>
+      {stage >= 1.5 ? <div className="taskbody">{L.audit.el}
+        <section className="briefsec"><h3>Auditor queries <span className="note">{queries.length ? `${openQ.length} open · ${queries.length - openQ.length} answered` : "None yet"}</span></h3>
+          {queries.map((q) => <div key={q.id} className={`auditq${q.done_at ? " done" : ""}`}>
+            <div className="row" style={{ justifyContent: "space-between", flexWrap: "nowrap", gap: 10 }}>
+              <span><b>{q.done_at ? `✓ Answered ${fmtDate(q.done_at.slice(0, 10))}` : `Open · received ${fmtDate(q.at.slice(0, 10))}`}</b>{q.by ? <span className="note"> · logged by {personName(q.by)}</span> : null}</span>
+              {!q.done_at && inAudit && canAudit ? <button type="button" disabled={busy} onClick={() => saveQ(queries.map((x) => x.id === q.id ? { ...x, done_at: new Date().toISOString() } : x))}>Mark answered</button> : null}</div>
+            <div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{q.body}</div></div>)}
+          {inAudit && canAudit ? <div className="qnew" style={{ marginTop: 8 }}>
+            <textarea id="aq-body" placeholder="What did the auditor ask? e.g. Please provide the market valuation for the property at 30 June." value={aq} onChange={(e) => setAq(e.target.value)} />
+            <div className="row"><span className="note">The job shows Auditor query until every query is marked answered.</span><span style={{ flex: 1 }} />
+              <button type="button" disabled={busy || !aq.trim()} onClick={async () => { const body = aq.trim().slice(0, 2000); await saveQ([...queries, { id: crypto.randomUUID(), body, at: new Date().toISOString(), by: meId }]); setAq(""); }}>+ Add auditor query</button></div>
+          </div> : null}</section></div> : null}
+    </li>;
+  };
+
   return (
     <>
       {notesPop ? <NotesPopup kind={notesPop} jobId={job.id} clientId={job.client_id} clientName={client?.name ?? ""} supabase={supabase} personName={personName}
@@ -218,7 +261,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <button type="button" className="count" onClick={() => setNotesPop("review")}>Review notes <i className={flag?.rn ? "red" : ""}>{flag?.rn ?? 0}</i></button>
           <button type="button" className="count" onClick={() => go("jp-files")}>Files <i className="blue">{flag?.f ?? 0}</i></button>
           {prog.total ? <button type="button" className="count" onClick={() => go("jp-work")}>{STEPS[job.service] ? "Steps" : "Checklist"} <i className={prog.total && prog.marked >= prog.total ? "green" : undefined}>{Math.min(prog.marked, prog.total)}/{prog.total}</i></button> : null}
-          <span className="count">Stage <i className="blue">{Math.min(stage + 1, 4)} of 4</i></span>
+          <span className="count">Stage <i className="blue">{audit ? (inAudit ? 3 : stage <= 1 ? stage + 1 : Math.min(stage + 2, 5)) : Math.min(stage + 1, 4)} of {audit ? 5 : 4}</i></span>
           <button type="button" className="count" onClick={() => go("jp-history")}>Time logged <i className="dark">{fmtHours(Math.max(hours, jobTotal))}</i></button>
           {related && client ? <button type="button" className="count" onClick={() => onOpenClient(client.id)}>🔗 Related clients ({related})</button> : null}
           <span style={{ flex: 1 }} />
@@ -241,9 +284,10 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
                   {reviewing ? <div className="taskbody"><p className="note" style={{ margin: "0 0 8px" }}>Found a mistake? Add a review note with a screenshot or file. It goes back to {personName(job.assignee_id) || "the preparer"} to fix, and you clear it. When everything is cleared, approve it.</p>
                     <ReviewNoteForm job={job} meId={meId} supabase={supabase} personName={personName} say={say} />
                     <div className="row">{onSendBack ? <button type="button" disabled={busy} onClick={() => onSendBack(job)}>↩ Send back to {personName(job.assignee_id).split(" ")[0] || "the preparer"}</button> : null}
-                      {onApprove ? <button type="button" className="primary" disabled={busy || !approveReady} title={approveReady ? undefined : `Mark every Review checklist item first${noSign && !pay ? ", and the Complete checklist" : ""}`} onClick={() => onApprove(job)}>{pay ? "Approve pay run" : job.needs_signature === false ? "Approve and complete" : "Approve → Client signature"}</button> : null}</div>
+                      {onApprove ? <button type="button" className="primary" disabled={busy || !approveReady} title={approveReady ? undefined : `Mark every Review checklist item first${noSign && !pay ? ", and the Complete checklist" : ""}`} onClick={() => onApprove(job)}>{pay ? "Approve pay run" : job.needs_signature === false ? "Approve and complete" : audit ? "Approve → Send to auditor" : "Approve → Client signature"}</button> : null}</div>
                     {!approveReady ? <p className="note" style={{ margin: "6px 0 0" }}>{!L.review.done ? "Tick every Review checklist item to approve." : "This job has nothing to sign, so approving finishes it: tick the Complete checklist below first."}</p>
                       : pay ? <p className="note" style={{ margin: "6px 0 0" }}>Approving opens the next two steps: Super paid, then STP lodged.</p> : null}</div> : null}</li>
+                {audit ? auditLi(L) : null}
                 <li className={`task${stage === 2 ? " now" : stage > 2 ? " done" : " later"}`}>{head(2)}
                                     {stage === 2 && open && !pay && !readOnly && onHandSign && (signer === meId || canAnswerAll) ? <div className="taskbody signwho">
                     <span className="note">{job.status === "sent_for_sign" ? "Who follows up with the client?" : "Who sends it for signing?"}</span>

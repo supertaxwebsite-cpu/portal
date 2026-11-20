@@ -1,9 +1,9 @@
 "use client";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Client, ClientLink, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
+import type { AuditQuery, Client, ClientLink, Job, JobTimer, Person, Profile, StatusId } from "@/lib/types";
 import { periodOptions, clientUpcoming,
-  ENTITIES, PRACTICES, practicesFor, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
+  ENTITIES, PRACTICES, practicesFor, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, statusesFor, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
   isSigned, SIGNED_MARK, industryLabel, industryHint,
@@ -488,7 +488,19 @@ export default function Workspace({ me, viewer, onViewAs }: {
       await save(() => supabase.from("jobs").update({ status: "done" }).eq("id", j.id), "Approved and completed. Nothing for the client to sign");
       return;
     }
+    if (j.service === "smsf") {
+      await save(() => supabase.from("jobs").update({ status: "with_auditor" }).eq("id", j.id), `Approved. Send it to the auditor: ${personName(j.assignee_id) || "the preparer"} tracks it on the Audit step`);
+      return;
+    }
     await save(() => supabase.from("jobs").update({ status: "to_lodge" }).eq("id", j.id), "Approved. It's in your My jobs as Ready for signing");
+  }
+  /** SMSF audit: auditor query raised or answered, or the audit report is in (on to Client signature). */
+  async function auditStep(j: Job, status: "with_auditor" | "auditor_query" | "to_lodge", queries?: AuditQuery[]) {
+    if (status === "to_lodge" && running?.job_id === j.id && !(await stopJob())) return;
+    const row: Record<string, unknown> = { status };
+    if (queries) row.audit_queries = queries;
+    await save(() => supabase.from("jobs").update(row).eq("id", j.id),
+      status === "to_lodge" ? "Audit report received. It's Ready for signing" : status === "auditor_query" ? "Auditor query saved" : "Saved. It's with the auditor");
   }
   /** Nothing to sign: close the job straight away as Completed. */
   async function completeNoSign(j: Job) {
@@ -613,6 +625,11 @@ export default function Workspace({ me, viewer, onViewAs }: {
   const statusCls = (j: Job) => { const s = ST[j.status] ?? ST.not_started; return s.open && j.due_date && daysFrom(j.due_date) < 0 ? "danger" : s.cls; };
   // Staff can be limited to creating clients only for their own practices, or not at all.
   const canCreateClient = me.role === "master" || me.can_create_clients !== false;
+  // Who may create jobs, and for which services / client types (undefined: no limit).
+  const canNewJob = me.role === "master" || me.can_create_jobs !== false;
+  const canBulkJob = me.role === "master" || me.can_bulk_jobs !== false;
+  const jobSvcs = me.role !== "master" && me.job_services?.length ? me.job_services : undefined;
+  const myEntities = me.role !== "master" && me.client_types?.length ? me.client_types : undefined;
   const myPractices: string[] = me.role !== "master" && me.practices?.length ? PRACTICES.filter((p) => me.practices!.includes(p)) : [...PRACTICES];
   // Lodged and completed jobs are read-only for everyone except master admins.
   const closedFor = (j: Job) => !isOpen(j.status) && !isMaster;
@@ -620,7 +637,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
   const StatusSelect = ({ j }: { j: Job }) => me.role === "staff"
     ? <span className={`pill status ${statusCls(j)}`} title="The status changes on its own as the job's tasks are done">{ST[j.status]?.label ?? j.status}</span> : (
     <select className={`status ${statusCls(j)}`} id={`st-${j.id}`} aria-label="Status" value={j.status} disabled={closedFor(j) || staffSubmitted(j) || staffNotStarted(j)} title={closedFor(j) ? "Only a master admin can change a lodged or completed job" : staffSubmitted(j) ? SUBMITTED_LOCK_MSG : staffNotStarted(j) ? "Not started yet. The person it's assigned to presses Start first, then the status can change" : undefined} onChange={(e) => ((me.role === "staff" || (me.role === "manager" && j.assignee_id === me.id)) && e.target.value === "review" ? submitForReview(j) : setStatus(j, e.target.value as StatusId))}>
-      {STATUSES.map((s) => <option key={s.id} value={s.id} disabled={me.role === "staff" && STAFF_CANT_PICK.has(s.id) && s.id !== j.status && j.reviewer_id !== me.id}>{s.label}</option>)}
+      {statusesFor(j.service).map((s) => <option key={s.id} value={s.id} disabled={me.role === "staff" && STAFF_CANT_PICK.has(s.id) && s.id !== j.status && j.reviewer_id !== me.id}>{s.label}</option>)}
     </select>
   );
 
@@ -716,7 +733,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
       <>
         <div className="pagehead">
           <div><h1>Practice desk</h1><p>{greeting()} {me.full_name.split(" ")[0]}. {seesOwnTeam ? "Your team at a glance" : "The whole practice at a glance"} · {openJobs.length} open job{openJobs.length === 1 ? "" : "s"} across {clients.length} client{clients.length === 1 ? "" : "s"}.</p></div>
-          <div className="row"><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
+          <div className="row">{canBulkJob ? <button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button> : null}{canNewJob ? <button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button> : null}</div>
         </div>
         {!clients.length ? (
           <div className="panel welcome"><div><h2 style={{ fontSize: 18 }}>Set up your practice</h2>
@@ -839,7 +856,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
       <>
         <div className="pagehead">
           <div><h1>Jobs <span className="pill info" style={{ fontSize: 13, verticalAlign: "middle" }}>{openJobs.length.toLocaleString()} open</span></h1><p>{me.role === "staff" ? "Your jobs, plus unassigned jobs you can pick up with Take it." : "Every job in the practice. Team leaders see their own team's jobs. Staff see only their own."}</p></div>
-          <div className="row"><button onClick={() => exportCsv(list)}>Export CSV</button><button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button><button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button></div>
+          <div className="row"><button onClick={() => exportCsv(list)}>Export CSV</button>{canBulkJob ? <button onClick={() => setModal({ kind: "bulk" })}>Create jobs for a period</button> : null}{canNewJob ? <button className="primary" onClick={() => setModal({ kind: "job" })}>New job</button> : null}</div>
         </div>
         <div className="quickpills">{(me.role === "staff" ? [
           ["My open jobs", { assignee: me.id }, openJobs.filter((j) => j.assignee_id === me.id).length, ""],
@@ -1048,7 +1065,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
             {c.contact ? <span>Contact <b>{c.contact}</b></span> : null}{c.phone ? <span>📞 <b>{c.phone}</b></span> : null}{c.email ? <span>✉ <b><a href={`mailto:${c.email}`}>{c.email}</a></b></span> : null}
           </div>
           {c.services.length ? <div className="row" style={{ marginTop: 10 }}>{c.services.map((sv) => <span key={sv} className="chip">{svcLabel(sv)}{freq(sv)}</span>)}</div> : null}
-          <div className="row" style={{ marginTop: 12 }}><button onClick={() => setModal({ kind: "client", client: c })}>✎ Edit client</button><button className="primary" onClick={() => setModal({ kind: "job", clientId: c.id })}>+ New job for this client</button></div>
+          <div className="row" style={{ marginTop: 12 }}><button onClick={() => setModal({ kind: "client", client: c })}>✎ Edit client</button>{canNewJob ? <button className="primary" onClick={() => setModal({ kind: "job", clientId: c.id })}>+ New job for this client</button> : null}</div>
           <div className="counts">
             <button type="button" className="count" onClick={() => go2("cl-work")}>Open jobs <i className="blue">{openJ.length}</i></button>
             <button type="button" className="count" onClick={() => go2("cl-work")}>Overdue <i className={od ? "red" : ""}>{od}</i></button>
@@ -1177,6 +1194,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
                 {chip(p.role === "master" || !!p.gets_sign_reminders, "Gets signing reminders")}
                 {p.role !== "master" ? chip(p.can_create_clients !== false, "Can create clients") : null}
                 {p.role !== "master" ? chip(!!p.can_mark_signed, "Moves signed jobs to Ready to lodge") : null}
+                {p.role !== "master" ? chip(p.can_create_jobs !== false, p.job_services?.length ? `Creates ${p.job_services.map(svcLabel).join(", ")} jobs only` : "Can create jobs") : null}
                 {p.role !== "master" ? chip(!!p.can_see_mgmt_notes, "Sees management notes") : chip(true, "Sees management notes")}
                 {chip(p.role === "master" || !!p.can_see_workload, "Sees team workload", isMaster && p.role !== "master" && p.active ? async () => { if (await adminCall(`/api/team/${p.id}/workload-access`, "PATCH", { allow: !p.can_see_workload })) say(p.can_see_workload ? `${p.full_name} can no longer see the team workload` : `${p.full_name} can now see the team workload`); } : undefined)}
               </div>
@@ -1241,7 +1259,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
           onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered}
-          onComplete={(j) => setModal({ kind: "submit", job: j })} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onClientSigned={markClientSigned} onPayStep={payrollStep} onReplied={(j) => myStatus(j, "in_progress")} />;
+          onComplete={(j) => setModal({ kind: "submit", job: j })} onAudit={auditStep} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onClientSigned={markClientSigned} onPayStep={payrollStep} onReplied={(j) => myStatus(j, "in_progress")} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
@@ -1267,9 +1285,9 @@ export default function Workspace({ me, viewer, onViewAs }: {
           return true;
         }} /> : null}
       </WorkGate>
-      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} teamOnly={me.role === "manager" ? myTeamIds : undefined} practicesOf={(id) => profiles.find((x) => x.id === id)?.practices ?? []} practices={myPractices} canCreateClient={canCreateClient} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onRaised={queryRaised} onAnswered={queryAnswered} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
-      {modal?.kind === "bulk" ? <BulkModal clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
-      {modal?.kind === "client" ? <ClientModal client={modal.client} practices={myPractices} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
+      {modal?.kind === "job" ? <JobModal key={modal.job?.id ?? "new"} job={modal.job} services={jobSvcs} entities={myEntities} teamOnly={me.role === "manager" ? myTeamIds : undefined} practicesOf={(id) => profiles.find((x) => x.id === id)?.practices ?? []} practices={myPractices} canCreateClient={canCreateClient} initialTab={modal.tab} presetClient={modal.clientId} presetService={modal.service} isStaff={me.role === "staff"} leaderId={me.reports_to ?? null} statusLocked={!!modal.job && ((!isMaster && staffNotStarted(modal.job)) || staffSubmitted(modal.job))} statusLockMsg={modal.job && staffSubmitted(modal.job) ? SUBMITTED_LOCK_MSG : undefined} onOpenClient={(id) => { close(); openClient(id); }} clients={clients} team={team} canDelete={canDelete} canDeleteJob={isMaster} locked={!!modal.job && !canManage} readOnly={!!modal.job && !isOpen(modal.job.status) && !isMaster} meId={me.id} meName={me.full_name} signCol={jobs.length > 0 && "needs_signature" in jobs[0]} canPickReviewer={me.role === "staff" && !!me.can_pick_reviewer} onNewClient={() => setModal({ kind: "client" })} onQuery={(j) => setModal({ kind: "query", job: j, mode: "send" })} onRaised={queryRaised} onAnswered={queryAnswered} onHandSign={(j) => setModal({ kind: "handsign", job: j })} canHandSign={(j) => canManage || (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} personName={personName} say={say} /> : null}
+      {modal?.kind === "bulk" ? <BulkModal services={jobSvcs} clients={clients} team={me.role === "staff" ? team.filter((p) => p.id === me.id) : team} jobs={jobs} personName={personName} supabase={supabase} save={save} onClose={close} say={say} /> : null}
+      {modal?.kind === "client" ? <ClientModal client={modal.client} entities={myEntities} practices={myPractices} clients={clients} team={team} canDelete={isMaster} jobs={jobs} supabase={supabase} save={save} onClose={close} confirm={(m) => setModal({ kind: "confirm", ...m })} onDeleted={() => setClientId(null)} /> : null}
       {modal?.kind === "import" && canManage ? <ImportModal clients={clients} people={people} supabase={supabase} onDone={(n) => { load(); say(`${n} client${n === 1 ? "" : "s"} imported`); close(); }} onClose={close} say={say} /> : null}
       {modal?.kind === "member" ? <MemberModal member={modal.member} managers={managers} bosses={profiles.filter((p) => p.active && (p.role === "manager" || p.role === "master"))} staff={profiles.filter((p) => p.active && p.role === "staff")} adminCall={adminCall} onClose={close} onTemp={(t) => setModal({ kind: "temp", ...t })} confirm={(m) => setModal({ kind: "confirm", ...m })} say={say} /> : null}
       {modal?.kind === "temp" ? (
@@ -1386,14 +1404,14 @@ function ConfirmModal({ title, text, yes, run, onClose }: ConfirmArgs & { onClos
   );
 }
 
-function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACTICES], canCreateClient = true, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onRaised, onAnswered, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
-  job?: Job; teamOnly?: Set<string>; practicesOf?: (id: string) => string[]; practices?: string[]; canCreateClient?: boolean; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
+function JobModal({ job, services: allowedSvc, entities: allowedEnt, teamOnly, practicesOf = () => [], practices = [...PRACTICES], canCreateClient = true, initialTab, onNewClient, presetClient, presetService, isStaff, leaderId, statusLocked, statusLockMsg, onOpenClient, clients, team, canDelete, canDeleteJob, locked: staffLock, readOnly, meId, meName, canPickReviewer = false, signCol = false, onQuery, onRaised, onAnswered, onHandSign, canHandSign, supabase, save, onClose, confirm, personName, say }: {
+  job?: Job; services?: string[]; entities?: string[]; teamOnly?: Set<string>; practicesOf?: (id: string) => string[]; practices?: string[]; canCreateClient?: boolean; initialTab?: "queries" | "email"; onNewClient?: () => void; presetClient?: string; presetService?: string; isStaff: boolean; leaderId: string | null; statusLocked: boolean; statusLockMsg?: string; onOpenClient?: (id: string) => void; clients: Client[]; team: Person[]; canDelete: boolean; canDeleteJob: boolean; locked: boolean; readOnly: boolean; meId: string; meName: string; canPickReviewer?: boolean; signCol?: boolean; onQuery: (j: Job) => void; onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onHandSign: (j: Job) => void; canHandSign: (j: Job) => boolean; supabase: SB; save: SaveFn; onClose: () => void;
   confirm: (m: ConfirmArgs) => void; personName: (id: string | null) => string; say: (m: string, e?: boolean) => void;
 }) {
   const locked = staffLock || readOnly;
   const preset = presetClient ? clients.find((c) => c.id === presetClient) : undefined;
   const [v, setV] = useState({
-    client_id: job?.client_id ?? presetClient ?? "", service: job?.service ?? presetService ?? "bas", period: job?.period ?? "", due_date: job?.due_date ?? "",
+    client_id: job?.client_id ?? presetClient ?? "", service: job?.service ?? (allowedSvc && !allowedSvc.includes(presetService ?? "bas") ? allowedSvc[0] : presetService ?? "bas"), period: job?.period ?? "", due_date: job?.due_date ?? "",
     priority: job?.priority ?? "normal", assignee_id: job?.assignee_id ?? preset?.manager_id ?? "", reviewer_id: job?.reviewer_id ?? "",
     status: job?.status ?? "not_started", lodged_on: job?.lodged_on ?? "", notes: job?.notes ?? "",
   });
@@ -1507,13 +1525,13 @@ function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACT
           : staffLock ? <div className="full hint">Only your manager can change the client, service, period, due date, priority, assignee, reviewer and lodgment date. You can update the status and notes.</div> : null}
         <label className="f full"><span className="row" style={{ justifyContent: "space-between" }}>Client{v.client_id && onOpenClient ? <button type="button" className="link" style={{ fontSize: 13 }} onClick={() => onOpenClient(v.client_id)}>Open client profile →</button> : null}</span><ClientPicker id="m-client" required disabled={locked} clients={allClients} value={v.client_id} placeholder="Search client by name or ABN…"
           onChange={(id) => set("client_id")({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>)}
-          onCreate={job || !canCreateClient ? undefined : (name) => setQuick({ name, entity: "Company", abn: "", practice: practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE })} /></label>
+          onCreate={job || !canCreateClient ? undefined : (name) => setQuick({ name, entity: allowedEnt && !allowedEnt.includes("Company") ? allowedEnt[0] : "Company", abn: "", practice: practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE })} /></label>
         {quick ? <div className="full quickclient">
           <strong>New client</strong>
           <div className="qrow">
             <label className="f">Practice<select id="qc-practice" value={quick.practice} disabled={practices.length === 1} onChange={(e) => setQuick({ ...quick, practice: e.target.value })}>{[...new Set([...practicesFor(quick.entity, practices), quick.practice])].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
             <label className="f">Name<input id="qc-name" autoFocus value={quick.name} onChange={(e) => { setQuick({ ...quick, name: e.target.value }); setQuickDupes(null); }} placeholder="e.g. Sahej Logistics Pty Ltd" /></label>
-            <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => { const entity = e.target.value; setQuick({ ...quick, entity, practice: practicesFor(entity, practices).includes(quick.practice) ? quick.practice : (practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practicesFor(entity, practices)[0] ?? DEFAULT_PRACTICE) }); }}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
+            <label className="f">Entity type<select id="qc-entity" value={quick.entity} onChange={(e) => { const entity = e.target.value; setQuick({ ...quick, entity, practice: practicesFor(entity, practices).includes(quick.practice) ? quick.practice : (practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practicesFor(entity, practices)[0] ?? DEFAULT_PRACTICE) }); }}>{(allowedEnt ?? ENTITIES).map((x) => <option key={x}>{x}</option>)}</select></label>
             <label className="f">ABN<input id="qc-abn" value={quick.abn} onChange={(e) => { setQuick({ ...quick, abn: e.target.value }); setQuickDupes(null); }} placeholder="Optional" inputMode="numeric" /></label>
           </div>
           {quickDupes?.length ? <div className="dupwarn" role="alert">
@@ -1523,7 +1541,7 @@ function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACT
           <div className="row"><button type="button" className="primary" disabled={busy || !quick.name.trim()} onClick={addQuickClient}>{quickDupes?.length ? "Yes, add anyway" : "Add client"}</button><button type="button" onClick={() => { setQuick(null); setQuickDupes(null); }}>Cancel</button>
             <span className="note">You can add contact details later from the client page.</span></div>
         </div> : null}
-        <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={(e) => { setV({ ...v, service: e.target.value }); if (!job) setNeedsSign(!NO_SIGN_SERVICES.has(e.target.value)); }}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
+        <label className="f">Service<select id="m-service" disabled={locked} value={v.service} onChange={(e) => { setV({ ...v, service: e.target.value }); if (!job) setNeedsSign(!NO_SIGN_SERVICES.has(e.target.value)); }}>{SERVICES.filter((s) => job || !allowedSvc || allowedSvc.includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         <label className="f">Period{isCustom ? <span className="periodown">
             <input id="m-period" required disabled={locked} placeholder="e.g. Q2 FY27, Oct 2026, FY2026" value={v.period} onChange={set("period")} />
             {groups.length && !locked ? <button type="button" className="link" onClick={() => { setCustom(false); setV({ ...v, period: "" }); }}>Pick from list</button> : null}</span>
@@ -1547,7 +1565,7 @@ function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACT
         <label className="f">Priority<select id="m-priority" disabled={locked} value={v.priority} onChange={set("priority")}><option value="normal">Normal</option><option value="high">High</option></select></label>
         <label className="f">Assigned to<select id="m-assignee" disabled={locked} value={v.assignee_id} onChange={set("assignee_id")}>{opts("Unassigned")}</select></label>
         <label className="f">Reviewer<select id="m-reviewer" disabled={locked && !ownPick} value={v.reviewer_id} onChange={set("reviewer_id")}>{ownPick ? <><option value="">No reviewer</option>{team.map((p) => <option key={p.id} value={p.id}>{p.id === meId ? `${p.full_name} (me)` : p.full_name}</option>)}</> : opts("No reviewer")}</select></label>
-        <label className="f">Status{isStaff ? <span className="hint"> · changes on its own from the tasks</span> : null}<select id="m-status" disabled={readOnly || statusLocked || isStaff} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{STATUSES.map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status && job?.reviewer_id !== meId}>{s.label}</option>)}</select></label>
+        <label className="f">Status{isStaff ? <span className="hint"> · changes on its own from the tasks</span> : null}<select id="m-status" disabled={readOnly || statusLocked || isStaff} title={statusLocked ? statusLockMsg ?? "Press Start on this job in My jobs first" : undefined} value={v.status} onChange={set("status")}>{statusesFor(v.service).map((s) => <option key={s.id} value={s.id} disabled={isStaff && STAFF_CANT_PICK.has(s.id) && s.id !== job?.status && job?.reviewer_id !== meId}>{s.label}</option>)}</select></label>
         {job && (job.status === "to_lodge" || job.status === "sent_for_sign") ? <div className="full hint">Signing handled by <strong>{personName(job.sign_owner ?? job.reviewer_id ?? job.assignee_id) || "nobody yet"}</strong>
           {canHandSign(job) ? <> · <button type="button" className="link" onClick={() => onHandSign(job)}>Hand to a team member</button></> : null}</div> : null}
         <label className="f">Lodged on<input id="m-lodged" type="date" disabled={locked} value={v.lodged_on} onChange={set("lodged_on")} /></label>
@@ -1563,13 +1581,13 @@ function JobModal({ job, teamOnly, practicesOf = () => [], practices = [...PRACT
   );
 }
 
-function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, say }: {
-  clients: Client[]; team: Person[]; jobs: Job[]; personName: (id: string | null) => string; supabase: SB; save: SaveFn; onClose: () => void; say: (m: string, e?: boolean) => void;
+function BulkModal({ services: allowedSvc, clients, team, jobs, personName, supabase, save, onClose, say }: {
+  services?: string[]; clients: Client[]; team: Person[]; jobs: Job[]; personName: (id: string | null) => string; supabase: SB; save: SaveFn; onClose: () => void; say: (m: string, e?: boolean) => void;
 }) {
   const now = new Date();
   const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const m = now.getMonth() + 1;
-  const [service, setService] = useState("bas");
+  const [service, setService] = useState(allowedSvc && !allowedSvc.includes("bas") ? allowedSvc[0] : "bas");
   const [p, setP] = useState<PeriodInput>({ freq: "quarterly", fy: currentFY(), q: m >= 7 && m <= 9 ? 1 : m >= 10 ? 2 : m <= 3 ? 3 : 4, month: `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`, text: "" });
   const [due, setDue] = useState<string | null>(null); // null = use suggestion
   const [assign, setAssign] = useState("__mgr");
@@ -1605,7 +1623,7 @@ function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, s
       <header><h2>Create jobs for a period</h2><button type="button" onClick={onClose}>Close</button></header>
       <div className="body">
         <p className="full hint" style={{ margin: 0 }}>Pick a service and period. Every client you provide that service to is listed; untick any you don&apos;t want. Clients that already have this job are skipped.</p>
-        <label className="f">Service<select id="b-service" value={service} onChange={(e) => { setService(e.target.value); setDue(null); setUnticked(new Set()); }}>{SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
+        <label className="f">Service<select id="b-service" value={service} onChange={(e) => { setService(e.target.value); setDue(null); setUnticked(new Set()); }}>{SERVICES.filter((s) => !allowedSvc || allowedSvc.includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
         {isBas ? <label className="f">BAS cycle<select id="b-freq" value={p.freq} onChange={(e) => change({ freq: e.target.value as PeriodInput["freq"] })}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option><option value="annual">Annually</option></select></label> : null}
         {!monthly && kind !== "custom" ? <label className="f">{kind === "fbt" ? "FBT year ending 31 March" : "Financial year"}<select id="b-fy" value={p.fy} onChange={(e) => change({ fy: Number(e.target.value) })}>{[fy - 2, fy - 1, fy, fy + 1].map((y) => <option key={y} value={y}>{kind === "fbt" ? `FBT ${y}` : `FY${y} (Jul ${y - 1} – Jun ${y})`}</option>)}</select></label> : null}
         {isBas && p.freq === "quarterly" ? <label className="f">Quarter<select id="b-q" value={p.q} onChange={(e) => change({ q: Number(e.target.value) })}>{[1, 2, 3, 4].map((q) => <option key={q} value={q}>Q{q} ({["Jul–Sep", "Oct–Dec", "Jan–Mar", "Apr–Jun"][q - 1]})</option>)}</select></label> : null}
@@ -1629,11 +1647,11 @@ function BulkModal({ clients, team, jobs, personName, supabase, save, onClose, s
   );
 }
 
-function ClientModal({ client, practices = [...PRACTICES], clients, team, canDelete, jobs, supabase, save, onClose, confirm, onDeleted }: {
-  client?: Client; practices?: string[]; clients: Client[]; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
+function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES], clients, team, canDelete, jobs, supabase, save, onClose, confirm, onDeleted }: {
+  client?: Client; entities?: string[]; practices?: string[]; clients: Client[]; team: Person[]; canDelete: boolean; jobs: Job[]; supabase: SB; save: SaveFn; onClose: () => void; confirm: (m: ConfirmArgs) => void; onDeleted: () => void;
 }) {
   const [v, setV] = useState({
-    practice: client ? practiceOf(client) : practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE, name: client?.name ?? "", entity: client?.entity ?? "Company", abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
+    practice: client ? practiceOf(client) : practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE, name: client?.name ?? "", entity: client?.entity ?? (allowedEnt && !allowedEnt.includes("Company") ? allowedEnt[0] : "Company"), abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
     email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", industry: client?.industry ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
     payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
@@ -1681,7 +1699,7 @@ function ClientModal({ client, practices = [...PRACTICES], clients, team, canDel
           <ul>{dupes.map((d) => <li key={d.client.id}>{d.client.name}{d.client.abn ? <span className="note"> · ABN {d.client.abn}</span> : null} <span className="pill warn">{d.why}</span></li>)}</ul>
           <span className="note">Check it isn&apos;t the same client. If it&apos;s a different one, click {client ? "Save anyway" : "Yes, add anyway"}.</span>
         </div> : null}
-        <label className="f">Entity type<select id="c-entity" value={v.entity} onChange={(e) => { const entity = e.target.value; setV((x) => ({ ...x, entity, practice: practicesFor(entity, practices).includes(x.practice) ? x.practice : (practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practicesFor(entity, practices)[0] ?? DEFAULT_PRACTICE) })); }}>{ENTITIES.map((x) => <option key={x}>{x}</option>)}</select></label>
+        <label className="f">Entity type<select id="c-entity" value={v.entity} onChange={(e) => { const entity = e.target.value; setV((x) => ({ ...x, entity, practice: practicesFor(entity, practices).includes(x.practice) ? x.practice : (practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practicesFor(entity, practices)[0] ?? DEFAULT_PRACTICE) })); }}>{(client || !allowedEnt ? ENTITIES : allowedEnt).map((x) => <option key={x}>{x}</option>)}</select></label>
         <label className="f">{industryLabel(v.entity)}{v.entity === "Individual" ? "" : " / nature of business"}<input id="c-industry" value={v.industry} onChange={set("industry")} placeholder={industryHint(v.entity)} maxLength={120} /></label>
         <label className="f">ABN<input id="c-abn" inputMode="numeric" value={v.abn} onChange={set("abn")} placeholder="11 digits" /></label>
         <label className="f">Contact person<input id="c-contact" value={v.contact} onChange={set("contact")} /></label>
@@ -1716,9 +1734,9 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
   onTemp: (t: { name: string; email: string; password: string }) => void; confirm: (m: ConfirmArgs) => void; say: (m: string, e?: boolean) => void;
 }) {
   const [v, setV] = useState({ fullName: member?.full_name ?? "", email: member?.email ?? "", title: member?.title ?? "", role: member?.role ?? "staff", reportsTo: member?.reports_to ?? "", managerId: member?.manager_id ?? "", workLocation: member?.work_location ?? "India" });
-  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, canSelfReview: !!member?.can_self_review, canMarkSigned: !!member?.can_mark_signed, clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
+  const [perm, setPerm] = useState({ canDelete: !!member?.can_delete, canSeeWorkload: !!member?.can_see_workload, canPickReviewer: !!member?.can_pick_reviewer, canSeeMgmt: !!member?.can_see_mgmt_notes, signReminders: !!member?.gets_sign_reminders, canCreateClients: member?.can_create_clients !== false, canSeeTeamTab: !!member?.can_see_team_tab, canAccessTimesheet: !!member?.can_access_timesheet, canSelfReview: !!member?.can_self_review, canMarkSigned: !!member?.can_mark_signed, canCreateJobs: member?.can_create_jobs !== false, canBulkJobs: member?.can_bulk_jobs !== false, jobServices: member?.job_services ?? [] as string[], clientTypes: member?.client_types ?? [] as string[], practices: member?.practices ?? [] as string[] });
   const [teamIds, setTeamIds] = useState<string[]>(() => (member ? staff.filter((s) => s.reports_to === member.id).map((s) => s.id) : []));
-  const extra = () => ({ workLocation: v.workLocation, managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, canSelfReview: v.role === "manager" && perm.canSelfReview, canMarkSigned: v.role !== "master" && perm.canMarkSigned, ...(v.role === "manager" ? { team: teamIds } : {}) });
+  const extra = () => ({ workLocation: v.workLocation, managerId: v.role === "master" ? null : v.managerId || null, canDelete: v.role !== "master" ? perm.canDelete : false, canPickReviewer: v.role === "staff" ? perm.canPickReviewer : false, canSeeMgmt: v.role !== "master" ? perm.canSeeMgmt : false, clientTypes: v.role !== "master" ? perm.clientTypes : [], practices: v.role !== "master" ? perm.practices : [], canSeeWorkload: v.role === "master" ? false : perm.canSeeWorkload, signReminders: v.role === "master" ? true : perm.signReminders, canCreateClients: v.role !== "master" ? perm.canCreateClients : true, canSeeTeamTab: v.role === "manager" && perm.canSeeTeamTab, canAccessTimesheet: v.role === "manager" && perm.canAccessTimesheet, canSelfReview: v.role === "manager" && perm.canSelfReview, canMarkSigned: v.role !== "master" && perm.canMarkSigned, canCreateJobs: v.role === "master" || perm.canCreateJobs, canBulkJobs: v.role === "master" || perm.canBulkJobs, jobServices: v.role !== "master" ? perm.jobServices : [], ...(v.role === "manager" ? { team: teamIds } : {}) });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: e.target.value });
   async function submit(e: React.FormEvent) {
@@ -1757,7 +1775,15 @@ function MemberModal({ member, managers, bosses, staff, adminCall, onClose, onTe
         </div> : null}
         {v.role !== "master" ? <div className="f full permbox"><span>Permissions</span>
           <label className="row" style={{ gap: 8 }}><input id="u-workload" type="checkbox" checked={perm.canSeeWorkload} onChange={(e) => setPerm({ ...perm, canSeeWorkload: e.target.checked })} /> See the whole practice&apos;s Team workload and Working now{v.role === "manager" ? ` (not just their own team${perm.practices.length ? `; ${perm.practices.join(", ")} work only` : ""})` : ""}</label>
-          <label className="row" style={{ gap: 8 }}><input id="u-createclients" type="checkbox" checked={perm.canCreateClients} onChange={(e) => setPerm({ ...perm, canCreateClients: e.target.checked })} /> Can create new clients{perm.practices.length ? ` (only for ${perm.practices.join(", ")})` : ""}</label>
+          <div className="crbox"><b>Adding clients and creating jobs</b>
+            <label className="row" style={{ gap: 8 }}><input id="u-createclients" type="checkbox" checked={perm.canCreateClients} onChange={(e) => setPerm({ ...perm, canCreateClients: e.target.checked })} /> Can create new clients{perm.practices.length || perm.clientTypes.length ? <span className="note"> (only {perm.clientTypes.length ? `${perm.clientTypes.join(", ")} clients` : "clients"}{perm.practices.length ? ` of ${perm.practices.join(", ")}` : ""}, from the practices and client types below)</span> : null}</label>
+            <label className="row" style={{ gap: 8 }}><input id="u-createjobs" type="checkbox" checked={perm.canCreateJobs} onChange={(e) => setPerm({ ...perm, canCreateJobs: e.target.checked })} /> Can create jobs one at a time (New job)</label>
+            <label className="row" style={{ gap: 8 }}><input id="u-bulkjobs" type="checkbox" checked={perm.canBulkJobs} onChange={(e) => setPerm({ ...perm, canBulkJobs: e.target.checked })} /> Can create jobs for many clients at once (Create jobs for a period)</label>
+            <div><span>Services they can create jobs for</span>
+              <div className="row" style={{ marginTop: 4, flexWrap: "wrap", gap: 6 }}>{SERVICES.map((t) => { const on = perm.jobServices.includes(t.id); return (
+                <label key={t.id} className={`chip ${on ? "on" : ""}`}><input type="checkbox" checked={on} onChange={() => setPerm({ ...perm, jobServices: on ? perm.jobServices.filter((x) => x !== t.id) : [...perm.jobServices, t.id] })} />{t.label}</label>); })}</div>
+              <span className="note">{perm.jobServices.length ? `Only ${perm.jobServices.map(svcLabel).join(", ")} jobs, for the clients they can see.` : "None ticked: every service."}</span></div>
+          </div>
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-teamtab" type="checkbox" checked={perm.canSeeTeamTab} onChange={(e) => setPerm({ ...perm, canSeeTeamTab: e.target.checked })} /> See the Team tab</label> : null}
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-selfreview" type="checkbox" checked={perm.canSelfReview} onChange={(e) => setPerm({ ...perm, canSelfReview: e.target.checked })} /> Can review their own jobs (otherwise they send for review to their manager or a master admin)</label> : null}
           {v.role === "manager" ? <label className="row" style={{ gap: 8 }}><input id="u-timesheet" type="checkbox" checked={perm.canAccessTimesheet} onChange={(e) => setPerm({ ...perm, canAccessTimesheet: e.target.checked })} /> See their team&apos;s timesheets, attendance and leave (otherwise only their own timesheet)</label> : null}

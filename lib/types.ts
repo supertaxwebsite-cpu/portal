@@ -24,6 +24,12 @@ export interface Profile {
   can_self_review?: boolean;
   /** May mark any job Sent for signing as Client signed (Ready to lodge). */
   can_mark_signed?: boolean;
+  /** May create jobs (New job). Default true. */
+  can_create_jobs?: boolean;
+  /** May create jobs for many clients at once (Create jobs for a period). Default true. */
+  can_bulk_jobs?: boolean;
+  /** Services they may create jobs for. Empty: every service. */
+  job_services?: string[] | null;
   /** "India" or "Australia": sets office hours, late time and the midnight log-out. */
   work_location?: string | null;
   can_see_mgmt_notes?: boolean;
@@ -66,6 +72,7 @@ export interface Client {
   updated_by: string | null;
 }
 
+export interface AuditQuery { id: string; body: string; at: string; by: string | null; done_at?: string | null }
 export interface Job {
   id: string;
   client_id: string;
@@ -80,6 +87,8 @@ export interface Job {
   lodged_on: string | null;
   query_from?: string | null;
   super_done_at?: string | null;
+  /** SMSF: queries from the auditor. */
+  audit_queries?: AuditQuery[] | null;
   super_done_by?: string | null;
   stp_done_at?: string | null;
   stp_done_by?: string | null;
@@ -92,7 +101,7 @@ export interface Job {
   updated_by: string | null;
 }
 
-export type StatusId = "not_started" | "waiting" | "internal_query" | "client_query" | "in_progress" | "review" | "to_lodge" | "sent_for_sign" | "lodged" | "done";
+export type StatusId = "not_started" | "waiting" | "internal_query" | "client_query" | "in_progress" | "review" | "with_auditor" | "auditor_query" | "to_lodge" | "sent_for_sign" | "lodged" | "done";
 
 export interface Attendance {
   id: string;

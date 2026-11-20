@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireMaster, tempPassword } from "@/lib/auth";
 import { setTeam } from "@/lib/team";
-import { ENTITIES, PRACTICES } from "@/lib/domain";
+import { ENTITIES, PRACTICES, SVC } from "@/lib/domain";
 
 /** Master admin adds a team member. Returns a temporary password to hand over;
  *  they must choose their own password at first sign-in. */
@@ -46,14 +46,17 @@ export async function POST(req: Request) {
   if (role === "manager" && body.canAccessTimesheet === true) perms.can_access_timesheet = true;
   if (role === "manager" && body.canSelfReview === true) perms.can_self_review = true;
   if (role !== "master" && body.canMarkSigned === true) perms.can_mark_signed = true;
+  if (role !== "master" && body.canCreateJobs === false) perms.can_create_jobs = false;
+  if (role !== "master" && body.canBulkJobs === false) perms.can_bulk_jobs = false;
+  if (role !== "master" && Array.isArray(body.jobServices) && body.jobServices.length) perms.job_services = body.jobServices.filter((x: unknown) => typeof x === "string" && !!SVC[x]);
   if (body.workLocation === "Australia") perms.work_location = "Australia";
   if (managerId) perms.manager_id = managerId;
   if (role !== "master" && Array.isArray(body.clientTypes) && body.clientTypes.length) perms.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (role !== "master" && Array.isArray(body.practices) && body.practices.length) perms.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   let { error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) });
-  if (pErr && /can_see_team_tab|can_access_timesheet|can_self_review|can_mark_signed|work_location/.test(pErr.message)) {
+  if (pErr && /can_see_team_tab|can_access_timesheet|can_self_review|can_mark_signed|can_create_jobs|can_bulk_jobs|job_services|work_location/.test(pErr.message)) {
     // Team leader access update not run yet: add them without those ticks.
-    delete perms.can_see_team_tab; delete perms.can_access_timesheet; delete perms.can_self_review; delete perms.can_mark_signed; delete perms.work_location;
+    delete perms.can_see_team_tab; delete perms.can_access_timesheet; delete perms.can_self_review; delete perms.can_mark_signed; delete perms.can_create_jobs; delete perms.can_bulk_jobs; delete perms.job_services; delete perms.work_location;
     ({ error: pErr } = await admin.from("profiles").insert({ id: data.user.id, email, full_name: fullName, title, role, active: true, must_change_password: true, ...perms, ...(reportsTo ? { reports_to: reportsTo } : {}) }));
   }
   if (pErr && /can_see_workload|can_pick_reviewer|can_see_mgmt_notes|client_types|practices|gets_sign_reminders|can_create_clients|manager_id/.test(pErr.message)) {

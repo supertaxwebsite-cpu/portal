@@ -17,7 +17,7 @@ const IR_KEY = KEY.ir;
 const IR_DONE = "STEP: Initial review complete";
 const IRV = "Internal review: ";
 /** The Review, Client signature and Lodge checklists, drawn by the job page inside those task rows. */
-export type StageLists = Record<"review" | "sign" | "lodge", { el: ReactNode; done: boolean; marked: number; total: number }>;
+export type StageLists = Record<"review" | "audit" | "sign" | "lodge", { el: ReactNode; done: boolean; marked: number; total: number }>;
 /** A step in preparation, in the order it happened. */
 export interface PrepRow { kind: "ir" | "proc"; n: number; afterQuery: boolean; afterChanges?: boolean; afterReview?: boolean; current: boolean; done: boolean; hours: number; marked: number; total: number; complete?: () => void }
 const when = (s: string) => (s && !isNaN(Date.parse(s)) ? new Date(s) : new Date()).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
@@ -336,9 +336,9 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     return (
     <div className="jobbrief" onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault(); }}>
       <ol className="tasks" ref={tasksRef} onClick={foldTask}>
-        <li className={`task prep${irRow.current ? " now" : ""}`}>{tasks.head(irRow)}<div className="taskbody"><section className="briefsec">
+        <li className={`task prep${irRow.current ? " now" : ""}`}>{tasks.head(irRow)}{IR_ITEMS.length ? <div className="taskbody"><section className="briefsec">
           <h3>Checklist <span className="note">{irMarked} of {IR_ITEMS.length} done</span></h3>
-          <ul className="checklist">{IR_ITEMS.map((i) => itemEl(IR_KEY(i), i))}</ul></section></div></li>
+          <ul className="checklist">{IR_ITEMS.map((i) => itemEl(IR_KEY(i), i))}</ul></section></div> : null}</li>
         {evs.map((e, k) => {
           if (e.kind === "iq") return iqEl(e.q);
           if (e.kind === "cq") return cqEl(e.c);
@@ -371,10 +371,10 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
         </li> : null}
         <ReviewNotes asTasks job={job} meId={meId} canAnswerAll={canAnswerAll} readOnly={readOnly} supabase={supabase} personName={personName} say={say} />
         {!readOnly && !missing ? <li className="task add">{askOpen ? askForm : <button type="button" onClick={() => setAskOpen(true)}>? Raise a query (internal or client)</button>}</li> : null}
-        {tasks.after(Object.fromEntries((["review", "sign", "lodge"] as const).map((k) => {
+        {tasks.after(Object.fromEntries((["review", "audit", "sign", "lodge"] as const).map((k) => {
           const ls = lists[k]; const m = ls.filter((i) => isMarked(KEY[k](i))).length;
           return [k, { marked: m, total: ls.length, done: m >= ls.length,
-            el: <section className="briefsec stagecheck"><h3>Checklist <span className="note">{m} of {ls.length} done</span></h3><ul className="checklist">{ls.map((i) => itemEl(KEY[k](i), i))}</ul></section> }];
+            el: !ls.length ? null : <section className="briefsec stagecheck"><h3>Checklist <span className="note">{m} of {ls.length} done</span></h3><ul className="checklist">{ls.map((i) => itemEl(KEY[k](i), i))}</ul></section> }];
         })) as StageLists)}
       </ol>
     </div>

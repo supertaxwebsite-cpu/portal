@@ -34,11 +34,16 @@ export const STATUSES: Status[] = [
   { id: "client_query", label: "Query with client", cls: "warn", open: true }, // question sent to the client; leaves My jobs, reminder after 2 days
   { id: "in_progress", label: "In progress", cls: "info", open: true },
   { id: "review", label: "Ready for review", cls: "accent", open: true },
+  { id: "with_auditor", label: "Sent to auditor", cls: "warn", open: true }, // SMSF only
+  { id: "auditor_query", label: "Auditor query", cls: "danger", open: true }, // SMSF only
   { id: "to_lodge", label: "Ready for signing", cls: "accent", open: true },
   { id: "sent_for_sign", label: "Sent for sign", cls: "warn", open: true },
   { id: "lodged", label: "Lodged", cls: "ok", open: false },
   { id: "done", label: "Completed", cls: "ok", open: false }, // change requests and admin work, never lodged
 ];
+/** SMSF only: with the auditor, or a query from the auditor. */
+export const AUDIT_STATUSES = new Set<string>(["with_auditor", "auditor_query"]);
+export const statusesFor = (service?: string) => STATUSES.filter((s) => service === "smsf" || !AUDIT_STATUSES.has(s.id));
 export const ST: Record<string, Status> = Object.fromEntries(STATUSES.map((s) => [s.id, s]));
 export const isOpen = (status: string) => ST[status]?.open !== false;
 /** Client signed but not lodged yet: the job stays Sent for sign, with this far-future reminder time

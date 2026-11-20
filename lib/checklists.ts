@@ -131,11 +131,16 @@ const SMSF = {
     "Investment strategy reviewed and signed",
     "Financial statements and member statements prepared",
     "SMSF annual return prepared",
-    "Sent to the auditor",
-    "Audit queries answered and audit report received",
     "Workpapers saved in Files",
   ],
-  review: ["Financial statements, member statements and return agree", "Contributions and caps checked", "Pensions and minimum payments checked", "Market values and investment income checked", "Audit report received with no unresolved issues", "Review notes cleared"],
+  audit: [
+    "Financial statements, member statements and workpapers sent to the auditor",
+    "Engagement letter and trustee representation letter signed",
+    "Every auditor query answered",
+    "Audit report and management letter received and saved in Files",
+    "Contraventions (ACR) noted, if any",
+  ],
+  review: ["Financial statements, member statements and return agree", "Contributions and caps checked", "Pensions and minimum payments checked", "Market values and investment income checked", "Review notes cleared"],
   sign: ["Financial statements, member statements and return prepared", "Trustee declarations and minutes prepared", "Sent for signing", "Signed documents saved in Files"],
   lodge: ["SMSF annual return lodged with auditor details", "Lodgment receipt saved in Files", "Supervisory levy and any tax paid, client told the amount", "Members told their balances"],
 };
@@ -217,10 +222,11 @@ export const CHECKLISTS: Record<string, string[]> = {
   fin: FIN.proc,
   fbt: FBT.proc,
   tpar: TPAR.proc,
-  ato_payment: ["Amount and due date taken from the ATO account", "Payment reference (PRN) and BPAY / card details sent to the client", "Payment plan set up if they can't pay in full", "Client confirms it's paid", "Payment shows on the ATO account"],
+  ato_payment: [] as string[],
   sgc: ["Employees and quarters with late or missed super listed", "Shortfall, interest and admin fee worked out", "SGC statement lodged by the due date", "Client told the amount and how to pay", "Late payment offset recorded (if any)"],
-  ato_comm: ["Letter saved to Files and deadline noted", "Reply, objection or extension request prepared", "Penalty or interest remission asked for (if it fits)", "Copy sent to the client", "Followed up until the ATO confirms"],
+  ato_comm: [] as string[],
   company_formation: [] as string[],
+  other: [] as string[],
   asic: ["Company statement reviewed", "Details updated with ASIC", "Annual fee paid or invoiced", "Solvency resolution signed"],
 };
 
@@ -235,17 +241,23 @@ const REVIEW_DEFAULT = ["Workpapers and source documents checked", "Figures agre
 const SIGN_DEFAULT = ["Documents and summary prepared for the client", "Amount payable or refund and due date explained", "Sent for signing", "Signed copy saved in Files"];
 const LODGE_DEFAULT = ["Lodged with the ATO", "Lodgment receipt saved in Files", "Payment or refund details sent to the client", "Next due date noted"];
 const BAS_LODGE = ["BAS lodged with the ATO", "Lodgment receipt saved in Files", "Amount payable, PRN and due date sent to the client"];
-interface Lists { ir: string[]; review: string[]; sign: string[]; lodge: string[] }
+/** SMSF items that moved from Processing to the Audit step: ticking them before doesn't mean an old list. */
+const MOVED_TO_AUDIT = new Set(["Sent to the auditor", "Audit queries answered and audit report received"]);
+/** Jobs with no checklists at all. */
+export const NO_CHECKLIST = ["ato_payment", "ato_comm", "other"];
+interface Lists { ir: string[]; review: string[]; audit: string[]; sign: string[]; lodge: string[] }
 const TASKS: Record<string, Partial<Lists>> = {
   ctr: CTR, itr: ITR, trust: TRUST, partnership: PARTNERSHIP, smsf: SMSF, fin: FIN, fbt: FBT,
   tpar: { lodge: ["TPAR lodged with the ATO", "Lodgment receipt saved in Files"] },
   bas: { lodge: BAS_LODGE }, ias: { lodge: BAS_LODGE },
   payroll: PAYROLL,
 };
+// Nothing to tick on these jobs: just start, do the work and complete it.
+for (const k of NO_CHECKLIST) TASKS[k] = { ir: [], review: [], sign: [], lodge: [] };
 TASKS.fbt = { ...FBT, lodge: ["FBT return lodged with the ATO", "Lodgment receipt saved in Files", "FBT payable and due date sent to the client", "Next year's FBT instalments noted"] };
 
-/** Checklist keys: Initial review "IR: x", Review "RV: x", Client signature "SG: x", Lodge "LG: x", Processing just "x". */
-export const KEY = { ir: (i: string) => `IR: ${i}`, review: (i: string) => `RV: ${i}`, sign: (i: string) => `SG: ${i}`, lodge: (i: string) => `LG: ${i}` };
+/** Checklist keys: Initial review "IR: x", Review "RV: x", SMSF Audit "AU: x", Client signature "SG: x", Lodge "LG: x", Processing just "x". */
+export const KEY = { ir: (i: string) => `IR: ${i}`, review: (i: string) => `RV: ${i}`, audit: (i: string) => `AU: ${i}`, sign: (i: string) => `SG: ${i}`, lodge: (i: string) => `LG: ${i}` };
 const plain = (k: string) => k.replace(/^N\/A: /, "");
 
 /** Every task's checklist for a job type. Jobs ticked against an older list keep that list. */
@@ -254,11 +266,11 @@ export function taskLists(service: string, ticked: string[] = [], opts: { noSign
   const has = new Set(ticked.map(plain));
   let proc = CHECKLISTS[service] ?? [];
   const old = LEGACY[service];
-  if (old && old.some((i) => has.has(i) && !proc.includes(i))) proc = old;
+  if (old && old.some((i) => has.has(i) && !proc.includes(i) && !MOVED_TO_AUDIT.has(i))) proc = old;
   let ir = t.ir ?? IR_DEFAULT;
   if (ir !== IR_DEFAULT && IR_DEFAULT.some((i) => has.has(KEY.ir(i)) && !ir.includes(i))) ir = IR_DEFAULT;
-  if (service === "payroll" && opts.noSign) return { ir, proc, review: t.review ?? REVIEW_DEFAULT, sign: PAYROLL_SUPER, lodge: PAYROLL_STP };
-  return { ir, proc, review: t.review ?? REVIEW_DEFAULT, sign: t.sign ?? SIGN_DEFAULT, lodge: t.lodge ?? LODGE_DEFAULT };
+  if (service === "payroll" && opts.noSign) return { ir, proc, review: t.review ?? REVIEW_DEFAULT, audit: [], sign: PAYROLL_SUPER, lodge: PAYROLL_STP };
+  return { ir, proc, review: t.review ?? REVIEW_DEFAULT, audit: t.audit ?? [], sign: t.sign ?? SIGN_DEFAULT, lodge: t.lodge ?? LODGE_DEFAULT };
 }
 /** Jobs done in steps: each step has its own checklist. */
 export const STEPS: Record<string, { title: string; items: string[] }[]> = {

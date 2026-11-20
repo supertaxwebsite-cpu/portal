@@ -3362,3 +3362,55 @@ $$;
 
 -- ===== Client industry / occupation =====
 alter table public.clients add column if not exists industry text not null default '';
+-- Team permissions by service, and the SMSF Audit step.
+-- Adds columns, two statuses and two checks. Changes no existing data. Safe to run more than once.
+
+-- 1. Who can create jobs, and for which services (empty list = every service).
+alter table public.profiles add column if not exists can_create_jobs boolean not null default true;
+alter table public.profiles add column if not exists can_bulk_jobs boolean not null default true;
+alter table public.profiles add column if not exists job_services text[] not null default '{}';
+
+-- 2. SMSF audit: two new job statuses and a list of auditor queries on the job.
+alter table public.jobs drop constraint if exists jobs_status_check;
+alter table public.jobs add constraint jobs_status_check check (status in (
+  'not_started', 'waiting', 'internal_query', 'client_query', 'in_progress', 'review',
+  'with_auditor', 'auditor_query', 'to_lodge', 'sent_for_sign', 'lodged', 'done'));
+alter table public.jobs add column if not exists audit_queries jsonb not null default '[]'::jsonb;
+
+-- 3. New jobs added from the app: only by people allowed to, and only for their services.
+--    (Jobs made automatically by the system are not checked: these checks run as the signed-in person.)
+create or replace function public.guard_job_create() returns trigger
+language plpgsql set search_path = public as $$
+declare p public.profiles;
+begin
+  if auth.uid() is null or current_user <> 'authenticated' then return new; end if;
+  select * into p from public.profiles where id = auth.uid();
+  if not found or p.role = 'master' then return new; end if;
+  if not coalesce(p.can_create_jobs, true) then
+    raise exception 'You don''t have access to create jobs. Ask your manager.' using errcode = '42501';
+  end if;
+  if cardinality(coalesce(p.job_services, '{}')) > 0 and not (new.service = any (p.job_services)) then
+    raise exception 'You can only create jobs for: %', array_to_string(p.job_services, ', ') using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists jobs_guard_create on public.jobs;
+create trigger jobs_guard_create before insert on public.jobs
+  for each row execute function public.guard_job_create();
+
+-- 4. New clients: someone limited to some client types can only add clients of those types.
+create or replace function public.guard_client_create() returns trigger
+language plpgsql set search_path = public as $$
+declare p public.profiles;
+begin
+  if auth.uid() is null or current_user <> 'authenticated' then return new; end if;
+  select * into p from public.profiles where id = auth.uid();
+  if not found or p.role = 'master' then return new; end if;
+  if cardinality(coalesce(p.client_types, '{}')) > 0 and not (coalesce(new.entity, '') = any (p.client_types)) then
+    raise exception 'You can only add % clients', array_to_string(p.client_types, ', ') using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists clients_guard_create on public.clients;
+create trigger clients_guard_create before insert on public.clients
+  for each row execute function public.guard_client_create();

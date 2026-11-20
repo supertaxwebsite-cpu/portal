@@ -94,6 +94,8 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
     if (isReview(j)) return j.assignee_id && j.assignee_id !== meId ? `Prepared by ${personName(j.assignee_id)}` : "Review";
     if (j.status === "internal_query") return j.assignee_id !== meId ? `With ${personName(j.assignee_id)} for an internal query` : j.query_from ? `Internal query from ${personName(j.query_from)}` : "Internal query raised: waiting for the answer";
     if (isPay(j) && j.status === "to_lodge") return j.super_done_at ? "Super paid: lodge the STP pay event" : "Pay run approved: pay super, then confirm it";
+    if (j.status === "with_auditor") return "With the auditor: log any auditor queries on the job, then Audit report received";
+    if (j.status === "auditor_query") return `Auditor query open${j.audit_queries?.filter((q) => !q.done_at).length ? ` (${j.audit_queries.filter((q) => !q.done_at).length})` : ""}: answer it, then mark it answered on the job`;
     if (j.status === "to_lodge") return "Approved: send it to the client for signing";
     if (j.status === "sent_for_sign" || j.status === "client_query") {
       const d = j.sign_sent_at ? Math.floor((now - Date.parse(j.sign_sent_at)) / 864e5) : 0;
@@ -116,6 +118,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
       <button type="button" disabled={busy} onClick={() => onSendBack(j)}>Send back</button>
       <button type="button" className="primary" disabled={busy} onClick={() => onApprove(j)}>{j.needs_signature === false ? "Approve & complete" : "Approve"}</button></>}</>;
     if (isPay(j) && j.status === "to_lodge") return <>{timer(j)}<button type="button" className="primary" onClick={() => onOpen(j)}>{j.super_done_at ? "Lodge STP" : "Confirm super"}</button></>;
+    if (j.status === "with_auditor" || j.status === "auditor_query") return <>{timer(j)}<button type="button" className={j.status === "auditor_query" ? "primary" : undefined} onClick={() => onOpen(j)}>Open audit</button></>;
     if (j.status === "to_lodge") return <>{timer(j)}<button type="button" className="primary" disabled={busy} onClick={() => onSentForSign(j)}>Sent for signing</button></>;
     if (j.status === "sent_for_sign") return isSigned(j) ? <button type="button" className="primary" disabled={busy} onClick={() => onSigned(j)}>Lodged</button>
       : <button type="button" className="primary" disabled={busy} onClick={() => (onClientSigned ?? onSigned)(j)}>Client signed</button>;
