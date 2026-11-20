@@ -19,7 +19,7 @@ type Kind = "all" | "overdue" | "iq" | "review" | "sign" | "notes";
 
 /** Staff home: today's log-in and suggested log-out, this month's numbers, and the task list, most urgent first. */
 export default function StaffHome({ supabase, meId, firstName, jobs, closedThisMonth, closedLastMonth, running, busy, clientLine, personName, wasStarted,
-  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, top, children, unassigned = [], onTake }: {
+  onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, top, children, unassigned = [], onTake, byStatus }: {
   supabase: SB; meId: string; firstName: string; jobs: Job[]; closedThisMonth: number; closedLastMonth: number; running: JobTimer | null; busy: boolean;
   clientLine: (j: Job) => [string, string]; personName: (id: string | null) => string; wasStarted: (j: Job) => boolean;
   onOpen: (j: Job) => void; onStart: (j: Job) => void; onStop: () => void; onApprove: (j: Job) => void; onSendBack: (j: Job) => void;
@@ -31,6 +31,8 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
   askedBy?: Map<string, string | null>;
   /** Open jobs nobody (active) is assigned to, most urgent first, and how to take one. */
   unassigned?: Job[]; onTake?: (j: Job) => void;
+  /** "My jobs by status" strip, shown under the number tiles. */
+  byStatus?: ReactNode;
 }) {
   const [s, setS] = useState<Stats | null>(null);
   const [kind, setKind] = useState<Kind>("all");
@@ -155,6 +157,7 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
         <div className="panel"><span className="lbl">Open review notes</span><span className={`val${openNotes ? " danger" : ""}`}>{s?.notes ? openNotes : "—"}</span>
           <span className="note">{s && !s.notes ? "Review notes aren't switched on yet" : openNotes ? "Fix them before you resubmit" : "Nothing to fix"}</span></div>
       </div>
+      <div style={{ marginTop: 16 }}>{byStatus}</div>
       {top}
       <div className="panel tasklist">
         <div className="ph"><h2>Task list{payList.length || jobs.some(isPay) ? " · other jobs" : ""}</h2><span className="note">Time left turns amber within 2 days and red once overdue</span></div>

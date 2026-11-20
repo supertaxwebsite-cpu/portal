@@ -693,6 +693,16 @@ export default function Workspace({ me, viewer, onViewAs }: {
           onOpen={(j) => openJob(j)} onStart={startJob} onStop={stopJob} onApprove={approveReview} onSendBack={sendBackReview} onSentForSign={markSentForSign}
           onSigned={markSigned} onClientSigned={markClientSigned} onReplied={(j) => myStatus(j, "in_progress")} onAnswer={(j) => setModal({ kind: "query", job: j, mode: "answer" })} onPayroll={() => go("payroll")}
           statusEl={(j) => <StatusSelect j={j} />} askedBy={askedBy} top={repliesEl(myReplies, "Client replied to your queries")}
+          byStatus={(() => { const mine = jobs.filter((j) => j.assignee_id === me.id); return (
+            <div className="panel" style={{ padding: "12px 14px", marginBottom: 16 }}>
+              <div className="ph" style={{ padding: 0, marginBottom: 8 }}><h2>My jobs by status</h2><button className="link" onClick={() => gotoJobs({ status: "", assignee: me.id })}>See all {mine.length}</button></div>
+              <div className="statusrow">{STATUSES.map((st) => { const n = mine.filter((j) => j.status === st.id && !(st.id === "sent_for_sign" && isSigned(j))).length; return (<Fragment key={st.id}>
+                <button className="statuschip" onClick={() => gotoJobs({ status: st.id, assignee: me.id })} disabled={!n}><strong className="mono">{n}</strong><span className={`pill ${st.cls}`}>{st.label}</span></button>
+                {st.id === "client_query" ? <button className="statuschip" disabled title="Client queries the client has answered by email (shown above your task list)"><strong className="mono">{myReplies.length}</strong><span className="pill ok">Client replied</span></button> : null}
+                {st.id === "sent_for_sign" ? (() => { const r = mine.filter(isSigned).length; return <button className="statuschip" onClick={() => gotoJobs({ status: "ready_lodge", assignee: me.id })} disabled={!r}
+                  title="The client has signed: check and lodge"><strong className="mono">{r}</strong><span className="pill ok">Ready to lodge</span></button>; })() : null}
+              </Fragment>); })}</div>
+            </div>); })()}
           unassigned={openJobs.filter((j) => !FINISHED.has(j.status) && (!j.assignee_id || !profileById.get(j.assignee_id)?.active)).sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"))}
           onTake={(j) => save(() => supabase.from("jobs").update({ assignee_id: me.id }).eq("id", j.id), "The job is yours. It's in My tasks now")}>
           {myMeetings.length ? <div style={{ marginTop: 16 }}><MyJobs title="My meetings" jobs={[]} meetings={myMeetings} myId={me.id} personName={personName} running={null} clientName={clientName} reviewerName="" busy={timerBusy}
