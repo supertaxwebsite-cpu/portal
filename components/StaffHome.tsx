@@ -18,7 +18,7 @@ interface Stats { firstIn: string | null; daysAt: number; week: number; notes: N
 type Kind = "all" | "overdue" | "iq" | "review" | "sign" | "notes";
 
 /** Staff home: today's log-in and suggested log-out, this month's numbers, and the task list, most urgent first. */
-export default function StaffHome({ supabase, meId, firstName, jobs, closedThisMonth, closedLastMonth, running, busy, clientLine, personName, wasStarted,
+export default function StaffHome({ supabase, meId, firstName, jobs: allJobs, closedThisMonth, closedLastMonth, running, busy, clientLine, personName, wasStarted,
   onOpen, onStart, onStop, onApprove, onSendBack, onSentForSign, onSigned, onClientSigned, onReplied, onAnswer, onPayroll, statusEl, askedBy, top, children, unassigned = [], onTake, byStatus }: {
   supabase: SB; meId: string; firstName: string; jobs: Job[]; closedThisMonth: number; closedLastMonth: number; running: JobTimer | null; busy: boolean;
   clientLine: (j: Job) => [string, string]; personName: (id: string | null) => string; wasStarted: (j: Job) => boolean;
@@ -34,6 +34,8 @@ export default function StaffHome({ supabase, meId, firstName, jobs, closedThisM
   /** "My jobs by status" strip, shown under the number tiles. */
   byStatus?: ReactNode;
 }) {
+  // Pay runs live on the Payroll tab, not here.
+  const jobs = allJobs.filter((j) => j.service !== "payroll");
   const [s, setS] = useState<Stats | null>(null);
   const [kind, setKind] = useState<Kind>("all");
   const [all, setAll] = useState(false);
