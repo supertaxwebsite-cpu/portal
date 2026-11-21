@@ -64,10 +64,10 @@ export function blockApiWrites(): () => void {
 /** "View as": the master's own session can read everything, so trim clients and jobs to what the
  *  viewed person's sign-in would show (mirrors can_see_client / can_see_job in the database). */
 export function asSeenBy<C extends { id: string; entity?: string | null; practice?: string | null }, J extends { id: string; client_id: string; status: string; assignee_id?: string | null; reviewer_id?: string | null; sign_owner?: string | null; query_from?: string | null }>(
-  who: { id: string; role: string; client_types?: string[] | null; practices?: string[] | null; can_mark_signed?: boolean }, clients: C[], jobs: J[],
+  who: { id: string; role: string; client_types?: string[] | null; practices?: string[] | null; can_mark_signed?: boolean }, clients: C[], jobs: J[], askedJobs: Set<string> = new Set(),
 ): { clients: C[]; jobs: J[] } {
   if (who.role === "master") return { clients, jobs };
-  const mine = (j: J) => j.assignee_id === who.id || j.reviewer_id === who.id || j.sign_owner === who.id || j.query_from === who.id;
+  const mine = (j: J) => j.assignee_id === who.id || j.reviewer_id === who.id || j.sign_owner === who.id || j.query_from === who.id || askedJobs.has(j.id);
   const types = who.client_types ?? [], prac = who.practices ?? [];
   const onJob = new Set(jobs.filter(mine).map((j) => j.client_id));
   const okClient = (c: C) => ((!types.length || types.includes(c.entity ?? "")) && (!prac.length || prac.includes(c.practice ?? ""))) || onJob.has(c.id);

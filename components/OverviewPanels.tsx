@@ -10,7 +10,7 @@ interface Pr { id: string; name: string; follow_up: string | null; fee: number |
 const ago = (ts: string) => { const d = Math.floor((Date.now() - Date.parse(ts)) / 864e5); return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; };
 
 /** Internal queries raised to me that nobody has answered yet. */
-export function useMyQueries(supabase: SB, meId: string, jobs: Job[], on: boolean) {
+export function useMyQueries(supabase: SB, meId: string, jobs: Job[], on: boolean, tick = 0) {
   const [qs, setQs] = useState<Q[]>([]);
   useEffect(() => {
     if (!on) return;
@@ -18,7 +18,7 @@ export function useMyQueries(supabase: SB, meId: string, jobs: Job[], on: boolea
     supabase.from("job_queries").select("id,job_id,parent_id,author_id,to_id,body,answered_at,created_at").gte("created_at", new Date(Date.now() - 120 * 864e5).toISOString()).limit(2000)
       .then(({ data }) => { if (live) setQs((data as Q[] | null) ?? []); });
     return () => { live = false; };
-  }, [supabase, meId, jobs, on]);
+  }, [supabase, meId, jobs, on, tick]);
   const byId = new Map(jobs.map((j) => [j.id, j]));
   const replied = new Set(qs.filter((x) => x.parent_id).map((x) => x.parent_id));
   return qs.filter((x) => !x.parent_id && !x.answered_at && !replied.has(x.id) && x.to_id === meId && byId.has(x.job_id))

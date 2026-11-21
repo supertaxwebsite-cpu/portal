@@ -332,7 +332,8 @@ export default function Workspace({ me, viewer, onViewAs }: {
         }
         setJobHours(hrs);
       }
-      setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); const seen = viewOnly ? asSeenBy(me, c, j) : { clients: c, jobs: j };
+      setProfiles(p); setPeople(d ?? p.map(({ id, full_name, title, active }) => ({ id, full_name, title, active }))); const asked = viewOnly ? new Set((((await supabase.from("job_queries").select("job_id").eq("to_id", me.id)).data as { job_id: string }[] | null) ?? []).map((x) => x.job_id)) : undefined;
+      const seen = viewOnly ? asSeenBy(me, c, j, asked) : { clients: c, jobs: j };
       // Team leaders see only their practice's clients: drop jobs on any client they can't see (e.g. a team member's job for another practice).
       if (me.role === "manager") { const ids = new Set(seen.clients.map((x) => x.id)); seen.jobs = seen.jobs.filter((x) => ids.has(x.client_id)); }
        setClients(seen.clients); setJobs(seen.jobs.map((x) => x.service === "payroll" && x.needs_signature !== false ? { ...x, needs_signature: false } : x)); setLoaded(true); setLoadError("");
@@ -392,7 +393,8 @@ export default function Workspace({ me, viewer, onViewAs }: {
   const personName = (id: string | null) => (id ? profileById.get(id)?.full_name ?? "Former staff" : "");
   const clientName = (id: string) => clientById.get(id)?.name ?? "Deleted client";
   const openJobs = useMemo(() => jobs.filter((j) => isOpen(j.status)), [jobs]);
-  const myQueries = useMyQueries(supabase, me.id, openJobs, view === "overview" || view === "jobs");
+  const [qTick, setQTick] = useState(0); // re-read my open queries (e.g. after passing one on)
+  const myQueries = useMyQueries(supabase, me.id, openJobs, view === "overview" || view === "jobs", qTick);
   // Jobs with an internal query raised to me that I haven't answered: they show in My tasks until I respond.
   const askedBy = useMemo(() => new Map(myQueries.map(({ q, j }) => [j.id, q.author_id])), [myQueries]);
 
@@ -1258,7 +1260,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
           running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
-          onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered}
+          onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered} onPassed={() => setQTick((n) => n + 1)}
           onComplete={(j) => setModal({ kind: "submit", job: j })} onAudit={auditStep} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onClientSigned={markClientSigned} onPayStep={payrollStep} onReplied={(j) => myStatus(j, "in_progress")} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}

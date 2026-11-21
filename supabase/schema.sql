@@ -3414,3 +3414,34 @@ end $$;
 drop trigger if exists clients_guard_create on public.clients;
 create trigger clients_guard_create before insert on public.clients
   for each row execute function public.guard_client_create();
+-- Pass an internal query on to someone else (e.g. Rikesh asks Ishwar, Ishwar passes it to Harshad).
+-- The job leaves Ishwar's My jobs and shows in Harshad's. Adds one function. Changes no data. Safe to run more than once.
+create or replace function public.forward_internal_query(p_query uuid, p_to uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare q public.job_queries; j public.jobs; me uuid := auth.uid(); who text; tow text; label text;
+begin
+  if not public.is_active_member() then raise exception 'Not signed in' using errcode = '42501'; end if;
+  select * into q from public.job_queries where id = p_query for update;
+  if not found or q.parent_id is not null then raise exception 'That query no longer exists'; end if;
+  if q.answered_at is not null then raise exception 'This query has already been answered'; end if;
+  if q.to_id is distinct from me and public.my_role() not in ('master', 'manager') then
+    raise exception 'Only the person the query was sent to can pass it on' using errcode = '42501';
+  end if;
+  if p_to is null or p_to = q.to_id or p_to = q.author_id or not exists (select 1 from public.profiles where id = p_to and active) then
+    raise exception 'Choose another team member to pass it to';
+  end if;
+  if exists (select 1 from public.job_timers where user_id = me and job_id = q.job_id and ended_at is null) then
+    perform public.end_job_timer(me);
+  end if;
+  update public.job_queries set to_id = p_to where id = p_query;
+  select * into j from public.jobs where id = q.job_id;
+  select full_name into who from public.profiles where id = me;
+  select full_name into tow from public.profiles where id = p_to;
+  select coalesce(c.name, '') || ' · ' || j.period into label from public.clients c where c.id = j.client_id;
+  insert into public.notifications (user_id, actor_id, kind, job_id, service, body)
+  values (p_to, me, 'internal_query', q.job_id, j.service, coalesce(label, '') || ': ' || left(q.body, 160));
+  insert into public.job_activity (job_id, actor_id, kind, body)
+  values (q.job_id, me, 'comment', 'Internal query passed from ' || coalesce(who, 'someone') || ' to ' || coalesce(tow, 'someone'));
+end $$;
+revoke all on function public.forward_internal_query(uuid, uuid) from public, anon;
+grant execute on function public.forward_internal_query(uuid, uuid) to authenticated;

@@ -28,7 +28,7 @@ const safe = (name: string) => name.normalize("NFKD").replace(/[^\w.\-]+/g, "_")
  *  and internal queries: question on the left, the manager's reply beside it. */
 const fmtHm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
-export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, timer, queryHours, onProgress, tasks }: {
+export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll, team, defaultTo, readOnly, supabase, personName, say, onQueries, onNewClient, onRaised, onAnswered, onPassed, timer, queryHours, onProgress, tasks }: {
   /** Task list mode: the job page draws each preparation row's header and the rows after preparation. */
   tasks?: { head: (r: PrepRow) => ReactNode; after: (lists: StageLists) => ReactNode; active: boolean; prepTime: (from: string | null, to: string | null) => number; onClientReplied?: () => void };
   job: Job; clientName: string; showInfo: boolean; meId: string; canAnswerAll: boolean; team: Person[]; defaultTo: string | null; readOnly?: boolean;
@@ -37,6 +37,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   onRaised?: (j: Job, kind: "internal" | "client") => void;
   /** A response was sent; stillOpen is how many internal queries on the job are still unanswered. */
   onAnswered?: (j: Job, stillOpen: number) => void;
+  /** An internal query to me was passed on to someone else. */
+  onPassed?: () => void;
   /** Job timer, so the person a query was raised to can time their answer onto their own timesheet. */
   /** Checklist progress: items marked Checked or N/A, out of the total. */
   onProgress?: (marked: number, total: number) => void;
@@ -54,6 +56,8 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const [replyFile, setReplyFile] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
   const [askKind, setAskKind] = useState<"internal" | "client">("internal");
+  const [cqManual, setCqManual] = useState(false); // client query asked outside the portal (phone, WhatsApp, own email)
+  const [passTo, setPassTo] = useState<Record<string, string>>({});
   // Client query by email: who it goes to, subject and message (CC info@ and the signature are added by the server).
   const [mail, setMail] = useState<{ ready: boolean | null; to: string; subject: string; body: string; touched: boolean }>({ ready: null, to: "", subject: "", body: "", touched: false });
   const [inbound, setInbound] = useState<{ id: string; from_addr: string | null; subject: string; body: string; files: string[]; created_at: string }[]>([]);
@@ -242,18 +246,19 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
               <button type="button" className="primary" disabled={busy || !ask.body.trim() || !ask.to} onClick={async () => { if (await post({ body: ask.body, to_id: ask.to }, askFile)) { setAsk({ ...ask, body: "" }); setAskFile(null); setAskOpen(false); say(`Query sent to ${personName(ask.to)}. Your timer stopped and the job is now Internal query`); } }}>Send internal query</button></div>
             <span className="note">{ask.to ? `Only ${personName(ask.to)} can respond. ` : "Only the person you pick can respond. "}Your timer stops and the job moves to Internal query until they answer.</span>
             </> : <>
-            {mail.ready ? <>
+            {mail.ready && !cqManual ? <>
             <label className="f">To<input id="q-mail-to" type="text" value={mail.to} placeholder="client@example.com" onChange={(e) => setMail({ ...mail, to: e.target.value })} /></label>
             <label className="f">Subject<input id="q-mail-subject" type="text" value={mail.subject} onChange={(e) => setMail({ ...mail, subject: e.target.value })} /></label>
             <textarea id="q-mail-body" rows={9} value={mail.body} onChange={(e) => setMail({ ...mail, body: e.target.value })} />
             <div className="row">{pickFile(setAskFile, askFile, "q-mail-file")}<span style={{ flex: 1 }} />
               <button type="button" className="primary" disabled={busy || !mail.to.trim() || !mail.subject.trim() || !mail.body.trim()} onClick={async () => { if (await sendClientEmail()) { setAskFile(null); setAskOpen(false); setMail({ ready: null, to: "", subject: "", body: "", touched: false }); say(`Email sent to ${mail.to}. The job is now Query with client`); } }}>{busy ? "Sending…" : "Send email to client"}</button></div>
             <span className="note">Sent from team@supertax.com.au with info@supertax.com.au copied in and the Supertax signature added at the bottom. When the client replies, it shows here on the job and you get a bell notification. Your timer stops and the job moves to Query with client, with a reminder if there&apos;s no reply in 2 days.</span>
-            </> : mail.ready === false ? <>
+            <div className="row cqout"><span className="note">Already asked the client outside the portal (phone, WhatsApp or your own email)?</span><button type="button" onClick={() => setCqManual(true)}>Mark query sent to client</button></div>
+            </> : mail.ready === false || cqManual ? <>
             <textarea id="q-ask-client" placeholder="What did you ask the client? e.g. Please send the bank statements for September and October." value={ask.body} onChange={(e) => setAsk({ ...ask, body: e.target.value })} />
             <div className="row"><span style={{ flex: 1 }} />
               <button type="button" className="primary" disabled={busy || !ask.body.trim()} onClick={async () => { if (await postClientQuery(ask.body)) { setAsk({ ...ask, body: "" }); setAskOpen(false); say("Client query noted. Your timer stopped and the job is now Query with client"); } }}>Mark query sent to client</button></div>
-            <span className="note">Email sending isn&apos;t set up, so send the query by email as usual. This notes it on the job history, stops your timer and moves the job to Query with client.</span>
+            <span className="note">{cqManual ? <>No email is sent from here. </> : <>Email sending isn&apos;t set up, so send the query by email as usual. </>}This notes it on the job history, stops your timer and moves the job to Query with client, off your My jobs until the client replies.{cqManual ? <> <button type="button" className="link" onClick={() => setCqManual(false)}>Write an email instead</button></> : null}</span>
             </> : <span className="note">Loading…</span>}
             </>}
           </div>);
@@ -267,6 +272,13 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
                     <textarea aria-label="Your response" placeholder={q.body.startsWith(IRV) ? "Your review comments: what to fix, or All good" : "Type the response…"} value={reply[q.id] ?? ""} onChange={(e) => setReply({ ...reply, [q.id]: e.target.value })} />
                     <div className="row">{pickFile((f) => setReplyFile({ ...replyFile, [q.id]: f }), replyFile[q.id] ?? null, `qr-file-${q.id}`)}<span style={{ flex: 1 }} />
                       <button type="button" className="primary" disabled={busy || !(reply[q.id] ?? "").trim()} onClick={async () => { if (await post({ body: reply[q.id] ?? "", parent_id: q.id }, replyFile[q.id] ?? null)) { setReply({ ...reply, [q.id]: "" }); setReplyFile({ ...replyFile, [q.id]: null }); say("Response sent"); } }}>{q.body.startsWith(IRV) ? "Send review comments" : "Send response"}</button></div>
+                    {q.to_id === meId ? <div className="row qpass"><span className="note">Not yours to answer?</span>
+                      <select aria-label="Pass to" value={passTo[q.id] ?? ""} onChange={(e) => setPassTo({ ...passTo, [q.id]: e.target.value })}><option value="">Pass to…</option>
+                        {team.filter((p) => p.id !== meId && p.id !== q.author_id).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>
+                      <button type="button" disabled={busy || !passTo[q.id]} onClick={async () => { const to = passTo[q.id]; setBusy(true); const { error } = await supabase.rpc("forward_internal_query", { p_query: q.id, p_to: to }); setBusy(false);
+                        if (error) { say(/forward_internal_query/.test(error.message) ? "Run database-update-pass-query.sql in Supabase first." : `Not passed on: ${error.message}`, true); return; }
+                        if (timer?.runningHere) await timer.stop();
+                        say(`Passed to ${personName(to)}. It's off your My jobs and in theirs`); setPassTo({ ...passTo, [q.id]: "" }); await load(); onPassed?.(); }}>Pass it on</button></div> : null}
                   </div> : <div className="note qwait">Waiting for {personName(q.to_id) || "a manager"} to respond.</div>}</div>);
 
   if (tasks) {
