@@ -340,6 +340,9 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
 
   if (!canSeeTeam) return mineEl;
 
+  // Breaks one person took on one day: the list and the total minutes (an open break counts up to now).
+  const brkOn = (uid: string, d: string) => breaks.filter((b) => b.user_id === uid && b.work_date === d);
+  const brkMins = (list: AttBreak[]) => list.reduce((t, b) => t + Math.max(0, ((b.ended_at ? Date.parse(b.ended_at) : now) - Date.parse(b.started_at)) / 60000), 0);
   const logEl = (
     <>
       <div className="pagehead" style={{ marginTop: 4 }}><div><h2 style={{ fontSize: 20, margin: 0 }}>Day by day</h2><p>Log-in times, timesheet hours and status for each person and day.</p></div>
@@ -353,11 +356,12 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
           </div>
           <div className="tablebox">
             {!summary.length ? <div className="empty"><strong>Nothing recorded for these dates.</strong>Log-ins and timesheet entries show here.</div> : (
-              <table><thead><tr><th>Date</th><th>Person</th><th>Logged in</th><th>Logged out</th><th style={{ textAlign: "right" }}>Time logged in</th><th style={{ textAlign: "right" }}>Timesheet</th><th>Status</th></tr></thead>
+              <table><thead><tr><th>Date</th><th>Person</th><th>Logged in</th><th>Logged out</th><th style={{ textAlign: "right" }}>Time logged in</th>{breaksOn ? <th style={{ textAlign: "right" }}>Breaks</th> : null}<th style={{ textAlign: "right" }}>Timesheet</th><th>Status</th></tr></thead>
                 <tbody>{summary.map((d) => (
                   <tr key={`${d.date}|${d.user}`}><td>{fmtDate(d.date)}</td><td className="client">{name(d.user)}</td><td>{time(d.first || null, d.office) || "—"}</td>
                     <td>{d.open ? <span className="pill info">Still in</span> : d.auto ? <span className="pill warn" title="Forgot to log out: logged out automatically at midnight India time">Auto logged out</span> : time(d.last, d.office) || "—"}</td>
                     <td className="mono" style={{ textAlign: "right" }}>{d.m ? hm(d.m) : "—"}</td>
+                    {breaksOn ? (() => { const bm = brkMins(brkOn(d.user, d.date)); return <td className={`mono${bm > BREAK_ALLOWANCE_MIN ? " latetxt" : ""}`} style={{ textAlign: "right" }}>{bm ? hm(bm) : "—"}</td>; })() : null}
                     <td className="mono" style={{ textAlign: "right" }}>{d.h ? hrs(d.h) : "—"}</td><td><Status d={d} />
                       {isMaster ? <select aria-label="Change status" value={d.override ?? ""} onChange={(e) => setOverride(d, e.target.value)} style={{ marginLeft: 6, fontSize: 12, padding: "2px 4px" }}>
                         <option value="">Automatic</option><option value="present">Working day</option><option value="half_day">Half day</option><option value="leave">Leave</option></select> : null}</td></tr>))}</tbody></table>
@@ -399,6 +403,7 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
         const h = list.reduce((x, e) => x + Number(e.hours), 0);
         const run = tday === todayISO() ? tRun(p.id) : undefined;
         const runJob = run ? jobs.find((j) => j.id === run.job_id) : undefined;
+        const bl = brkOn(p.id, tday), bm = brkMins(bl);
         return (
           <div key={p.id} className="panel tdcard">
             <div className="tdhead">
@@ -407,11 +412,14 @@ export default function Timesheet({ me, supabase, people, visible, clients, jobs
                 {d?.first ? <span>In <b>{time(d.first, d.office)}</b></span> : null}
                 {d?.first ? <span>Out <b>{d.open ? (tday === todayISO() ? "still in" : "not logged out") : d.auto ? "auto" : time(d.last, d.office) || "—"}</b></span> : null}
                 {d?.m ? <span>Logged in <b>{hm(d.m)}</b></span> : null}
+                {breaksOn ? <span>Breaks <b className={bm > BREAK_ALLOWANCE_MIN ? "latetxt" : undefined}>{bl.length ? hm(bm) : "none"}</b></span> : null}
                 <span>Timesheet <b>{hrs(h)}</b></span>
                 {d?.m ? <span>On jobs <b>{Math.round((h * 60 / d.m) * 100)}%</b></span> : null}
                 {d ? <Status d={d} /> : <span className="pill">No log-in</span>}
               </div>
             </div>
+            {breaksOn && bl.length ? <div className="tdbrk">☕ <b>Breaks</b>{bl.map((b) => <span key={b.id} className="tchip">{time(b.started_at, d?.office)}–{b.ended_at ? time(b.ended_at, d?.office) : "now"}<i>{hm(brkMins([b]))}</i></span>)}
+              <span className={bm > BREAK_ALLOWANCE_MIN ? "pill danger" : "pill"}>Total {hm(bm)} of {BREAK_ALLOWANCE_MIN}m{bm > BREAK_ALLOWANCE_MIN ? ` · ${hm(bm - BREAK_ALLOWANCE_MIN)} over` : ""}</span></div> : null}
             {run ? <div className="tdrun">▶ Timer running now on <b>{clientName(runJob?.client_id ?? null) || "a job"}</b>{runJob ? ` · ${svcLabel(runJob.service)} ${runJob.period}` : ""} since {time(run.started_at)}</div> : null}
             {!lines.length ? <div className="note" style={{ padding: "10px 16px 14px" }}>No timesheet lines for this day.</div> : (
               <div style={{ overflowX: "auto" }}><table className="tdtable"><thead><tr><th>Client</th><th>Job</th><th style={{ textAlign: "right" }}>Hours</th><th>Timer times and comment</th></tr></thead>
