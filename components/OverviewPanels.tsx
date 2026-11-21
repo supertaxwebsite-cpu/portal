@@ -21,8 +21,11 @@ export function useMyQueries(supabase: SB, meId: string, jobs: Job[], on: boolea
   }, [supabase, meId, jobs, on, tick]);
   const byId = new Map(jobs.map((j) => [j.id, j]));
   const replied = new Set(qs.filter((x) => x.parent_id).map((x) => x.parent_id));
-  return qs.filter((x) => !x.parent_id && !x.answered_at && !replied.has(x.id) && x.to_id === meId && byId.has(x.job_id))
+  const open = qs.filter((x) => !x.parent_id && !x.answered_at && !replied.has(x.id));
+  const list = open.filter((x) => x.to_id === meId && byId.has(x.job_id))
     .sort((a, b) => a.created_at.localeCompare(b.created_at)).map((q) => ({ q, j: byId.get(q.job_id)! }));
+  // Jobs where I asked someone else and they haven't answered yet.
+  return Object.assign(list, { raised: new Set(open.filter((x) => x.author_id === meId && x.to_id !== meId).map((x) => x.job_id)) });
 }
 
 /** The "Internal queries" view on the overview: every open query raised to me, oldest first. */

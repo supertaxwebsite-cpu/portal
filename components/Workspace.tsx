@@ -529,10 +529,10 @@ export default function Workspace({ me, viewer, onViewAs }: {
     if (j.status === "to_lodge") return (j.sign_owner ?? j.reviewer_id ?? j.assignee_id) === me.id;
     if (j.status === "sent_for_sign") return !!me.can_mark_signed && me.role !== "master" && !isSigned(j);
     if (j.status === "client_query") return false;
-    // I raised an internal query on my own job: it waits with the other person and leaves my list until they answer.
-    if (j.status === "internal_query" && j.assignee_id === me.id && !j.query_from && !askedBy.has(j.id)) return false;
+    // I sent an internal query on this job (at any hop) and it's waiting with someone else: not on my list until they answer.
+    if (j.status === "internal_query" && (myQueries.raised.has(j.id) || (j.assignee_id === me.id && !j.query_from && !askedBy.has(j.id)))) return false;
     if (j.status === "review") return j.reviewer_id === me.id || (!j.reviewer_id && j.assignee_id === me.id);
-    return j.assignee_id === me.id || (j.query_from === me.id && j.status === "internal_query") || askedBy.has(j.id);
+    return j.assignee_id === me.id || askedBy.has(j.id);
   };
   async function markSentForSign(j: Job) {
     if (running?.job_id === j.id && !(await stopJob())) return;
