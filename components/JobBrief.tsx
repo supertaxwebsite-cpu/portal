@@ -157,14 +157,21 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { say(d.error ?? "The email wasn't sent. Try again.", true); return false; }
+    await closeMyQueries(`emailed ${mail.to.trim()}: ${mail.subject.trim()}`);
     await load();
     onRaised?.(job, "client");
     return true;
+  }
+  // Asking the client answers any internal query sent to me on this job: it leaves my list and waits only as a client query.
+  async function closeMyQueries(text: string) {
+    const open = questions.filter((q) => q.to_id === meId && !q.answered_at && !replies.some((x) => x.parent_id === q.id));
+    for (const q of open) await supabase.from("job_queries").insert({ job_id: job.id, author_id: meId, parent_id: q.id, body: `Asked the client instead: ${text.trim()}`.slice(0, 4000) });
   }
   async function postClientQuery(body: string) {
     if (!body.trim()) { say("Type the query first.", true); return false; }
     setBusy(true);
     const { error } = await supabase.from("job_activity").insert({ job_id: job.id, actor_id: meId, kind: "comment", body: `Client query: ${body.trim()}` });
+    if (!error) await closeMyQueries(body);
     setBusy(false);
     if (error) { say(`Not saved: ${error.message}`, true); return false; }
     await load();
