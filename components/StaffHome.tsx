@@ -80,10 +80,10 @@ export default function StaffHome({ supabase, meId, firstName, jobs: allJobs, cl
     ...(s?.notes ? [["notes", "Review notes", (j: Job) => noteJobs.has(j.id), true] as [Kind, string, (j: Job) => boolean, boolean]] : []),
   ];
   const f = PILLS.find((p) => p[0] === kind)?.[2] ?? (() => true);
-  // Coming up later: not started yet and due more than 7 days away. On "All" they sit in their own box instead of the task list.
+  // Coming up later: not started yet and due more than 7 days away. "All" still lists them (at the bottom, by due date); the box below is a heads-up.
   const isLater = (j: Job) => j.status === "not_started" && !!j.due_date && daysFrom(j.due_date) > 7 && running?.job_id !== j.id && !asked(j) && !noteJobs.has(j.id);
   const later = ordered.filter(isLater).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
-  const list = ordered.filter((j) => f(j) && !isPay(j) && !(kind === "all" && isLater(j)));
+  const list = ordered.filter((j) => f(j) && !isPay(j));
   const shown = all ? list : list.slice(0, 10);
   const payList = ordered.filter((j) => f(j) && isPay(j));
 
