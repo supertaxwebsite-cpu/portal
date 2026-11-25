@@ -351,7 +351,7 @@ export function dropboxRel(raw: string | null | undefined): string {
   else if (s.toLowerCase() === DROPBOX_ROOT.toLowerCase()) s = "";
   return s.replace(/\\{2,}/g, "\\").replace(/^\\+|\\+$/g, "").trim();
 }
-/** What "Copy folder path" puts on the clipboard: opens on any team member's Windows computer. */
-export const dropboxLocal = (rel: string) => `%USERPROFILE%\\${DROPBOX_ROOT}\\${rel}`;
+/** What "Copy folder path" puts on the clipboard. Win+R, paste, Enter opens it (the Run box starts in the user's own folder). */
+export const dropboxLocal = (rel: string) => `${DROPBOX_ROOT}\\${rel}`;
 /** The same folder on dropbox.com (for anyone signed in to the team Dropbox there). */
 export const dropboxWeb = (rel: string) => `https://www.dropbox.com/home/${rel.split("\\").map(encodeURIComponent).join("/")}`;
