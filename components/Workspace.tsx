@@ -1078,7 +1078,8 @@ export default function Workspace({ me, viewer, onViewAs }: {
             <span className="count">Time on jobs <i className="dark">{fmtHours(yearH)}</i></span>
             <button type="button" className="count" onClick={showClosed}>Lodged FY{String(fy).slice(2)} <i className="green">{lodgedFY}</i></button>
             <span style={{ flex: 1 }} />
-            {c.dropbox_path ? <button type="button" className="dbxbtn" title={`${DROPBOX_ROOT}\\${c.dropbox_path}`} onClick={() => copyDropboxPath(c.dropbox_path ?? "", say)}>📂 Copy folder path</button> : null}
+            {c.dropbox_path ? <button type="button" className="dbxbtn" title={`${DROPBOX_ROOT}\\${c.dropbox_path}`} onClick={() => copyDropboxPath(c.dropbox_path ?? "", say)}>📂 Copy folder path</button>
+              : <button type="button" title="Save this client's Dropbox folder path, so anyone can open it from the client and its jobs" onClick={() => { setModal({ kind: "client", client: c }); setTimeout(() => document.getElementById("c-dropboxpath")?.focus(), 150); }}>📂 Add folder path</button>}
             {c.email ? <a className="btnlink" href={`mailto:${c.email}`}>✉ Email client</a> : null}
             <span className="count">📎 All files <i className="blue">{sumFlag("f")}</i></span>
           </div>
