@@ -355,3 +355,10 @@ export function dropboxRel(raw: string | null | undefined): string {
 export const dropboxLocal = (rel: string) => `${DROPBOX_ROOT}\\${rel}`;
 /** The same folder on dropbox.com (for anyone signed in to the team Dropbox there). */
 export const dropboxWeb = (rel: string) => `https://www.dropbox.com/home/${rel.split("\\").map(encodeURIComponent).join("/")}`;
+/** Copy a client's folder path, then tell the person how to open it. */
+export function copyDropboxPath(rel: string, say: (m: string, e?: boolean) => void) {
+  const t = dropboxLocal(rel);
+  const ask = () => { window.prompt("Copy this path, then press Win+R, paste and press Enter:", t); };
+  if (!navigator.clipboard) return ask();
+  navigator.clipboard.writeText(t).then(() => say("Folder path copied. Press Win+R, paste (Ctrl+V) and press Enter to open it"), ask);
+}

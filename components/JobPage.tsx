@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import type { AuditQuery, Client, Job, JobTimer, Person } from "@/lib/types";
-import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned, industryLabel, AUDIT_STATUSES } from "@/lib/domain";
+import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned, industryLabel, AUDIT_STATUSES, copyDropboxPath, DROPBOX_ROOT } from "@/lib/domain";
 import { STEPS, checklistFor } from "@/lib/checklists";
 import JobBrief, { type PrepRow, type StageLists } from "./JobBrief";
 import JobFiles from "./JobFiles";
@@ -19,7 +19,7 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep, onAudit, onPassed, canMarkSigned = false }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onEditClient, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep, onAudit, onPassed, canMarkSigned = false }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onPassed?: () => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
@@ -33,7 +33,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   job: Job; client?: Client; meId: string; team: Person[]; canAnswerAll: boolean; canDelete: boolean; readOnly: boolean; supabase: SB;
   personName: (id: string | null) => string; say: (m: string, e?: boolean) => void; statusEl: ReactNode; hours: number;
   running: JobTimer | null; busy: boolean; onStart: (j: Job) => void; onStop: () => void; wasStarted: (j: Job) => boolean;
-  onBack: () => void; onEdit: (tab?: "email") => void; onOpenClient: (id: string) => void; onNewClient: () => void;
+  onBack: () => void; onEdit: (tab?: "email") => void; onEditClient?: (c: Client) => void; onOpenClient: (id: string) => void; onNewClient: () => void;
 }) {
   const st = ST[job.status];
   const total = checklistFor(job.service).length;
@@ -265,6 +265,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <button type="button" className="count" onClick={() => go("jp-history")}>Time logged <i className="dark">{fmtHours(Math.max(hours, jobTotal))}</i></button>
           {related && client ? <button type="button" className="count" onClick={() => onOpenClient(client.id)}>🔗 Related clients ({related})</button> : null}
           <span style={{ flex: 1 }} />
+          {client?.dropbox_path ? <button type="button" className="dbxbtn" title={`${DROPBOX_ROOT}\\${client.dropbox_path}`} onClick={() => copyDropboxPath(client.dropbox_path ?? "", say)}>📂 Copy folder path</button>
+            : client && !readOnly && onEditClient ? <button type="button" title="Save this client's Dropbox folder path, so anyone can open it from their jobs" onClick={() => onEditClient(client)}>📂 Add folder path</button> : null}
           {!readOnly ? <button type="button" onClick={() => onEdit("email")}>✉ Email client</button> : null}
           <button type="button" onClick={() => go("jp-files")}>📎 Files</button>
         </div>

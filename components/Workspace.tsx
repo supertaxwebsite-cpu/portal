@@ -6,7 +6,7 @@ import { periodOptions, clientUpcoming,
   ENTITIES, PRACTICES, practicesFor, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, statusesFor, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
-  isSigned, SIGNED_MARK, industryLabel, industryHint, dropboxRel, dropboxLocal, DROPBOX_ROOT,
+  isSigned, SIGNED_MARK, industryLabel, industryHint, dropboxRel, copyDropboxPath, DROPBOX_ROOT,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
@@ -1078,7 +1078,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
             <span className="count">Time on jobs <i className="dark">{fmtHours(yearH)}</i></span>
             <button type="button" className="count" onClick={showClosed}>Lodged FY{String(fy).slice(2)} <i className="green">{lodgedFY}</i></button>
             <span style={{ flex: 1 }} />
-            {c.dropbox_path ? <button type="button" className="dbxbtn" title={`${DROPBOX_ROOT}\\${c.dropbox_path}`} onClick={() => { const t = dropboxLocal(c.dropbox_path ?? ""); const done = () => say("Folder path copied. Press Win+R, paste (Ctrl+V) and press Enter to open it"); navigator.clipboard?.writeText(t).then(done, () => window.prompt("Copy this path, then press Win+R, paste and press Enter:", t)) ?? window.prompt("Copy this path, then press Win+R, paste and press Enter:", t); }}>📂 Copy folder path</button> : null}
+            {c.dropbox_path ? <button type="button" className="dbxbtn" title={`${DROPBOX_ROOT}\\${c.dropbox_path}`} onClick={() => copyDropboxPath(c.dropbox_path ?? "", say)}>📂 Copy folder path</button> : null}
             {c.email ? <a className="btnlink" href={`mailto:${c.email}`}>✉ Email client</a> : null}
             <span className="count">📎 All files <i className="blue">{sumFlag("f")}</i></span>
           </div>
@@ -1258,7 +1258,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
       {view === "jobs" ? (() => {
         const jp = jobPageId ? jobs.find((x) => x.id === jobPageId) : undefined;
         if (!jp) return JobsView();
-        return <JobPage key={jp.id} job={jp} client={clientById.get(jp.client_id)} meId={me.id} team={team} canAnswerAll={me.role !== "staff"} canMarkSigned={me.role === "master" || !!me.can_mark_signed} canDelete={canDelete}
+        return <JobPage key={jp.id} job={jp} client={clientById.get(jp.client_id)} onEditClient={(c) => { setModal({ kind: "client", client: c }); setTimeout(() => document.getElementById("c-dropboxpath")?.focus(), 150); }} meId={me.id} team={team} canAnswerAll={me.role !== "staff"} canMarkSigned={me.role === "master" || !!me.can_mark_signed} canDelete={canDelete}
           readOnly={!isOpen(jp.status) && !isMaster} supabase={supabase} personName={personName} say={say} statusEl={<StatusSelect j={jp} />} hours={jobHours[jp.id] ?? 0}
           running={running} busy={timerBusy} onStart={startJob} onStop={stopJob} wasStarted={wasStarted} onBack={() => { setJobPageId(null); window.scrollTo(0, 0); }}
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
