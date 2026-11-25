@@ -62,6 +62,8 @@ export interface Client {
   industry?: string | null;
   /** Link to the client's Dropbox folder (pasted from Dropbox: Copy link). */
   dropbox_url?: string | null;
+  /** The client's folder inside the team Dropbox, e.g. Team - Bookkeeping\02 BAS Sole Trader\Jasbir Singh. */
+  dropbox_path?: string | null;
   manager_id: string | null;
   services: string[];
   bas_freq: "quarterly" | "monthly" | "annual";

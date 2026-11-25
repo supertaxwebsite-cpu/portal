@@ -340,3 +340,18 @@ export function clientGroup(id: string, links: { client_id: string; related_id: 
 export const industryLabel = (entity?: string | null) => (entity === "Individual" ? "Occupation" : "Industry");
 export const industryHint = (entity?: string | null) => (entity === "Individual" ? "e.g. Registered nurse, Electrician, Uber driver"
   : entity === "SMSF" ? "e.g. Investment in shares and property" : "e.g. Electrical contracting, Cafe, Residential construction");
+
+/** Team Dropbox folder name on each computer (C:\Users\<name>\Mysupertax Dropbox). */
+export const DROPBOX_ROOT = "Mysupertax Dropbox";
+/** A client's Dropbox folder path, kept relative to the team Dropbox folder: a full path pasted from File Explorer is cut back to the part after "Mysupertax Dropbox\". */
+export function dropboxRel(raw: string | null | undefined): string {
+  let s = (raw ?? "").trim().replace(/^["']+|["']+$/g, "").replace(/\//g, "\\");
+  const i = s.toLowerCase().lastIndexOf(`${DROPBOX_ROOT.toLowerCase()}\\`);
+  if (i >= 0) s = s.slice(i + DROPBOX_ROOT.length + 1);
+  else if (s.toLowerCase() === DROPBOX_ROOT.toLowerCase()) s = "";
+  return s.replace(/\\{2,}/g, "\\").replace(/^\\+|\\+$/g, "").trim();
+}
+/** What "Copy folder path" puts on the clipboard: opens on any team member's Windows computer. */
+export const dropboxLocal = (rel: string) => `%USERPROFILE%\\${DROPBOX_ROOT}\\${rel}`;
+/** The same folder on dropbox.com (for anyone signed in to the team Dropbox there). */
+export const dropboxWeb = (rel: string) => `https://www.dropbox.com/home/${rel.split("\\").map(encodeURIComponent).join("/")}`;

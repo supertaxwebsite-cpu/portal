@@ -3448,3 +3448,6 @@ grant execute on function public.forward_internal_query(uuid, uuid) to authentic
 
 -- Dropbox folder link on each client.
 alter table public.clients add column if not exists dropbox_url text not null default '';
+
+-- Dropbox folder path on each client (inside Mysupertax Dropbox).
+alter table public.clients add column if not exists dropbox_path text not null default '';

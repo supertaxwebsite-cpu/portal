@@ -6,7 +6,7 @@ import { periodOptions, clientUpcoming,
   ENTITIES, PRACTICES, practicesFor, periodFY, DEFAULT_PRACTICE, practiceOf, STAFF_CANT_PICK, NO_SIGN_SERVICES, SUBMITTED_LOCK_MSG, staffSubmittedLock, SERVICES, STATUSES, statusesFor, ST, SVC, currentFY, daysFrom, fmtDate, isOpen,
   RELATIONS, relationText, clientGroup,
   periodLabel, projectedWork, roleLabel, suggestDue, svcLabel, todayISO, type PeriodInput,
-  isSigned, SIGNED_MARK, industryLabel, industryHint,
+  isSigned, SIGNED_MARK, industryLabel, industryHint, dropboxRel, dropboxLocal, dropboxWeb, DROPBOX_ROOT,
 } from "@/lib/domain";
 import SignOutButton from "./SignOutButton";
 import IdleSignOut from "./IdleSignOut";
@@ -1078,7 +1078,8 @@ export default function Workspace({ me, viewer, onViewAs }: {
             <span className="count">Time on jobs <i className="dark">{fmtHours(yearH)}</i></span>
             <button type="button" className="count" onClick={showClosed}>Lodged FY{String(fy).slice(2)} <i className="green">{lodgedFY}</i></button>
             <span style={{ flex: 1 }} />
-            {c.dropbox_url && /^https:\/\//i.test(c.dropbox_url) ? <a className="dbxbtn" href={c.dropbox_url} target="_blank" rel="noopener noreferrer" title="Open this client's Dropbox folder"><svg width="16" height="14" viewBox="0 0 43 40" aria-hidden="true"><path fill="currentColor" d="M12.5 0 0 8.1l8.7 6.9 12.6-7.8zM0 21.9l12.5 8.2 8.8-7.3-12.6-7.8zm21.3.9 8.8 7.3 12.4-8.2-8.6-6.9zM42.5 8.1 30.1 0l-8.8 7.2L34 15zM21.3 24.4l-8.8 7.3-3.8-2.5v2.8l12.6 7.5 12.6-7.5v-2.8l-3.8 2.5z" /></svg>Dropbox folder ↗</a> : null}
+            {c.dropbox_path || (c.dropbox_url && /^https:\/\//i.test(c.dropbox_url)) ? <a className="dbxbtn" href={c.dropbox_url && /^https:\/\//i.test(c.dropbox_url) ? c.dropbox_url : dropboxWeb(c.dropbox_path ?? "")} target="_blank" rel="noopener noreferrer" title="Open this client's Dropbox folder"><svg width="16" height="14" viewBox="0 0 43 40" aria-hidden="true"><path fill="currentColor" d="M12.5 0 0 8.1l8.7 6.9 12.6-7.8zM0 21.9l12.5 8.2 8.8-7.3-12.6-7.8zm21.3.9 8.8 7.3 12.4-8.2-8.6-6.9zM42.5 8.1 30.1 0l-8.8 7.2L34 15zM21.3 24.4l-8.8 7.3-3.8-2.5v2.8l12.6 7.5 12.6-7.5v-2.8l-3.8 2.5z" /></svg>Dropbox folder ↗</a> : null}
+            {c.dropbox_path ? <button type="button" className="dbxbtn" title={`${DROPBOX_ROOT}\\${c.dropbox_path}`} onClick={() => { const t = dropboxLocal(c.dropbox_path ?? ""); const done = () => say("Folder path copied. Press Win+E, then Ctrl+L, paste (Ctrl+V) and press Enter"); navigator.clipboard?.writeText(t).then(done, () => window.prompt("Copy this path, then press Win+E, Ctrl+L, paste and Enter:", t)) ?? window.prompt("Copy this path, then press Win+E, Ctrl+L, paste and Enter:", t); }}>📂 Copy folder path</button> : null}
             {c.email ? <a className="btnlink" href={`mailto:${c.email}`}>✉ Email client</a> : null}
             <span className="count">📎 All files <i className="blue">{sumFlag("f")}</i></span>
           </div>
@@ -1657,7 +1658,7 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
 }) {
   const [v, setV] = useState({
     practice: client ? practiceOf(client) : practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE, name: client?.name ?? "", entity: client?.entity ?? (allowedEnt && !allowedEnt.includes("Company") ? allowedEnt[0] : "Company"), abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
-    email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", industry: client?.industry ?? "", dropbox_url: client?.dropbox_url ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
+    email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", industry: client?.industry ?? "", dropbox_url: client?.dropbox_url ?? "", dropbox_path: client?.dropbox_path ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
     payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
   });
@@ -1675,7 +1676,7 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
     }
     setBusy(true);
     if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
-    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, address, industry, dropbox_url, ...base } = v;
+    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, address, industry, dropbox_url, dropbox_path, ...base } = v;
     // Default people for automatic jobs: only sent when set or changed, so saving works before that database update.
     const who: Record<string, string | null> = {};
     if (payroll_assignee || client?.payroll_assignee) who.payroll_assignee = hasPayroll ? payroll_assignee || null : null;
@@ -1691,7 +1692,10 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
     const dbx = dropbox_url.trim();
     if (dbx && !/^https:\/\/\S+$/i.test(dbx)) { setBusy(false); alert("Paste the full Dropbox link, starting with https://"); return; }
     const box = dbx || client?.dropbox_url ? { dropbox_url: dbx } : {};
-    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, ...addr, ...ind, ...box, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
+    // Dropbox folder path: kept relative to the team Dropbox folder; sent only when filled in (or already stored).
+    const dpath = dropboxRel(dropbox_path);
+    const boxPath = dpath || client?.dropbox_path ? { dropbox_path: dpath } : {};
+    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, ...addr, ...ind, ...box, ...boxPath, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
     const ok = client ? await save(() => supabase.from("clients").update(row).eq("id", client.id), "Client saved") : await save(() => supabase.from("clients").insert(row), "Client added");
     setBusy(false);
     if (ok) onClose();
@@ -1717,6 +1721,7 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
         <label className="f">Phone<input id="c-phone" type="tel" value={v.phone} onChange={set("phone")} /></label>
         <label className="f full">Address<input id="c-address" autoComplete="off" value={v.address} onChange={set("address")} placeholder="e.g. 12 George St, Parramatta NSW 2150" /></label>
         <label className="f full">Dropbox folder link<input id="c-dropbox" type="url" inputMode="url" autoComplete="off" value={v.dropbox_url} onChange={set("dropbox_url")} placeholder="https://www.dropbox.com/…" /><span className="hint">In Dropbox, right-click the client folder → Copy link, then paste it here. &quot;Dropbox folder&quot; on the client page opens it.</span></label>
+        <label className="f full">Dropbox folder path<input id="c-dropboxpath" autoComplete="off" value={v.dropbox_path} onChange={set("dropbox_path")} onBlur={() => setV((x) => ({ ...x, dropbox_path: dropboxRel(x.dropbox_path) }))} placeholder="e.g. Team - Bookkeeping\02 BAS Sole Trader\Jasbir Singh 3605" /><span className="hint">The folder inside {DROPBOX_ROOT}. You can paste the full path from File Explorer: the part up to &quot;{DROPBOX_ROOT}\&quot; is removed, so it opens on every team member&apos;s computer.</span></label>
         <div className="f full">Services you provide<div className="checks">{SERVICES.map((s) => (
           <label key={s.id}><input type="checkbox" checked={v.services.includes(s.id)} onChange={(e) => setV({ ...v, services: e.target.checked ? [...v.services, s.id] : v.services.filter((x) => x !== s.id) })} /> {s.label}</label>))}</div></div>
         <label className="f">BAS / IAS cycle<select id="c-basfreq" value={v.bas_freq} onChange={set("bas_freq")}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option><option value="annual">Annually</option></select></label>
