@@ -1078,6 +1078,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
             <span className="count">Time on jobs <i className="dark">{fmtHours(yearH)}</i></span>
             <button type="button" className="count" onClick={showClosed}>Lodged FY{String(fy).slice(2)} <i className="green">{lodgedFY}</i></button>
             <span style={{ flex: 1 }} />
+            {c.dropbox_url && /^https:\/\//i.test(c.dropbox_url) ? <a className="dbxbtn" href={c.dropbox_url} target="_blank" rel="noopener noreferrer" title="Open this client's Dropbox folder"><svg width="16" height="14" viewBox="0 0 43 40" aria-hidden="true"><path fill="currentColor" d="M12.5 0 0 8.1l8.7 6.9 12.6-7.8zM0 21.9l12.5 8.2 8.8-7.3-12.6-7.8zm21.3.9 8.8 7.3 12.4-8.2-8.6-6.9zM42.5 8.1 30.1 0l-8.8 7.2L34 15zM21.3 24.4l-8.8 7.3-3.8-2.5v2.8l12.6 7.5 12.6-7.5v-2.8l-3.8 2.5z" /></svg>Dropbox folder ↗</a> : null}
             {c.email ? <a className="btnlink" href={`mailto:${c.email}`}>✉ Email client</a> : null}
             <span className="count">📎 All files <i className="blue">{sumFlag("f")}</i></span>
           </div>
@@ -1656,7 +1657,7 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
 }) {
   const [v, setV] = useState({
     practice: client ? practiceOf(client) : practices.includes(DEFAULT_PRACTICE) ? DEFAULT_PRACTICE : practices[0] ?? DEFAULT_PRACTICE, name: client?.name ?? "", entity: client?.entity ?? (allowedEnt && !allowedEnt.includes("Company") ? allowedEnt[0] : "Company"), abn: client?.abn ?? "", contact: client?.contact ?? "", manager_id: client?.manager_id ?? "",
-    email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", industry: client?.industry ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
+    email: client?.email ?? "", phone: client?.phone ?? "", address: client?.address ?? "", industry: client?.industry ?? "", dropbox_url: client?.dropbox_url ?? "", services: client?.services ?? [], bas_freq: client?.bas_freq ?? "quarterly", notes: client?.notes ?? "",
     payroll_freq: (client?.payroll_freq ?? "") as string, payroll_anchor: client?.payroll_anchor ?? "",
     payroll_assignee: client?.payroll_assignee ?? "", bas_assignee: client?.bas_assignee ?? "",
   });
@@ -1674,7 +1675,7 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
     }
     setBusy(true);
     if (hasPayroll && v.payroll_freq && !v.payroll_anchor) { setBusy(false); alert("Enter the next pay date so payroll jobs can be created on the right days."); return; }
-    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, address, industry, ...base } = v;
+    const { payroll_freq, payroll_anchor, payroll_assignee, bas_assignee, practice, address, industry, dropbox_url, ...base } = v;
     // Default people for automatic jobs: only sent when set or changed, so saving works before that database update.
     const who: Record<string, string | null> = {};
     if (payroll_assignee || client?.payroll_assignee) who.payroll_assignee = hasPayroll ? payroll_assignee || null : null;
@@ -1686,7 +1687,11 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
     const addr = address.trim() || client?.address ? { address: address.trim() } : {};
     // Industry / occupation: sent only when filled in (or already stored), so saving works before that database update.
     const ind = industry.trim() || client?.industry ? { industry: industry.trim() } : {};
-    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, ...addr, ...ind, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
+    // Dropbox folder link: only a web link (https://) is kept; sent only when filled in (or already stored).
+    const dbx = dropbox_url.trim();
+    if (dbx && !/^https:\/\/\S+$/i.test(dbx)) { setBusy(false); alert("Paste the full Dropbox link, starting with https://"); return; }
+    const box = dbx || client?.dropbox_url ? { dropbox_url: dbx } : {};
+    const row: Record<string, unknown> = { ...base, ...payroll, ...who, ...prac, ...addr, ...ind, ...box, name: v.name.trim(), abn: v.abn.trim(), manager_id: v.manager_id || null };
     const ok = client ? await save(() => supabase.from("clients").update(row).eq("id", client.id), "Client saved") : await save(() => supabase.from("clients").insert(row), "Client added");
     setBusy(false);
     if (ok) onClose();
@@ -1711,6 +1716,7 @@ function ClientModal({ client, entities: allowedEnt, practices = [...PRACTICES],
         <label className="f">Email<input id="c-email" type="email" value={v.email} onChange={set("email")} /></label>
         <label className="f">Phone<input id="c-phone" type="tel" value={v.phone} onChange={set("phone")} /></label>
         <label className="f full">Address<input id="c-address" autoComplete="off" value={v.address} onChange={set("address")} placeholder="e.g. 12 George St, Parramatta NSW 2150" /></label>
+        <label className="f full">Dropbox folder link<input id="c-dropbox" type="url" inputMode="url" autoComplete="off" value={v.dropbox_url} onChange={set("dropbox_url")} placeholder="https://www.dropbox.com/…" /><span className="hint">In Dropbox, right-click the client folder → Copy link, then paste it here. &quot;Dropbox folder&quot; on the client page opens it.</span></label>
         <div className="f full">Services you provide<div className="checks">{SERVICES.map((s) => (
           <label key={s.id}><input type="checkbox" checked={v.services.includes(s.id)} onChange={(e) => setV({ ...v, services: e.target.checked ? [...v.services, s.id] : v.services.filter((x) => x !== s.id) })} /> {s.label}</label>))}</div></div>
         <label className="f">BAS / IAS cycle<select id="c-basfreq" value={v.bas_freq} onChange={set("bas_freq")}><option value="quarterly">Quarterly</option><option value="monthly">Monthly</option><option value="annual">Annually</option></select></label>

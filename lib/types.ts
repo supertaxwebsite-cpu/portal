@@ -60,6 +60,8 @@ export interface Client {
   address?: string | null;
   /** Occupation (individuals) or nature of business / industry (everyone else). */
   industry?: string | null;
+  /** Link to the client's Dropbox folder (pasted from Dropbox: Copy link). */
+  dropbox_url?: string | null;
   manager_id: string | null;
   services: string[];
   bas_freq: "quarterly" | "monthly" | "annual";

@@ -3445,3 +3445,6 @@ begin
 end $$;
 revoke all on function public.forward_internal_query(uuid, uuid) from public, anon;
 grant execute on function public.forward_internal_query(uuid, uuid) to authenticated;
+
+-- Dropbox folder link on each client.
+alter table public.clients add column if not exists dropbox_url text not null default '';
