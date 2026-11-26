@@ -26,7 +26,7 @@ import ClientPicker from "./ClientPicker";
 import RelatedClients from "./RelatedClients";
 import ProspectsView from "./Prospects";
 import ActivityLog from "./ActivityLog";
-import { CHECKLISTS, STEPS } from "@/lib/checklists";
+import { CHECKLISTS, STEPS, NO_CHECKLIST } from "@/lib/checklists";
 import { LOCATIONS, localDay, officeOf } from "@/lib/office";
 import TeamBoard from "./TeamBoard";
 import JobPage from "./JobPage";
@@ -510,6 +510,13 @@ export default function Workspace({ me, viewer, onViewAs }: {
     if (running?.job_id === j.id && !(await stopJob())) return;
     await save(() => supabase.from("jobs").update({ status: "done" }).eq("id", j.id), `${clientName(j.client_id)} marked completed`);
   }
+  /** One-step jobs (ATO payment, ATO communication, Other): stop the timer, note what was done, close as Done. */
+  async function markDone(j: Job, note: string) {
+    if (!window.confirm(`Mark ${clientName(j.client_id)} · ${svcLabel(j.service)} ${j.period} as done? The job closes straight away.`)) return;
+    if (running?.job_id === j.id && !(await stopJob())) return;
+    if (note) await supabase.from("job_activity").insert({ job_id: j.id, actor_id: me.id, kind: "comment", body: `Done: ${note}` });
+    await save(() => supabase.from("jobs").update({ status: "done" }).eq("id", j.id), `${clientName(j.client_id)} · ${svcLabel(j.service)} done. Job closed`);
+  }
   async function sendBackReview(j: Job) {
     const note = window.prompt(`What does ${personName(j.assignee_id) || "the preparer"} need to fix? (optional)`, "");
     if (note === null) return;
@@ -565,6 +572,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
   const wasStarted = (j: Job) => !started || started.has(j.id) || running?.job_id === j.id;
   /** Submit for review: pick the senior or manager who checks it (defaults to the job's reviewer or your team leader). */
   async function submitForReview(j: Job) {
+    if (NO_CHECKLIST.includes(j.service)) { await markDone(j, ""); return; }
     if (!wasStarted(j)) { say("Start the job first: press Start, do the work, then submit it for review.", true); return; }
     setModal({ kind: "submit", job: j });
   }
@@ -1265,7 +1273,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
           onEdit={(tab) => setModal({ kind: "job", job: jp, tab })} onOpenClient={openClient} onNewClient={() => (canCreateClient ? setModal({ kind: "client" }) : say("You don't have access to create clients. Ask your manager.", true))}
           flag={flags.get(jp.id)} related={links.filter((l) => l.client_id === jp.client_id || l.related_id === jp.client_id).length}
           onApprove={approveReview} onSendBack={sendBackReview} onHandSign={(j) => setModal({ kind: "handsign", job: j })} onTakeSign={(j) => save(() => supabase.rpc("hand_signing", { p_job: j.id, p_to: me.id, p_note: "" }), "You're doing the signing. Press Start, then Sent for signing.")} onRaised={queryRaised} onAnswered={queryAnswered} onPassed={() => setQTick((n) => n + 1)}
-          onComplete={(j) => setModal({ kind: "submit", job: j })} onAudit={auditStep} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onClientSigned={markClientSigned} onPayStep={payrollStep} onReplied={(j) => myStatus(j, "in_progress")} />;
+          onComplete={(j) => setModal({ kind: "submit", job: j })} onDone={markDone} onAudit={auditStep} onSentForSign={markSentForSign} onSigned={markSigned} onClientChanges={clientChanges} onClientSigned={markClientSigned} onPayStep={payrollStep} onReplied={(j) => myStatus(j, "in_progress")} />;
       })() : null}
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}

@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import type { createClient } from "@/lib/supabase/client";
 import type { AuditQuery, Client, Job, JobTimer, Person } from "@/lib/types";
 import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned, industryLabel, AUDIT_STATUSES, copyDropboxPath, DROPBOX_ROOT } from "@/lib/domain";
-import { STEPS, checklistFor } from "@/lib/checklists";
+import { STEPS, checklistFor, NO_CHECKLIST } from "@/lib/checklists";
 import JobBrief, { type PrepRow, type StageLists } from "./JobBrief";
 import JobFiles from "./JobFiles";
 import JobHistory from "./JobHistory";
@@ -19,10 +19,12 @@ const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((
 export const hm = (h: number) => { const m = Math.round(h * 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`; };
 
 export default function JobPage({ job, client, meId, team, canAnswerAll, canDelete, readOnly, supabase, personName, say, statusEl, hours, running, busy,
-  onStart, onStop, wasStarted, onBack, onEdit, onEditClient, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep, onAudit, onPassed, canMarkSigned = false }: {
+  onStart, onStop, wasStarted, onBack, onEdit, onEditClient, onOpenClient, onNewClient, flag, related = 0, onApprove, onSendBack, onHandSign, onTakeSign, onRaised, onAnswered, onComplete, onSentForSign, onSigned, onReplied, onClientChanges, onClientSigned, onPayStep, onAudit, onPassed, onDone, canMarkSigned = false }: {
   flag?: { q: number; rn: number; f: number }; related?: number; onApprove?: (j: Job) => void; onSendBack?: (j: Job) => void; onHandSign?: (j: Job) => void; onTakeSign?: (j: Job) => Promise<unknown>;
   onRaised?: (j: Job, kind: "internal" | "client") => void; onAnswered?: (j: Job, stillOpen: number) => void; onPassed?: () => void;
   /** Task flow: finish preparation (to review), sent to the client for signing, client signed, client replied to a query. */
+  /** One-step jobs (ATO payment, ATO communication, Other): close the job, with an optional note of what was done. */
+  onDone?: (j: Job, note: string) => Promise<void> | void;
   onComplete?: (j: Job) => void; onSentForSign?: (j: Job) => void; onSigned?: (j: Job) => void; onReplied?: (j: Job) => void; onClientChanges?: (j: Job) => void; onClientSigned?: (j: Job) => void;
   /** SMSF audit: move between Sent to auditor and Auditor query, or on to Client signature, saving the auditor queries. */
   onAudit?: (j: Job, status: "with_auditor" | "auditor_query" | "to_lodge", queries?: AuditQuery[]) => Promise<unknown> | void;
@@ -54,6 +56,9 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   const inAudit = audit && AUDIT_STATUSES.has(job.status);
   const stage = !open ? 4 : inAudit ? 1.5 : payFlow && job.status === "to_lodge" ? (job.super_done_at ? 3 : 2) : signed || skipSign ? 3 : job.status === "review" ? 1 : job.status === "to_lodge" || job.status === "sent_for_sign" ? 2 : 0;
   const on = running?.job_id === job.id;
+  // ATO payment, ATO communication and Other: one Action step, then done. No review, signing or lodge stages.
+  const simple = NO_CHECKLIST.includes(job.service);
+  const [doneNote, setDoneNote] = useState("");
   // Tick every 15 seconds while the timer runs here, so the clock and the totals stay live.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { if (!on) return; setNow(Date.now()); const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, [on]);
@@ -261,7 +266,8 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <button type="button" className="count" onClick={() => setNotesPop("review")}>Review notes <i className={flag?.rn ? "red" : ""}>{flag?.rn ?? 0}</i></button>
           <button type="button" className="count" onClick={() => go("jp-files")}>Files <i className="blue">{flag?.f ?? 0}</i></button>
           {prog.total ? <button type="button" className="count" onClick={() => go("jp-work")}>{STEPS[job.service] ? "Steps" : "Checklist"} <i className={prog.total && prog.marked >= prog.total ? "green" : undefined}>{Math.min(prog.marked, prog.total)}/{prog.total}</i></button> : null}
-          <span className="count">Stage <i className="blue">{audit ? (inAudit ? 3 : stage <= 1 ? stage + 1 : Math.min(stage + 2, 5)) : Math.min(stage + 1, 4)} of {audit ? 5 : 4}</i></span>
+          {simple ? <span className="count">Step <i className={open ? "blue" : "green"}>{open ? "1 of 1" : "Done"}</i></span>
+          : <span className="count">Stage <i className="blue">{audit ? (inAudit ? 3 : stage <= 1 ? stage + 1 : Math.min(stage + 2, 5)) : Math.min(stage + 1, 4)} of {audit ? 5 : 4}</i></span>}
           <button type="button" className="count" onClick={() => go("jp-history")}>Time logged <i className="dark">{fmtHours(Math.max(hours, jobTotal))}</i></button>
           {related && client ? <button type="button" className="count" onClick={() => onOpenClient(client.id)}>🔗 Related clients ({related})</button> : null}
           <span style={{ flex: 1 }} />
@@ -274,11 +280,31 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
 
       <div className="jobgrid">
         <div className="jobmain">
-          <div className="panel tasksp" id="jp-work">
-            <div className="ph"><h2>Tasks</h2><span className="note">Press Start on the current task. Finish it and the next task opens on its own.</span></div>
+          <div className={`panel tasksp${simple ? " simple" : ""}`} id="jp-work">
+            <div className="ph"><h2>Tasks</h2><span className="note">{simple ? "One step: do it, then mark it done. No review or signing stages for this job type." : "Press Start on the current task. Finish it and the next task opens on its own."}</span></div>
+            {simple ? (() => { const me = job.assignee_id === meId; const canDo = open && !readOnly && (me || canAnswerAll);
+              const what = job.service === "ato_payment" ? "make the payment" : job.service === "ato_comm" ? "deal with the ATO" : "do the work";
+              const sub = !open ? "Done" : job.status === "internal_query" ? "Internal query raised: waiting for the answer" : job.status === "client_query" ? "Query with the client: press Client replied when they answer"
+                : wasStarted(job) || on ? `${what[0].toUpperCase()}${what.slice(1)}, then mark the job done` : "Not started yet: press Start";
+              return <div className={`simplestep${open ? "" : " done"}`}>
+                <div className={`taskhead ${open ? "now" : "done"}`}><span className="tdot">{open ? 1 : "✓"}</span>
+                  <div style={{ minWidth: 0, flex: 1 }}><div className="tkt">Action{job.assignee_id ? ` · ${personName(job.assignee_id)}${me ? " (you)" : ""}` : ""}</div>
+                    <div className="tks">{on ? <span className="runtxt">● Running · </span> : null}{sub}</div></div>
+                  {hours ? <span className="tasktime mono" title="Time logged on this job">{hm(hours)}</span> : null}
+                  <div className="row jsact">{canDo ? <>
+                    {job.status === "client_query" ? (onReplied ? <button type="button" disabled={busy} onClick={() => onReplied(job)}>Client replied</button> : null) : me ? timerBtn("Start") : null}
+                    {onDone && job.status !== "client_query" && job.status !== "internal_query" ? <button type="button" className="donebtn" disabled={busy} title="Stops the timer and closes the job as Done"
+                      onClick={async () => { await onDone(job, doneNote.trim()); setDoneNote(""); }}>✓ Mark done &amp; complete job</button> : null}</> : null}</div></div>
+                {canDo && job.status !== "client_query" && job.status !== "internal_query" ? <div className="taskbody">
+                  <label className="f" style={{ display: "block" }}><span>What was done <span className="note">(optional, saved in the job history)</span></span>
+                    <textarea id="jp-donenote" value={doneNote} onChange={(e) => setDoneNote(e.target.value)} maxLength={2000} rows={3}
+                      placeholder={job.service === "ato_payment" ? "e.g. Paid $4,210 to the ATO by BPAY on 26 Nov, ref 1234 5678 9012" : job.service === "ato_comm" ? "e.g. Called the ATO, payment plan set up, ref 123456" : "e.g. What you did and anything the next person should know"} /></label>
+                  <div className="row" style={{ marginTop: 8 }}><button type="button" onClick={() => go("jp-files")}>📎 Attach {job.service === "ato_payment" ? "receipt" : "a file"}</button>
+                    <span className="note">Need to ask someone? Raise a query below.</span></div></div> : null}
+              </div>; })() : null}
             <JobBrief job={job} clientName={client?.name ?? ""} showInfo={false} meId={meId} canAnswerAll={canAnswerAll} team={team} defaultTo={job.reviewer_id} readOnly={readOnly}
               supabase={supabase} personName={personName} say={say} onNewClient={onNewClient} onRaised={onRaised} onAnswered={onAnswered} onPassed={onPassed} timer={{ runningHere: running?.job_id === job.id, busy, start: onStart, stop: onStop }} queryHours={queryHours} onProgress={onProgress}
-              tasks={{ head: prepHead, active: stage === 0 && open && job.status !== "internal_query" && job.status !== "client_query", prepTime, onClientReplied: onReplied && !readOnly ? () => onReplied(job) : undefined, after: (L: StageLists) => { stageL = L; const noSign = job.needs_signature === false; const pay = job.service === "payroll" && noSign;
+              tasks={simple ? undefined : { head: prepHead, active: stage === 0 && open && job.status !== "internal_query" && job.status !== "client_query", prepTime, onClientReplied: onReplied && !readOnly ? () => onReplied(job) : undefined, after: (L: StageLists) => { stageL = L; const noSign = job.needs_signature === false; const pay = job.service === "payroll" && noSign;
                 // Payroll: approving hands the pay run to the Payroll page (super, then STP), so only the Review list is needed here.
                 const approveReady = L.review.done && (!noSign || pay || L.lodge.done); return <>
                 <li className={`task${stage === 1 ? " now" : stage > 1 ? " done" : " later"}`}>{head(1)}
