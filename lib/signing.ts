@@ -22,7 +22,12 @@ export async function markSignedFromZoho(admin: Admin, jobId: string, doc: strin
   if (job.status === "sent_for_sign" && job.sign_reminded_at === SIGNED_MARK) return { ok: false, prev: null, note: "The job is already Ready to lodge" };
   const prev = job.sign_reminded_at as string | null;
   // From any stage: Ready to lodge is "Sent for sign" marked signed.
-  const up = await admin.from("jobs").update({ status: "sent_for_sign", sign_reminded_at: SIGNED_MARK }).eq("id", jobId).eq("status", job.status);
+  // Two steps: moving a job into "Sent for sign" clears the signed mark (a database rule), so the mark goes on after.
+  if (job.status !== "sent_for_sign") {
+    const st = await admin.from("jobs").update({ status: "sent_for_sign" }).eq("id", jobId).eq("status", job.status);
+    if (st.error) return { ok: false, prev: null, note: st.error.message };
+  }
+  const up = await admin.from("jobs").update({ sign_reminded_at: SIGNED_MARK }).eq("id", jobId).eq("status", "sent_for_sign");
   if (up.error) return { ok: false, prev: null, note: up.error.message };
   const saved: string[] = [];
   // Only the signed document and Zoho's completion certificate (both carry the document name), not other PDFs such as an invoice.
@@ -66,8 +71,9 @@ interface Ctx { jobs: MatchJob[] | null; clients: MatchClient[] | null }
 async function handleOne(admin: Admin, b: Box, ctx: Ctx, validity: number, uid: number, from: string, subject: string, date: string | Date, atts: () => Promise<Att[]>): Promise<boolean> {
   const doc = completedDoc(from, subject);
   if (!doc) return false;
-  const { data: seen } = await admin.from("sign_log").select("id").eq("box", b.user).eq("uidvalidity", validity).eq("uid", uid).limit(1);
-  if (seen?.length) return false;
+  // Once per email: skip it if this check already logged it, or if any earlier check moved a job for it (or someone handled it).
+  const { data: seen } = await admin.from("sign_log").select("uidvalidity, result, handled_by").eq("box", b.user).eq("uid", uid);
+  if ((seen ?? []).some((r) => Number(r.uidvalidity) === validity || r.result === "moved" || r.result === "undone" || r.handled_by)) return false;
   if (!ctx.jobs) {
     ctx.jobs = await all<MatchJob>(admin, "jobs", "id, client_id, service, period, status, sign_reminded_at", (q) => q.not("status", "in", "(lodged,done)"));
     ctx.clients = await all<MatchClient>(admin, "clients", "id, name");

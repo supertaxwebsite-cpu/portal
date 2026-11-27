@@ -26,6 +26,7 @@ const WHAT: Record<Notice["kind"], string> = {
   leave_decided: "decided on your leave request",
   leave_cancelled: "cancelled approved leave",
   client_email: "the client replied to your email. Open the job to read it",
+
   late_start: "logged in late again (3 or more late starts this month)",
 };
 
@@ -39,6 +40,9 @@ function ago(s: string) {
 }
 
 /** Bell in the top bar: what has been sent to me, newest first, with an unread count. */
+/** Zoho Sign completions are filed as client_email notices; they read differently. */
+const zoho = (n: Notice) => n.kind === "client_email" && (n.body ?? "").startsWith("Signed in Zoho Sign");
+
 export default function Bell({ supabase, meId, personName, onOpen }: {
   supabase: SB; meId: string; personName: (id: string | null) => string; onOpen: (n: Notice) => void;
 }) {
@@ -107,8 +111,9 @@ export default function Bell({ supabase, meId, personName, onOpen }: {
             <ul className="belllist">{items.map((n) => (
               <li key={n.id} className={n.read_at ? "" : "unread"}>
                 <button onClick={() => { markRead([n.id]); setOpen(false); onOpen(n); }}>
-                  <span className="who"><b>{n.actor_id ? personName(n.actor_id) || "Someone" : n.kind === "client_email" ? "Client email" : "Practice Desk"}</b> {WHAT[n.kind] ?? "sent you something"}</span>
-                  <span className="what">{n.kind === "meeting" ? n.body : [svcLabel(n.service), n.body].filter(Boolean).join(" · ")}</span>
+                  {zoho(n) ? <span className="who"><b>Zoho Sign</b> the client signed. The job is now in Ready to lodge</span>
+                    : <span className="who"><b>{n.actor_id ? personName(n.actor_id) || "Someone" : n.kind === "client_email" ? "Client email" : "Practice Desk"}</b> {WHAT[n.kind] ?? "sent you something"}</span>}
+                  <span className="what">{n.kind === "meeting" ? n.body : zoho(n) ? (n.body ?? "").replace(/^Signed in Zoho Sign:\s*/, "").replace(/\.\s*Ready to lodge$/, "") : [svcLabel(n.service), n.body].filter(Boolean).join(" · ")}</span>
                   <span className="when">{ago(n.created_at)}</span>
                 </button>
               </li>))}</ul>)}

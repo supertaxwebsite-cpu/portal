@@ -23,7 +23,8 @@ export async function POST(req: Request) {
     const { data: job } = await admin.from("jobs").select("status, sign_reminded_at").eq("id", log.job_id).maybeSingle();
     if (!job || job.status !== "sent_for_sign" || job.sign_reminded_at !== SIGNED_MARK) return NextResponse.json({ error: "The job has moved on since (for example it was lodged), so it can't be undone here." }, { status: 409 });
     const back = prevStatusFrom(log.note ?? "");
-    await admin.from("jobs").update({ status: back, sign_reminded_at: log.prev_reminded_at }).eq("id", log.job_id);
+    if (back === "sent_for_sign") await admin.from("jobs").update({ sign_reminded_at: log.prev_reminded_at }).eq("id", log.job_id);
+    else await admin.from("jobs").update({ status: back }).eq("id", log.job_id);
     await admin.from("job_activity").insert({ job_id: log.job_id, actor_id: me.id, kind: "comment", body: `Undone: back to ${back === "sent_for_sign" ? "Sent for signing" : (log.note as string).split(" · ")[0].replace(/^Was at /, "")} (the Zoho Sign email ${log.doc_name} wasn't for this job)` });
     await admin.from("sign_log").update({ result: "undone", handled_by: me.id, note: "Undone" }).eq("id", log.id);
     return NextResponse.json({ ok: true });

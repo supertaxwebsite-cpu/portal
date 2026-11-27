@@ -88,7 +88,12 @@ export function candidates(doc: DocParts, clients: MatchClient[], jobs: MatchJob
   const ids = new Set(clientsFor(doc.name, clients).map((c) => c.id));
   let all = jobs.filter((j) => ids.has(j.client_id) && (!doc.service || j.service === doc.service || (doc.service === "bas" && j.service === "ias")));
   // The closest way of writing the period that matches wins (a monthly Sep 2026 job before the Q1 FY27 quarter).
-  for (const p of doc.periods) { const byP = all.filter((j) => periodKey(j.period).includes(p)); if (byP.length) { all = byP; break; } }
+  // If the document names a period, only jobs for that period count (an October document never moves the Q1 job).
+  if (doc.periods.length) {
+    let byP: MatchJob[] = [];
+    for (const p of doc.periods) { byP = all.filter((j) => periodKey(j.period).includes(p)); if (byP.length) break; }
+    all = byP;
+  }
   // Any job not yet lodged or completed can move, whatever stage it's at.
   let open = all.filter((j) => j.status !== "lodged" && j.status !== "done" && !(j.status === "sent_for_sign" && j.sign_reminded_at === signedMark));
   // If several could be it, the ones actually out for signing come first.
