@@ -140,7 +140,7 @@ export default function InboxView({ supabase, jobs, clients, say, onOpenJob }: {
   if (boxes && !boxes.length) return (<>
     <div className="pagehead"><div><h1>Inbox</h1><p>Your practice mailboxes in one place, and Zoho Sign emails that move jobs to Ready to lodge on their own.</p></div></div>
     <div className="panel empty" style={{ padding: 24 }}><strong>No mailbox is connected yet.</strong>
-      Add the mailbox in Vercel (Settings → Environment Variables): <code>MAILBOX_1_USER</code> = the email address and <code>MAILBOX_1_PASS</code> = its app password, then redeploy.</div></>);
+      Add the mailbox in Vercel (Settings → Environment Variables): <code>MAILBOX_1_USER</code> = the email address. For Outlook (Microsoft 365) also add <code>MS_TENANT_ID</code>, <code>MS_CLIENT_ID</code> and <code>MS_CLIENT_SECRET</code> from the app in Microsoft Entra; for other mail services add <code>MAILBOX_1_PASS</code> = its app password. Then redeploy.</div></>);
 
   const signRowEl = (s: SignRow) => {
     const j = s.job_id ? jobById.get(s.job_id) : null;

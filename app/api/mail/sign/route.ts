@@ -3,6 +3,7 @@ import { currentProfile } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { boxes, withImap } from "@/lib/mailboxes";
 import { markSignedFromZoho } from "@/lib/signing";
+import { idOf, mimeOf } from "@/lib/graph";
 import { SIGNED_MARK } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,10 @@ export async function POST(req: Request) {
     if (b) {
       try {
         const { simpleParser } = await import("mailparser");
-        files = await withImap(b, async (c) => {
+        if (b.kind === "graph") {
+          const id = await idOf(b.user, "inbox", Number(log.uid));
+          files = id ? (await simpleParser(await mimeOf(b.user, id))).attachments : [];
+        } else files = await withImap(b, async (c) => {
           const lock = await c.getMailboxLock("INBOX");
           try {
             const mb = c.mailbox && typeof c.mailbox !== "boolean" ? c.mailbox : null;

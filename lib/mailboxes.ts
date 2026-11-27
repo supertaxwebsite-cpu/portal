@@ -1,13 +1,16 @@
 import "server-only";
 import type { ImapFlow } from "imapflow";
+import { graphReady } from "@/lib/graph";
 
 /** Practice mailboxes shown in the Inbox tab and checked for Zoho Sign emails. Passwords live only in Vercel:
  *    MAILBOX_1_USER = accounting@mysupertax.com.au
  *    MAILBOX_1_PASS = the mailbox's app password
  *  Add more later as MAILBOX_2_USER / MAILBOX_2_PASS, MAILBOX_3_…, and so on.
  *  The mail server is the same as the portal's own (IMAP_HOST, or SMTP_HOST with "smtp" changed to "imap");
- *  if a mailbox is with another provider, also set MAILBOX_n_IMAP_HOST and MAILBOX_n_SMTP_HOST. */
-export interface Box { i: number; user: string; pass: string; imap: string; imapPort: number; smtp: string; smtpPort: number }
+ *  if a mailbox is with another provider, also set MAILBOX_n_IMAP_HOST and MAILBOX_n_SMTP_HOST.
+ *  Microsoft 365 (Outlook) mailboxes have no password: set MAILBOX_n_USER only, plus MS_TENANT_ID, MS_CLIENT_ID
+ *  and MS_CLIENT_SECRET once for all of them (see lib/graph.ts). */
+export interface Box { i: number; kind: "imap" | "graph"; user: string; pass: string; imap: string; imapPort: number; smtp: string; smtpPort: number }
 
 export function boxes(): Box[] {
   const env = (k: string) => (process.env[k] ?? "").trim();
@@ -16,11 +19,15 @@ export function boxes(): Box[] {
   const out: Omit<Box, "i">[] = [];
   for (let n = 1; n <= 9; n++) {
     const user = env(`MAILBOX_${n}_USER`), pass = env(`MAILBOX_${n}_PASS`);
-    if (!user || !pass || out.some((b) => b.user.toLowerCase() === user.toLowerCase())) continue;
+    if (!user || out.some((b) => b.user.toLowerCase() === user.toLowerCase())) continue;
+    if (!pass) {
+      if (graphReady()) out.push({ kind: "graph", user: user.toLowerCase(), pass: "", imap: "", imapPort: 0, smtp: "", smtpPort: 0 });
+      continue;
+    }
     const smtp = env(`MAILBOX_${n}_SMTP_HOST`) || smtp0;
     const imap = env(`MAILBOX_${n}_IMAP_HOST`) || (env(`MAILBOX_${n}_SMTP_HOST`) ? smtp.replace(/^smtp/i, "imap") : imap0);
     if (!imap) continue;
-    out.push({ user: user.toLowerCase(), pass, imap, imapPort: Number(env(`MAILBOX_${n}_IMAP_PORT`) || 993), smtp, smtpPort: Number(env(`MAILBOX_${n}_SMTP_PORT`) || env("SMTP_PORT") || 465) });
+    out.push({ kind: "imap", user: user.toLowerCase(), pass, imap, imapPort: Number(env(`MAILBOX_${n}_IMAP_PORT`) || 993), smtp, smtpPort: Number(env(`MAILBOX_${n}_SMTP_PORT`) || env("SMTP_PORT") || 465) });
   }
   return out.map((b, i) => ({ ...b, i }));
 }

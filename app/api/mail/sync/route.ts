@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { currentProfile } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { boxes, withImap } from "@/lib/mailboxes";
-import { scanBox } from "@/lib/signing";
+import { scanBox, scanGraph } from "@/lib/signing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (!force && lr && Date.now() - Date.parse(lr) < GAP_MS) continue;
     // Claim this run first so two tabs don't both check.
     await admin.from("mail_box_state").upsert({ box: b.user, last_run: new Date().toISOString() }, { onConflict: "box", ignoreDuplicates: false });
-    try { handled += await withImap(b, (c) => scanBox(admin, b, c)); } catch (e) { errors.push((e as Error).message); }
+    try { handled += b.kind === "graph" ? await scanGraph(admin, b) : await withImap(b, (c) => scanBox(admin, b, c)); } catch (e) { errors.push((e as Error).message); }
   }
   return NextResponse.json({ ok: true, handled, errors });
 }
