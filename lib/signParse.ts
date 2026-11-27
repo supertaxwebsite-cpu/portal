@@ -28,7 +28,7 @@ export interface DocParts { service: string | null; name: string; periods: strin
 /** Splits a document name into service, client name and period, wherever they sit:
  *  ITR_SUKHDEVSINGHCHAHAL, 2026_ITR_RAMANJEETCHAHAL, workpaper_Q1_2027, 2026_September_AS_NMAUPTYLTD, BAS_PRIMECONTAINER_Q1FY27. */
 export function parseDoc(doc: string): DocParts {
-  const toks = doc.replace(/\.pdf$/i, "").split(/[_\s\-–.]+/).filter(Boolean);
+  const toks = doc.replace(/\.pdf$/i, "").replace(/\(\d+\)/g, " ").split(/[_\s\-–.]+/).filter(Boolean);
   let service: string | null = null, quarter = "", year = "", fy = "", month = -1;
   const rest: string[] = [];
   for (const raw of toks) {

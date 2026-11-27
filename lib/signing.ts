@@ -106,7 +106,10 @@ export async function scanGraph(admin: Admin, b: Box): Promise<number> {
   const list = await pages(b.user, `/messages?$select=id,subject,from,receivedDateTime&$top=100&$orderby=receivedDateTime%20asc&$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}`, 2000);
   const ctx: Ctx = { jobs: null, clients: null };
   let handled = 0, top = known ? Number(st!.last_uid) : 0;
+  const started = Date.now();
   for (const m of list) {
+    // Stop in time to save the place; the next check carries on from here.
+    if (Date.now() - started > 40_000) break;
     const uid = uidOf(m.receivedDateTime, m.id);
     top = Math.max(top, uid);
     const f = m.from?.emailAddress;
