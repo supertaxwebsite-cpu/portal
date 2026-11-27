@@ -83,13 +83,17 @@ export function clientsFor(name: string, clients: MatchClient[]): MatchClient[] 
   });
 }
 
-/** Jobs out for signing that this document could be: the client, then the service, then the period if one is given. */
+/** Jobs this document could be (any stage before lodged): the client, then the service, then the period if one is given. */
 export function candidates(doc: DocParts, clients: MatchClient[], jobs: MatchJob[], signedMark: string): { open: MatchJob[]; done: MatchJob[] } {
   const ids = new Set(clientsFor(doc.name, clients).map((c) => c.id));
   let all = jobs.filter((j) => ids.has(j.client_id) && (!doc.service || j.service === doc.service || (doc.service === "bas" && j.service === "ias")));
   // The closest way of writing the period that matches wins (a monthly Sep 2026 job before the Q1 FY27 quarter).
   for (const p of doc.periods) { const byP = all.filter((j) => periodKey(j.period).includes(p)); if (byP.length) { all = byP; break; } }
-  const open = all.filter((j) => j.status === "sent_for_sign" && j.sign_reminded_at !== signedMark);
+  // Any job not yet lodged or completed can move, whatever stage it's at.
+  let open = all.filter((j) => j.status !== "lodged" && j.status !== "done" && !(j.status === "sent_for_sign" && j.sign_reminded_at === signedMark));
+  // If several could be it, the ones actually out for signing come first.
+  const out = open.filter((j) => j.status === "sent_for_sign");
+  if (open.length > 1 && out.length === 1) open = out;
   const done = all.filter((j) => !open.includes(j));
   return { open, done };
 }

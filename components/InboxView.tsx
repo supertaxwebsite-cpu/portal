@@ -43,8 +43,9 @@ export default function InboxView({ supabase, jobs, clients, say, onOpenJob }: {
   const clientName = useCallback((id: string) => clients.find((c) => c.id === id)?.name ?? "", [clients]);
   const jobById = useMemo(() => new Map(jobs.map((j) => [j.id, j])), [jobs]);
   const jobLabel = (id: string | null) => { const j = id ? jobById.get(id) : null; return j ? `${clientName(j.client_id)} · ${svcLabel(j.service)} ${j.period}` : "a job"; };
-  const outForSign = useMemo(() => jobs.filter((j) => j.status === "sent_for_sign" && j.sign_reminded_at !== SIGNED_MARK)
-    .sort((a, b) => clientName(a.client_id).localeCompare(clientName(b.client_id))), [jobs, clientName]);
+  // Jobs a signed document can be moved to: any stage before lodged; the ones out for signing first.
+  const outForSign = useMemo(() => jobs.filter((j) => j.status !== "lodged" && j.status !== "done" && !(j.status === "sent_for_sign" && j.sign_reminded_at === SIGNED_MARK))
+    .sort((a, b) => Number(b.status === "sent_for_sign") - Number(a.status === "sent_for_sign") || clientName(a.client_id).localeCompare(clientName(b.client_id))), [jobs, clientName]);
   const addrOf = (i: number) => boxes?.find((b) => b.i === i)?.address ?? "";
   const idxOf = (address: string) => boxes?.find((b) => b.address === address)?.i ?? -1;
 
@@ -56,7 +57,15 @@ export default function InboxView({ supabase, jobs, clients, say, onOpenJob }: {
   const loadLog = useCallback(async () => {
     const { data, error } = await supabase.from("sign_log").select("*").gte("created_at", new Date(Date.now() - 60 * 864e5).toISOString()).order("created_at", { ascending: false }).limit(300);
     if (error) { setLogMissing(true); setLog([]); return; }
-    setLogMissing(false); setLog((data as SignRow[]) ?? []);
+    setLogMissing(false);
+    // A re-check can log the same email again; show each email once, keeping the row that moved a job, else the newest.
+    const seen = new Map<string, SignRow>();
+    for (const r of (data as SignRow[]) ?? []) {
+      const k = `${r.box}|${r.uid}`, o = seen.get(k);
+      const rank = (x: SignRow) => (x.result === "moved" || x.result === "undone" || x.result === "skipped" && x.note === "Ignored" ? 1 : 0);
+      if (!o || rank(r) > rank(o) || (rank(r) === rank(o) && r.created_at > o.created_at)) seen.set(k, r);
+    }
+    setLog([...seen.values()].sort((a, b) => b.created_at.localeCompare(a.created_at)));
   }, [supabase]);
   const loadList = useCallback(async () => {
     if (show === "signing") return;
@@ -97,13 +106,13 @@ export default function InboxView({ supabase, jobs, clients, say, onOpenJob }: {
     await loadLog(); if (show !== "signing") loadList();
   }
   async function signAct(a: "move" | "undo" | "ignore", row: SignRow, job?: string) {
-    if (a === "undo" && !window.confirm(`Undo? ${jobLabel(row.job_id)} goes back to Sent for signing.`)) return;
+    if (a === "undo" && !window.confirm(`Undo? ${jobLabel(row.job_id)} goes back to the stage it was at.`)) return;
     setBusy(true);
     const r = await fetch("/api/mail/sign", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ a, id: row.id, job }) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { say(d.error ?? "That didn't work", true); return; }
-    say(a === "move" ? `${jobLabel(job ?? null)} moved to Ready to lodge` : a === "undo" ? "Undone: back to Sent for signing" : "Ignored");
+    say(a === "move" ? `${jobLabel(job ?? null)} moved to Ready to lodge` : a === "undo" ? "Undone: the job is back where it was" : "Ignored");
     await loadLog();
   }
   function startCompose(kind: "new" | "reply" | "all" | "fwd") {
@@ -146,7 +155,7 @@ export default function InboxView({ supabase, jobs, clients, say, onOpenJob }: {
     const j = s.job_id ? jobById.get(s.job_id) : null;
     const choices = s.result === "needs" && s.candidates.length > 1 ? s.candidates.map((id) => jobById.get(id)).filter(Boolean) as Job[] : outForSign;
     return <div className={`signbox ${s.result}`}>
-      {s.result === "moved" ? <><b>✅ Done automatically:</b> {jobLabel(s.job_id)} moved from Sent for signing to <b>Ready to lodge</b>.{s.note ? ` ${s.note}.` : ""}
+      {s.result === "moved" ? <><b>✅ Done automatically:</b> {jobLabel(s.job_id)} moved to <b>Ready to lodge</b>.{s.note ? ` ${s.note}.` : ""}
         <div className="row" style={{ marginTop: 6 }}>{j ? <button type="button" className="link" onClick={() => onOpenJob(j)}>Open job</button> : null}<button type="button" className="link" disabled={busy} onClick={() => signAct("undo", s)}>Undo</button></div></>
       : s.result === "skipped" ? <><b>↷ Nothing to do:</b> {s.note}{j ? <> · <button type="button" className="link" onClick={() => onOpenJob(j)}>{jobLabel(s.job_id)}</button></> : null}</>
       : <><b>⚠ Needs you:</b> {s.result === "undone" ? "you undid this move." : s.note || "no job matched."} Choose the job this signed document is for:

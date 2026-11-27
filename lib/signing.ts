@@ -1,7 +1,11 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ImapFlow } from "imapflow";
-import { SIGNED_MARK, svcLabel } from "@/lib/domain";
+import { SIGNED_MARK, svcLabel, STATUSES } from "@/lib/domain";
+
+const statusLabel = (id: string) => STATUSES.find((x) => x.id === id)?.label ?? id;
+/** The stage a moved job was at, read back from its note ("Was at In progress · …"). */
+export const prevStatusFrom = (note: string) => STATUSES.find((x) => note.startsWith(`Was at ${x.label}`))?.id ?? "sent_for_sign";
 import { completedDoc, parseDoc, candidates, norm, type MatchJob, type MatchClient } from "@/lib/signParse";
 import type { Box } from "@/lib/mailboxes";
 import { pages, mimeOf, uidOf } from "@/lib/graph";
@@ -14,9 +18,11 @@ interface Att { filename?: string; contentType?: string; content: Buffer; size: 
 export async function markSignedFromZoho(admin: Admin, jobId: string, doc: string, files: Att[], by: string | null): Promise<{ ok: boolean; prev: string | null; note: string }> {
   const { data: job } = await admin.from("jobs").select("id, client_id, service, period, status, sign_reminded_at, sign_owner, reviewer_id, assignee_id").eq("id", jobId).maybeSingle();
   if (!job) return { ok: false, prev: null, note: "The job no longer exists" };
-  if (job.status !== "sent_for_sign" || job.sign_reminded_at === SIGNED_MARK) return { ok: false, prev: null, note: "The job isn't waiting for a signature any more" };
+  if (job.status === "lodged" || job.status === "done") return { ok: false, prev: null, note: `The job is already ${statusLabel(job.status).toLowerCase()}` };
+  if (job.status === "sent_for_sign" && job.sign_reminded_at === SIGNED_MARK) return { ok: false, prev: null, note: "The job is already Ready to lodge" };
   const prev = job.sign_reminded_at as string | null;
-  const up = await admin.from("jobs").update({ sign_reminded_at: SIGNED_MARK }).eq("id", jobId).eq("status", "sent_for_sign");
+  // From any stage: Ready to lodge is "Sent for sign" marked signed.
+  const up = await admin.from("jobs").update({ status: "sent_for_sign", sign_reminded_at: SIGNED_MARK }).eq("id", jobId).eq("status", job.status);
   if (up.error) return { ok: false, prev: null, note: up.error.message };
   const saved: string[] = [];
   // Only the signed document and Zoho's completion certificate (both carry the document name), not other PDFs such as an invoice.
@@ -37,7 +43,8 @@ export async function markSignedFromZoho(admin: Admin, jobId: string, doc: strin
   const who = (job.sign_owner ?? job.reviewer_id ?? job.assignee_id) as string | null;
   if (who && who !== by) await admin.from("notifications").insert({ user_id: who, actor_id: by, kind: "client_email", job_id: jobId, service: job.service,
     body: `Signed in Zoho Sign: ${c?.name ?? ""} · ${svcLabel(job.service)} ${job.period}. Ready to lodge` });
-  return { ok: true, prev, note: saved.length ? "Signed PDF saved in Files" : "" };
+  // The stage it was at goes in the note, so Undo can put it back.
+  return { ok: true, prev, note: [job.status !== "sent_for_sign" ? `Was at ${statusLabel(job.status)}` : "", saved.length ? "Signed PDF saved in Files" : ""].filter(Boolean).join(" · ") };
 }
 
 /** Every row, past the database's 1000-rows-per-request limit. */
@@ -62,7 +69,7 @@ async function handleOne(admin: Admin, b: Box, ctx: Ctx, validity: number, uid: 
   const { data: seen } = await admin.from("sign_log").select("id").eq("box", b.user).eq("uidvalidity", validity).eq("uid", uid).limit(1);
   if (seen?.length) return false;
   if (!ctx.jobs) {
-    ctx.jobs = await all<MatchJob>(admin, "jobs", "id, client_id, service, period, status, sign_reminded_at", (q) => q.neq("status", "not_started"));
+    ctx.jobs = await all<MatchJob>(admin, "jobs", "id, client_id, service, period, status, sign_reminded_at", (q) => q.not("status", "in", "(lodged,done)"));
     ctx.clients = await all<MatchClient>(admin, "clients", "id, name");
   }
   const { open, done } = candidates(parseDoc(doc), ctx.clients!, ctx.jobs, SIGNED_MARK);
@@ -132,5 +139,5 @@ export async function scanGraph(admin: Admin, b: Box): Promise<number> {
   await admin.from("mail_box_state").upsert({ box: b.user, uidvalidity: GRAPH_VALIDITY, last_uid: top || null, last_run: new Date().toISOString() });
   return handled;
 }
-// 2: from when every folder is read, so the first check looks back 14 days again.
-export const GRAPH_VALIDITY = 2;
+// Raised when the matching rules change, so the next check looks back 14 days again (3: any stage moves).
+export const GRAPH_VALIDITY = 3;
