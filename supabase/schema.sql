@@ -3451,3 +3451,35 @@ alter table public.clients add column if not exists dropbox_url text not null de
 
 -- Dropbox folder path on each client (inside Mysupertax Dropbox).
 alter table public.clients add column if not exists dropbox_path text not null default '';
+
+
+-- Where the portal is up to in each mailbox (written by the server only).
+create table if not exists public.mail_box_state (
+  box text primary key,
+  uidvalidity bigint,
+  last_uid bigint,
+  last_run timestamptz
+);
+alter table public.mail_box_state enable row level security;
+
+-- Each Zoho Sign "has been completed" email, and what was done with it.
+create table if not exists public.sign_log (
+  id uuid primary key default gen_random_uuid(),
+  box text not null,
+  uidvalidity bigint not null default 0,
+  uid bigint not null,
+  subject text not null default '',
+  doc_name text not null default '',
+  received_at timestamptz,
+  result text not null check (result in ('moved', 'needs', 'none', 'skipped', 'undone')),
+  note text not null default '',
+  job_id uuid references public.jobs(id) on delete set null,
+  candidates uuid[] not null default '{}',
+  prev_reminded_at timestamptz,
+  handled_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (box, uidvalidity, uid)
+);
+alter table public.sign_log enable row level security;
+drop policy if exists "master reads sign log" on public.sign_log;
+create policy "master reads sign log" on public.sign_log for select using (public.is_master());

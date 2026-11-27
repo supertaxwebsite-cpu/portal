@@ -37,13 +37,14 @@ import JobEmail from "./JobEmail";
 import MyJobs, { fmtHours } from "./MyJobs";
 import StaffHome from "./StaffHome";
 import ClientReplies, { newReplies, type MailRow } from "./ClientReplies";
+import InboxView from "./InboxView";
 import { MyQueries, NeedsAttention, ReviewByPerson, ReviewTypes, useMyQueries } from "./OverviewPanels";
 import { checkImport, parseCsv, type ImportCheck } from "@/lib/clientImport";
 
-type View = "overview" | "jobs" | "payroll" | "clients" | "prospects" | "timesheet" | "team" | "meetings" | "management";
+type View = "overview" | "jobs" | "payroll" | "inbox" | "clients" | "prospects" | "timesheet" | "team" | "meetings" | "management";
 /** Statuses where nothing more needs doing: kept out of the unassigned list. */
 const FINISHED = new Set(["done", "sent_for_sign", "lodged"]);
-const VIEWS: View[] = ["overview", "jobs", "payroll", "clients", "prospects", "timesheet", "team", "meetings", "management"];
+const VIEWS: View[] = ["overview", "jobs", "payroll", "inbox", "clients", "prospects", "timesheet", "team", "meetings", "management"];
 /** A dropdown of tick boxes: pick one or several values (stored comma-separated; empty means all). */
 function MultiPick({ id, all, value, options, onChange }: { id: string; all: string; value: string; options: { v: string; l: string; short?: string }[]; onChange: (v: string) => void }) {
   const picked = value ? value.split(",") : [];
@@ -270,6 +271,8 @@ export default function Workspace({ me, viewer, onViewAs }: {
     const check = async () => {
       if (document.visibilityState !== "visible") return;
       await fetch("/api/email/inbox", { method: "POST" }).catch(() => null);
+      // Zoho Sign "has been completed" emails: move signed jobs to Ready to lodge (the server checks each mailbox every 2 minutes at most).
+      await fetch("/api/mail/sync", { method: "POST" }).catch(() => null);
       await loadReplies();
     };
     loadReplies();
@@ -367,7 +370,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
   useEffect(() => {
     const route = () => {
       const h = window.location.hash.replace("#", "") as View;
-      setView(VIEWS.includes(h) && (h !== "management" || me.role === "master") && ((h !== "team" && h !== "meetings" && h !== "prospects") || canSeeTeam) && (h !== "team" || canTeamTab) ? h : "overview");
+      setView(VIEWS.includes(h) && (h !== "management" || me.role === "master") && (h !== "inbox" || me.role === "master") && ((h !== "team" && h !== "meetings" && h !== "prospects") || canSeeTeam) && (h !== "team" || canTeamTab) ? h : "overview");
     };
     route();
     window.addEventListener("hashchange", route);
@@ -1261,7 +1264,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
   }
 
   return (
-    <Shell me={me} viewOnly={viewOnly} view={view} go={navGo} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab} badges={{ prospects: prospectsDue }} wide={view === "clients" && !clientId && ccols.length > 6} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
+    <Shell me={me} viewOnly={viewOnly} view={view} go={navGo} live={live} showTeam={canSeeTeam} showTeamTab={canTeamTab} badges={{ prospects: prospectsDue }} wide={view === "inbox" || (view === "clients" && !clientId && ccols.length > 6)} bell={<Bell supabase={supabase} meId={me.id} personName={personName} onOpen={openNotice} />}>
       <WorkGate supabase={supabase} meId={me.id} isStaff={me.role === "staff" && !viewOnly} gate={me.role !== "master" && !viewOnly} running={running} onTimesheet={view === "timesheet"} onMyJobs={() => navGo("overview")} say={say}>
       {view === "overview" ? <Overview /> : null}
       {view === "jobs" ? (() => {
@@ -1278,6 +1281,7 @@ export default function Workspace({ me, viewer, onViewAs }: {
       {view === "payroll" ? <PayrollView key={navTick} jobs={jobs} clients={clients} meId={me.id} canSignOff={canManage} clientName={clientName} personName={personName} running={running} busy={timerBusy}
         onStart={startJob} onStop={stopJob} onSubmit={submitForReview} wasStarted={wasStarted} onStep={payrollStep} onOpen={(j) => openJob(j)} onNew={() => setModal({ kind: "job", service: "payroll" })} /> : null}
       {view === "clients" ? (clientForDetail ? ClientDetail({ c: clientForDetail }) : ClientsView()) : null}
+      {view === "inbox" && me.role === "master" ? <InboxView key={navTick} supabase={supabase} jobs={jobs} clients={clients} say={say} onOpenJob={(j) => openJob(j)} /> : null}
       {view === "prospects" && canSeeTeam ? <ProspectsView key={navTick} supabase={supabase} meId={me.id} team={team} clients={clients} canDelete={canDelete} personName={personName} say={say} onOpenClient={openClient} onChanged={load} /> : null}
       {view === "timesheet" ? <Timesheet key={navTick} timers={running && !teamRunning.some((t) => t.id === running.id) ? [...teamRunning, running] : teamRunning} me={me} supabase={supabase} people={people} visible={profiles.filter((p) => p.active)} clients={clients} jobs={jobs} canSeeTeam={canTeamTimesheet} say={say} startTab={tsTab} /> : null}
       {view === "team" && canTeamTab ? <><TeamView /><ActivityLog supabase={supabase} jobs={jobs} clients={clients} people={people} onOpenJob={(j) => openJob(j)} /></> : null}
@@ -1369,7 +1373,7 @@ function SignInCodePanel() {
 
 /* ---------- layout ---------- */
 function Shell({ me, view, go, live, showTeam, showTeamTab = showTeam, bell, wide, badges, viewOnly = false, children }: { me: Profile; viewOnly?: boolean; view: View; go: (v: View) => void; live: boolean; showTeam: boolean; showTeamTab?: boolean; bell?: React.ReactNode; wide?: boolean; badges?: Partial<Record<View, number>>; children: React.ReactNode }) {
-  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeamTab ? [["team", "Team"] as [View, string]] : []), ...(showTeam ? [["meetings", "Meetings"] as [View, string]] : []), ...(me.role === "master" ? [["management", "Management"] as [View, string]] : [])];
+  const tabs: [View, string][] = [["overview", "Overview"], ["jobs", "Jobs"], ["payroll", "Payroll"], ...(me.role === "master" ? [["inbox", "Inbox"] as [View, string]] : []), ["clients", "Clients"], ...(showTeam ? [["prospects", "Prospects"] as [View, string]] : []), ["timesheet", "Timesheet"], ...(showTeamTab ? [["team", "Team"] as [View, string]] : []), ...(showTeam ? [["meetings", "Meetings"] as [View, string]] : []), ...(me.role === "master" ? [["management", "Management"] as [View, string]] : [])];
   return (
     <>
       <header className="top"><div className="wrap">
