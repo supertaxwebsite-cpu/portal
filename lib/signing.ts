@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ImapFlow } from "imapflow";
 import { SIGNED_MARK, svcLabel } from "@/lib/domain";
-import { completedDoc, parseDoc, candidates, type MatchJob, type MatchClient } from "@/lib/signParse";
+import { completedDoc, parseDoc, candidates, norm, type MatchJob, type MatchClient } from "@/lib/signParse";
 import type { Box } from "@/lib/mailboxes";
 import { pages, mimeOf, uidOf } from "@/lib/graph";
 
@@ -19,7 +19,10 @@ export async function markSignedFromZoho(admin: Admin, jobId: string, doc: strin
   const up = await admin.from("jobs").update({ sign_reminded_at: SIGNED_MARK }).eq("id", jobId).eq("status", "sent_for_sign");
   if (up.error) return { ok: false, prev: null, note: up.error.message };
   const saved: string[] = [];
-  for (const f of files) {
+  // Only the signed document and Zoho's completion certificate (both carry the document name), not other PDFs such as an invoice.
+  const isPdf = (f: Att) => /pdf/i.test(f.contentType ?? "") || /\.pdf$/i.test(f.filename ?? "");
+  const named = files.filter((f) => isPdf(f) && norm(f.filename ?? "").includes(norm(doc)));
+  for (const f of named.length ? named : files) {
     if (f.related || !f.content || f.size > 25 * 1024 * 1024 || !/pdf/i.test(f.contentType ?? "") && !/\.pdf$/i.test(f.filename ?? "")) continue;
     const name = `Signed – ${(f.filename || `${doc}.pdf`).replace(/[^\w.\- ]+/g, "_")}`.slice(0, 200);
     const path = `${jobId}/${crypto.randomUUID()}-${name.replace(/[^\w.\-]+/g, "_")}`;
@@ -93,14 +96,14 @@ export async function scanBox(admin: Admin, b: Box, c: ImapFlow): Promise<number
   return handled;
 }
 
-/** The same for a Microsoft 365 mailbox. Its place is kept as the uid (arrival time) of the newest email seen. */
+/** The same for a Microsoft 365 mailbox, in every folder (Outlook rules often move Zoho emails out of the Inbox). Its place is kept as the uid (arrival time) of the newest email seen. */
 export async function scanGraph(admin: Admin, b: Box): Promise<number> {
   const { simpleParser } = await import("mailparser");
   const { data: st } = await admin.from("mail_box_state").select("*").eq("box", b.user).maybeSingle();
   const known = st && Number(st.uidvalidity) === GRAPH_VALIDITY && st.last_uid != null;
   // From the second of the last email seen (emails already handled are skipped), or the last 14 days the first time.
   const since = new Date(known ? Math.floor(Number(st!.last_uid) / 1000) * 1000 : Date.now() - 14 * 864e5).toISOString();
-  const list = await pages(b.user, `/mailFolders/inbox/messages?$select=id,subject,from,receivedDateTime&$top=100&$orderby=receivedDateTime%20asc&$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}`, 2000);
+  const list = await pages(b.user, `/messages?$select=id,subject,from,receivedDateTime&$top=100&$orderby=receivedDateTime%20asc&$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}`, 2000);
   const ctx: Ctx = { jobs: null, clients: null };
   let handled = 0, top = known ? Number(st!.last_uid) : 0;
   for (const m of list) {
@@ -113,4 +116,5 @@ export async function scanGraph(admin: Admin, b: Box): Promise<number> {
   await admin.from("mail_box_state").upsert({ box: b.user, uidvalidity: GRAPH_VALIDITY, last_uid: top || null, last_run: new Date().toISOString() });
   return handled;
 }
-export const GRAPH_VALIDITY = 1;
+// 2: from when every folder is read, so the first check looks back 14 days again.
+export const GRAPH_VALIDITY = 2;

@@ -53,7 +53,8 @@ export const folderOf = (f: string) => (f === "sent" ? "sentitems" : "inbox");
 export async function idOf(user: string, folder: string, uid: number): Promise<string | null> {
   const s = Math.floor(uid / 1000) * 1000;
   const from = new Date(s).toISOString(), to = new Date(s + 1000).toISOString();
-  const d = await gj<{ value: GMsg[] }>(user, `/mailFolders/${folderOf(folder)}/messages?$select=id,receivedDateTime&$top=50&$filter=${encodeURIComponent(`receivedDateTime ge ${from} and receivedDateTime lt ${to}`)}`);
+  // Inbox emails are looked for in every folder: a rule may have moved them (Zoho emails often are).
+  const d = await gj<{ value: GMsg[] }>(user, `${folder === "sent" ? "/mailFolders/sentitems" : ""}/messages?$select=id,receivedDateTime&$top=50&$filter=${encodeURIComponent(`receivedDateTime ge ${from} and receivedDateTime lt ${to}`)}`);
   return d.value.find((m) => uidOf(m.receivedDateTime, m.id) === uid)?.id ?? null;
 }
 
