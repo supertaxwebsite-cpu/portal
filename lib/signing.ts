@@ -40,6 +40,19 @@ export async function markSignedFromZoho(admin: Admin, jobId: string, doc: strin
   return { ok: true, prev, note: saved.length ? "Signed PDF saved in Files" : "" };
 }
 
+/** Every row, past the database's 1000-rows-per-request limit. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function all<T>(admin: Admin, table: string, cols: string, f: (q: any) => any = (q) => q): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; from < 50_000; from += 1000) {
+    const { data, error } = await f(admin.from(table).select(cols)).order("id").range(from, from + 999);
+    if (error) throw new Error(error.message);
+    out.push(...((data ?? []) as T[]));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
 interface Ctx { jobs: MatchJob[] | null; clients: MatchClient[] | null }
 
 /** One email: if it's a Zoho Sign completion not seen before, match it to a job and log what was done. */
@@ -49,8 +62,8 @@ async function handleOne(admin: Admin, b: Box, ctx: Ctx, validity: number, uid: 
   const { data: seen } = await admin.from("sign_log").select("id").eq("box", b.user).eq("uidvalidity", validity).eq("uid", uid).limit(1);
   if (seen?.length) return false;
   if (!ctx.jobs) {
-    ctx.jobs = ((await admin.from("jobs").select("id, client_id, service, period, status, sign_reminded_at").neq("status", "not_started")).data ?? []) as MatchJob[];
-    ctx.clients = ((await admin.from("clients").select("id, name")).data ?? []) as MatchClient[];
+    ctx.jobs = await all<MatchJob>(admin, "jobs", "id, client_id, service, period, status, sign_reminded_at", (q) => q.neq("status", "not_started"));
+    ctx.clients = await all<MatchClient>(admin, "clients", "id, name");
   }
   const { open, done } = candidates(parseDoc(doc), ctx.clients!, ctx.jobs, SIGNED_MARK);
   const row = { box: b.user, uidvalidity: validity, uid, subject: subject.slice(0, 300), doc_name: doc, received_at: new Date(date).toISOString() };
