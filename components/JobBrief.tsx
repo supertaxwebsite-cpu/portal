@@ -6,6 +6,7 @@ import type { createClient } from "@/lib/supabase/client";
 import type { Job, Person } from "@/lib/types";
 import { svcLabel, ST, fmtDate, daysFrom } from "@/lib/domain";
 import { KEY, STEPS, taskLists } from "@/lib/checklists";
+import { useAskClient } from "@/lib/askClient";
 import ReviewNotes from "./ReviewNotes";
 import type { JobFile } from "./JobFiles";
 
@@ -56,6 +57,7 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const [replyFile, setReplyFile] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
   const [askKind, setAskKind] = useState<"internal" | "client">("internal");
+  const askClient = useAskClient(supabase, meId);
   const [cqManual, setCqManual] = useState(false); // client query asked outside the portal (phone, WhatsApp, own email)
   const [passTo, setPassTo] = useState<Record<string, string>>({});
   // Client query by email: who it goes to, subject and message (CC info@ and the signature are added by the server).
@@ -243,9 +245,11 @@ export default function JobBrief({ job, clientName, showInfo, meId, canAnswerAll
   const askForm = (<div className="qnew">
             <div className="qkind" role="radiogroup" aria-label="Type of query">
               <button type="button" role="radio" aria-checked={askKind === "internal"} className={askKind === "internal" ? "on" : undefined} onClick={() => setAskKind("internal")}>Internal query<span>to a team member</span></button>
-              <button type="button" role="radio" aria-checked={askKind === "client"} className={askKind === "client" ? "on" : undefined} onClick={() => setAskKind("client")}>Client query<span>to the client</span></button>
+              <button type="button" role="radio" aria-checked={askKind === "client"} className={`${askKind === "client" ? "on" : ""}${askClient.ok ? "" : " locked"}`.trim() || undefined} onClick={() => setAskKind("client")}>{askClient.ok ? "" : "🔒 "}Client query<span>to the client</span></button>
             </div>
-            {askKind === "internal" ? <>
+            {askKind === "client" && !askClient.ok ? <div className="cqlock"><b>You can&apos;t send client queries.</b> Send an internal query to {askClient.leader ? <b>{personName(askClient.leader)}</b> : "your team leader"}{askClient.leader ? " (your team leader)" : ""} with what to ask, and they&apos;ll ask the client.
+              <div className="row" style={{ marginTop: 8 }}><button type="button" onClick={() => { setAskKind("internal"); if (askClient.leader) setAsk((a) => ({ ...a, to: askClient.leader! })); }}>{askClient.leader ? `Ask ${personName(askClient.leader)} instead` : "Send an internal query instead"}</button></div></div>
+            : askKind === "internal" ? <>
             <div className="row" style={{ gap: 8 }}><label className="f" style={{ minWidth: 220 }}>Ask<select id="q-ask-to" value={ask.to} onChange={(e) => setAsk({ ...ask, to: e.target.value })}>
               <option value="">Choose who answers…</option>{team.filter((p) => p.id !== meId).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label></div>
             <textarea id="q-ask-body" placeholder="What's the query? e.g. Client has fuel receipts without tax invoices, can we claim the GST?" value={ask.body} onChange={(e) => setAsk({ ...ask, body: e.target.value })} />

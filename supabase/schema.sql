@@ -3483,3 +3483,7 @@ create table if not exists public.sign_log (
 alter table public.sign_log enable row level security;
 drop policy if exists "master reads sign log" on public.sign_log;
 create policy "master reads sign log" on public.sign_log for select using (public.is_master());
+
+-- Who can send client queries: one switch per team member. Everyone keeps access (default on).
+-- Adds one column. Changes no existing data. Safe to run more than once.
+alter table public.profiles add column if not exists can_send_client_query boolean not null default true;

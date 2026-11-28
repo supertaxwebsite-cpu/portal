@@ -1,5 +1,6 @@
 "use client";
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import { useAskClient } from "@/lib/askClient";
 import type { createClient } from "@/lib/supabase/client";
 import type { AuditQuery, Client, Job, JobTimer, Person } from "@/lib/types";
 import { ST, daysFrom, fmtDate, isOpen, practiceOf, svcLabel, isSigned, industryLabel, AUDIT_STATUSES, copyDropboxPath, DROPBOX_ROOT } from "@/lib/domain";
@@ -37,6 +38,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
   running: JobTimer | null; busy: boolean; onStart: (j: Job) => void; onStop: () => void; wasStarted: (j: Job) => boolean;
   onBack: () => void; onEdit: (tab?: "email") => void; onEditClient?: (c: Client) => void; onOpenClient: (id: string) => void; onNewClient: () => void;
 }) {
+  const askClient = useAskClient(supabase, meId);
   const st = ST[job.status];
   const total = checklistFor(job.service).length;
   // Checklist progress from the task list: items marked Checked or N/A.
@@ -273,7 +275,7 @@ export default function JobPage({ job, client, meId, team, canAnswerAll, canDele
           <span style={{ flex: 1 }} />
           {client?.dropbox_path ? <button type="button" className="dbxbtn" title={`${DROPBOX_ROOT}\\${client.dropbox_path}`} onClick={() => copyDropboxPath(client.dropbox_path ?? "", say)}>📂 Copy folder path</button>
             : client && !readOnly && onEditClient ? <button type="button" title="Save this client's Dropbox folder path, so anyone can open it from their jobs" onClick={() => onEditClient(client)}>📂 Add folder path</button> : null}
-          {!readOnly ? <button type="button" onClick={() => onEdit("email")}>✉ Email client</button> : null}
+          {!readOnly && askClient.ok ? <button type="button" onClick={() => onEdit("email")}>✉ Email client</button> : null}
           <button type="button" onClick={() => go("jp-files")}>📎 Files</button>
         </div>
       </div>

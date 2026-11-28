@@ -24,6 +24,8 @@ export interface Profile {
   can_self_review?: boolean;
   /** May mark any job Sent for signing as Client signed (Ready to lodge). */
   can_mark_signed?: boolean;
+  /** Staff only: may ask the client (client query, Email client). Default true. */
+  can_send_client_query?: boolean;
   /** May create jobs (New job). Default true. */
   can_create_jobs?: boolean;
   /** May create jobs for many clients at once (Create jobs for a period). Default true. */

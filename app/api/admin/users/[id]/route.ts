@@ -34,6 +34,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (typeof body.canAccessTimesheet === "boolean") update.can_access_timesheet = body.canAccessTimesheet;
   if (typeof body.canSelfReview === "boolean") update.can_self_review = body.canSelfReview;
   if (typeof body.canMarkSigned === "boolean") update.can_mark_signed = body.canMarkSigned;
+  if (typeof body.canSendClientQuery === "boolean") update.can_send_client_query = body.canSendClientQuery;
   if (typeof body.canCreateJobs === "boolean") update.can_create_jobs = body.canCreateJobs;
   if (typeof body.canBulkJobs === "boolean") update.can_bulk_jobs = body.canBulkJobs;
   if (Array.isArray(body.jobServices)) update.job_services = body.jobServices.filter((x: unknown) => typeof x === "string" && !!SVC[x]);
@@ -41,7 +42,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (Array.isArray(body.clientTypes)) update.client_types = body.clientTypes.filter((x: unknown) => typeof x === "string" && ENTITIES.includes(x));
   if (Array.isArray(body.practices)) update.practices = body.practices.filter((x: unknown) => typeof x === "string" && (PRACTICES as readonly string[]).includes(x));
   if (update.role === "master") { update.gets_sign_reminders = true; update.can_delete = false; update.can_see_workload = false; }
-  if (update.role === "master") { update.can_create_jobs = true; update.can_bulk_jobs = true; update.job_services = []; update.can_mark_signed = false; update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; update.client_types = []; update.practices = []; update.can_create_clients = true; }
+  if (update.role === "master") { update.can_create_jobs = true; update.can_bulk_jobs = true; update.job_services = []; update.can_mark_signed = false; update.can_pick_reviewer = false; update.can_see_mgmt_notes = false; update.client_types = []; update.practices = []; update.can_create_clients = true; update.can_send_client_query = true; }
   if (update.role === "manager") update.can_pick_reviewer = false;
   if (update.role && update.role !== "manager") { update.can_see_team_tab = false; update.can_access_timesheet = false; update.can_self_review = false; }
   if (!Object.keys(update).length && !Array.isArray(body.team)) return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
@@ -75,6 +76,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (error && /can_create_jobs|can_bulk_jobs|job_services/.test(error.message)) {
       if (update.can_create_jobs === false || update.can_bulk_jobs === false || (update.job_services as string[] | undefined)?.length) return NextResponse.json({ error: "Run database-update-services-and-audit.sql in Supabase first, then try again." }, { status: 500 });
       delete update.can_create_jobs; delete update.can_bulk_jobs; delete update.job_services;
+      ({ error } = await admin.from("profiles").update(update).eq("id", id));
+    }
+    if (error && /can_send_client_query/.test(error.message)) {
+      if (update.can_send_client_query === false) return NextResponse.json({ error: "Run database-update-client-query-access.sql in Supabase first, then try again." }, { status: 500 });
+      delete update.can_send_client_query;
       ({ error } = await admin.from("profiles").update(update).eq("id", id));
     }
     if (error && /can_mark_signed/.test(error.message)) {

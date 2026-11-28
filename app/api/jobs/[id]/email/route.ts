@@ -15,6 +15,7 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 export async function POST(req: Request, { params }: Ctx) {
   const me = await currentProfile();
   if (!me) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  if (me.role === "staff" && me.can_send_client_query === false) return NextResponse.json({ error: "You don't have access to email clients. Send an internal query to your team leader and they'll ask the client." }, { status: 403 });
   if (!mailConfigured()) return NextResponse.json({ error: "Email isn't set up yet. Ask the master admin to add the email settings in Vercel." }, { status: 503 });
   const { id } = await params;
   const b = await req.json().catch(() => ({}));

@@ -1015,3 +1015,6 @@ button.mtag{cursor:pointer}
 .signbox.needs,.signbox.none,.signbox.undone{border-color:#f0c47a;background:#fffaf0}.signbox.skipped{border-color:var(--line);background:var(--surface-2)}
 .mcompose{display:flex;flex-direction:column;gap:8px}.mcompose h3{margin:0}.mcompose .f{display:flex;flex-direction:column;gap:4px}
 @media (max-width:900px){.inbox{grid-template-columns:1fr}.inbox>div{border-right:0;border-bottom:1px solid var(--line)}.mlist{max-height:50vh}}
+/* Client query locked for staff without access */
+.qkind button.locked{opacity:.6;background:#f2f3f5}
+.cqlock{background:#fff6e8;border:1px solid #f3c47a;border-radius:10px;padding:10px 12px;font-size:14px}
